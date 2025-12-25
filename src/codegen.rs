@@ -99,7 +99,7 @@ impl CodeGenerator {
                                 "    movl {}, {}(%rbp)",
                                 param_regs_32[i], symbol.stack_offset
                             ));
-                        } else if matches!(param.param_type, Type::UShort) {
+                        } else if matches!(param.param_type, Type::UShort | Type::Short) {
                             self.emit(&format!(
                                 "    movw {}, {}(%rbp)",
                                 param_regs_16[i], symbol.stack_offset
@@ -108,6 +108,11 @@ impl CodeGenerator {
                             self.emit(&format!(
                                 "    movb {}, {}(%rbp)",
                                 param_regs_8[i], symbol.stack_offset
+                            ));
+                        } else if matches!(param.param_type, Type::Long) {
+                            self.emit(&format!(
+                                "    movq {}, {}(%rbp)",
+                                param_regs_64[i], symbol.stack_offset
                             ));
                         } else {
                             self.emit(&format!(
@@ -273,10 +278,12 @@ impl CodeGenerator {
                                     let elem_offset = offset + (i as i32) * elem_size;
                                     if matches!(elem_type, Type::Int | Type::UInt) {
                                         self.emit(&format!("    movl %eax, {}(%rbp)", elem_offset));
-                                    } else if matches!(elem_type, Type::UShort) {
+                                    } else if matches!(elem_type, Type::UShort | Type::Short) {
                                         self.emit(&format!("    movw %ax, {}(%rbp)", elem_offset));
                                     } else if matches!(elem_type, Type::Char | Type::UChar) {
                                         self.emit(&format!("    movb %al, {}(%rbp)", elem_offset));
+                                    } else if matches!(elem_type, Type::Long | Type::ULong) {
+                                        self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
                                     } else {
                                         self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
                                     }
@@ -297,10 +304,12 @@ impl CodeGenerator {
                                 self.generate_node(init_expr)?;
                                 if matches!(var_type, Type::Int | Type::UInt) {
                                     self.emit(&format!("    movl %eax, {}(%rbp)", offset));
-                                } else if matches!(var_type, Type::UShort) {
+                                } else if matches!(var_type, Type::UShort | Type::Short) {
                                     self.emit(&format!("    movw %ax, {}(%rbp)", offset));
                                 } else if matches!(var_type, Type::Char | Type::UChar) {
                                     self.emit(&format!("    movb %al, {}(%rbp)", offset));
+                                } else if matches!(var_type, Type::Long | Type::ULong) {
+                                    self.emit(&format!("    movq %rax, {}(%rbp)", offset));
                                 } else {
                                     self.emit(&format!("    movq %rax, {}(%rbp)", offset));
                                 }
@@ -321,10 +330,12 @@ impl CodeGenerator {
                 self.generate_node(value)?;
                 if matches!(symbol_type, Type::Int | Type::UInt) {
                     self.emit(&format!("    movl %eax, {}(%rbp)", stack_offset));
-                } else if matches!(symbol_type, Type::UShort) {
+                } else if matches!(symbol_type, Type::UShort | Type::Short) {
                     self.emit(&format!("    movw %ax, {}(%rbp)", stack_offset));
                 } else if matches!(symbol_type, Type::Char | Type::UChar) {
                     self.emit(&format!("    movb %al, {}(%rbp)", stack_offset));
+                } else if matches!(symbol_type, Type::Long | Type::ULong) {
+                    self.emit(&format!("    movq %rax, {}(%rbp)", stack_offset));
                 } else {
                     self.emit(&format!("    movq %rax, {}(%rbp)", stack_offset));
                 }
@@ -344,10 +355,14 @@ impl CodeGenerator {
                     self.emit(&format!("    movl {}(%rbp), %eax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::UShort) {
                     self.emit(&format!("    movzwq {}(%rbp), %rax", symbol.stack_offset));
+                } else if matches!(symbol.symbol_type, Type::Short) {
+                    self.emit(&format!("    movswq {}(%rbp), %rax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::Char) {
                     self.emit(&format!("    movsbq {}(%rbp), %rax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::UChar) {
                     self.emit(&format!("    movzbq {}(%rbp), %rax", symbol.stack_offset));
+                } else if matches!(symbol.symbol_type, Type::Long | Type::ULong) {
+                    self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
                 } else {
                     self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
                 }
@@ -575,10 +590,14 @@ impl CodeGenerator {
                     self.emit("    movl (%rax), %eax");
                 } else if matches!(pointee_type, Type::UShort) {
                     self.emit("    movzwq (%rax), %rax");
+                } else if matches!(pointee_type, Type::Short) {
+                    self.emit("    movswq (%rax), %rax");
                 } else if matches!(pointee_type, Type::Char) {
                     self.emit("    movsbq (%rax), %rax");
                 } else if matches!(pointee_type, Type::UChar) {
                     self.emit("    movzbq (%rax), %rax");
+                } else if matches!(pointee_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rax), %rax");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -593,10 +612,14 @@ impl CodeGenerator {
                     self.emit("    movl (%rax), %eax");
                 } else if matches!(elem_type, Type::UShort) {
                     self.emit("    movzwq (%rax), %rax");
+                } else if matches!(elem_type, Type::Short) {
+                    self.emit("    movswq (%rax), %rax");
                 } else if matches!(elem_type, Type::Char) {
                     self.emit("    movsbq (%rax), %rax");
                 } else if matches!(elem_type, Type::UChar) {
                     self.emit("    movzbq (%rax), %rax");
+                } else if matches!(elem_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rax), %rax");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -617,10 +640,14 @@ impl CodeGenerator {
                     self.emit("    movl (%rax), %eax");
                 } else if matches!(field_type, Type::UShort) {
                     self.emit("    movzwq (%rax), %rax");
+                } else if matches!(field_type, Type::Short) {
+                    self.emit("    movswq (%rax), %rax");
                 } else if matches!(field_type, Type::Char) {
                     self.emit("    movsbq (%rax), %rax");
                 } else if matches!(field_type, Type::UChar) {
                     self.emit("    movzbq (%rax), %rax");
+                } else if matches!(field_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rax), %rax");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -847,15 +874,23 @@ impl CodeGenerator {
     fn is_integer_type(&self, ty: &Type) -> bool {
         matches!(
             ty,
-            Type::Int | Type::UInt | Type::Char | Type::UChar | Type::UShort | Type::ULong
+            Type::Int
+                | Type::UInt
+                | Type::Char
+                | Type::UChar
+                | Type::UShort
+                | Type::Short
+                | Type::Long
+                | Type::ULong
         )
     }
 
     fn promote_integer_type(&self, ty: &Type) -> Type {
         match ty {
-            Type::Char | Type::UChar | Type::UShort => Type::Int,
+            Type::Char | Type::UChar | Type::UShort | Type::Short => Type::Int,
             Type::Int => Type::Int,
             Type::UInt => Type::UInt,
+            Type::Long => Type::Long,
             Type::ULong => Type::ULong,
             _ => ty.clone(),
         }
@@ -869,6 +904,8 @@ impl CodeGenerator {
         let right = self.promote_integer_type(right);
         if matches!(left, Type::ULong) || matches!(right, Type::ULong) {
             Ok(Type::ULong)
+        } else if matches!(left, Type::Long) || matches!(right, Type::Long) {
+            Ok(Type::Long)
         } else if matches!(left, Type::UInt) || matches!(right, Type::UInt) {
             Ok(Type::UInt)
         } else {
@@ -934,6 +971,8 @@ impl CodeGenerator {
             Type::Char => Ok(1),
             Type::UChar => Ok(1),
             Type::UShort => Ok(2),
+            Type::Short => Ok(2),
+            Type::Long => Ok(8),
             Type::ULong => Ok(8),
             Type::Pointer(_) => Ok(8),
             Type::Void => Ok(0),
@@ -955,6 +994,8 @@ impl CodeGenerator {
             Type::Char => Ok(1),
             Type::UChar => Ok(1),
             Type::UShort => Ok(2),
+            Type::Short => Ok(2),
+            Type::Long => Ok(8),
             Type::ULong => Ok(8),
             Type::Pointer(_) => Ok(8),
             Type::Void => Ok(1),
@@ -1038,13 +1079,13 @@ impl CodeGenerator {
                 Type::Char | Type::UChar => {
                     self.emit(&format!("    movb %al, {}(%rbp)", dest_offset));
                 }
-                Type::UShort => {
+                Type::UShort | Type::Short => {
                     self.emit(&format!("    movw %ax, {}(%rbp)", dest_offset));
                 }
                 Type::Int | Type::UInt => {
                     self.emit(&format!("    movl %eax, {}(%rbp)", dest_offset));
                 }
-                Type::ULong => {
+                Type::Long | Type::ULong => {
                     self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
                 }
                 _ => {
@@ -1176,12 +1217,16 @@ impl CodeGenerator {
                         (Type::UInt, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(pointee), Type::UShort) => Ok(Type::Pointer(pointee)),
                         (Type::UShort, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee)),
+                        (Type::Short, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
                         (Type::UChar, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
                         (Type::Char, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
                         (Type::ULong, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
+                        (Type::Long, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
                         _ => integer_type
                             .clone()
                             .ok_or_else(|| "Invalid operands for pointer addition".to_string()),
@@ -1193,6 +1238,8 @@ impl CodeGenerator {
                         (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(_), Type::Pointer(_)) => Ok(Type::Int),
                         _ => integer_type
                             .ok_or_else(|| "Invalid operands for pointer subtraction".to_string()),

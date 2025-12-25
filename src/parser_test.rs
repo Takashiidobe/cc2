@@ -501,4 +501,39 @@ mod parser_tests {
             _ => panic!("Expected program"),
         }
     }
+
+    #[test]
+    fn test_parse_short_long_variables() {
+        let mut lexer = Lexer::new(
+            "int main() { short s = 1; long l = 2; return 0; }",
+        );
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => match &funcs[0] {
+                AstNode::Function { body, .. } => match body.as_ref() {
+                    AstNode::Block(stmts) => {
+                        match &stmts[0] {
+                            AstNode::VarDecl { var_type, .. } => {
+                                assert_eq!(var_type, &Type::Short);
+                            }
+                            _ => panic!("Expected short var decl"),
+                        }
+                        match &stmts[1] {
+                            AstNode::VarDecl { var_type, .. } => {
+                                assert_eq!(var_type, &Type::Long);
+                            }
+                            _ => panic!("Expected long var decl"),
+                        }
+                    }
+                    _ => panic!("Expected block"),
+                },
+                _ => panic!("Expected function"),
+            },
+            _ => panic!("Expected program"),
+        }
+    }
 }

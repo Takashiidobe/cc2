@@ -319,4 +319,36 @@ mod codegen_tests {
         assert!(asm.contains("movq %rax"));
         assert!(asm.contains("movq "));
     }
+
+    #[test]
+    fn test_generate_short_long_loads() {
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "s".to_string(),
+                    var_type: Type::Short,
+                    init: Some(Box::new(AstNode::IntLiteral(1))),
+                },
+                AstNode::VarDecl {
+                    name: "l".to_string(),
+                    var_type: Type::Long,
+                    init: Some(Box::new(AstNode::IntLiteral(2))),
+                },
+                AstNode::Return(Some(Box::new(AstNode::BinaryOp {
+                    op: BinOp::Add,
+                    left: Box::new(AstNode::Variable("s".to_string())),
+                    right: Box::new(AstNode::Variable("l".to_string())),
+                }))),
+            ])),
+        }]);
+
+        let mut codegen = CodeGenerator::new();
+        let asm = codegen.generate(&ast).unwrap();
+
+        assert!(asm.contains("movswq"));
+        assert!(asm.contains("movq"));
+    }
 }

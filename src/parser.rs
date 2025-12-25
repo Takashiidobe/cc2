@@ -81,6 +81,20 @@ impl Parser {
                     _ => Type::UInt,
                 }
             }
+            Token::Short => {
+                self.advance();
+                if self.current() == &Token::Int {
+                    self.advance();
+                }
+                Type::Short
+            }
+            Token::Long => {
+                self.advance();
+                if self.current() == &Token::Int {
+                    self.advance();
+                }
+                Type::Long
+            }
             Token::Int => {
                 self.advance();
                 Type::Int
@@ -155,7 +169,9 @@ impl Parser {
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
             Token::For => self.parse_for_loop(),
-            Token::Unsigned | Token::Int | Token::Char | Token::Struct => self.parse_var_decl(),
+            Token::Unsigned | Token::Int | Token::Char | Token::Short | Token::Long | Token::Struct => {
+                self.parse_var_decl()
+            }
             Token::Identifier(_) => {
                 let name = match self.current() {
                     Token::Identifier(s) => s.clone(),
