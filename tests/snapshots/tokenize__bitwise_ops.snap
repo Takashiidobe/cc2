@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(a)\n=\nIntLiteral(90)\n;\nint\nIdentifier(b)\n=\nIntLiteral(15)\n;\nunsigned\nint\nIdentifier(ua)\n=\nIntLiteral(240)\n;\nunsigned\nint\nIdentifier(ub)\n=\nIntLiteral(15)\n;\nint\nIdentifier(r1)\n=\nIdentifier(a)\n&\nIdentifier(b)\n;\nint\nIdentifier(r2)\n=\nIdentifier(a)\n|\nIdentifier(b)\n;\nint\nIdentifier(r3)\n=\nIdentifier(a)\n^\nIdentifier(b)\n;\nunsigned\nint\nIdentifier(r4)\n=\nIdentifier(ua)\n&\nIdentifier(ub)\n;\nunsigned\nint\nIdentifier(r5)\n=\nIdentifier(ua)\n|\nIdentifier(ub)\n;\nunsigned\nint\nIdentifier(r6)\n=\nIdentifier(ua)\n^\nIdentifier(ub)\n;\nreturn\n(\nIdentifier(r1)\n+\nIdentifier(r2)\n+\nIdentifier(r3)\n+\nIdentifier(r4)\n+\nIdentifier(r5)\n+\nIdentifier(r6)\n)\n&\nIntLiteral(255)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

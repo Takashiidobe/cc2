@@ -77,6 +77,12 @@ pub enum BinOp {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
+    BitAnd,
+    BitOr,
+    BitXor,
+    ShiftLeft,
+    ShiftRight,
     Less,
     Greater,
     LessEqual,
@@ -91,6 +97,7 @@ pub enum BinOp {
 pub enum UnaryOp {
     LogicalNot,
     Negate,
+    BitNot,
 }
 
 #[derive(Debug, Clone, PartialEq)]

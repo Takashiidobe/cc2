@@ -36,7 +36,23 @@ pub enum Token {
     Minus,
     Star,
     Slash,
+    Percent,
     Equals,
+    PlusEquals,
+    MinusEquals,
+    StarEquals,
+    SlashEquals,
+    PercentEquals,
+    AmpersandEquals,
+    Pipe,
+    PipeEquals,
+    Caret,
+    CaretEquals,
+    LessLessEquals,
+    GreaterGreaterEquals,
+    LessLess,
+    GreaterGreater,
+    Tilde,
 
     // Comparison operators
     Less,
@@ -87,7 +103,23 @@ impl fmt::Display for Token {
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
+            Token::Percent => write!(f, "%"),
             Token::Equals => write!(f, "="),
+            Token::PlusEquals => write!(f, "+="),
+            Token::MinusEquals => write!(f, "-="),
+            Token::StarEquals => write!(f, "*="),
+            Token::SlashEquals => write!(f, "/="),
+            Token::PercentEquals => write!(f, "%="),
+            Token::AmpersandEquals => write!(f, "&="),
+            Token::Pipe => write!(f, "|"),
+            Token::PipeEquals => write!(f, "|="),
+            Token::Caret => write!(f, "^"),
+            Token::CaretEquals => write!(f, "^="),
+            Token::LessLessEquals => write!(f, "<<="),
+            Token::GreaterGreaterEquals => write!(f, ">>="),
+            Token::LessLess => write!(f, "<<"),
+            Token::GreaterGreater => write!(f, ">>"),
+            Token::Tilde => write!(f, "~"),
             Token::Less => write!(f, "<"),
             Token::Greater => write!(f, ">"),
             Token::LessEqual => write!(f, "<="),
@@ -192,6 +224,14 @@ impl Lexer {
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
                     Ok(Token::LessEqual)
+                } else if !self.is_at_end() && self.current_char() == '<' {
+                    self.advance();
+                    if !self.is_at_end() && self.current_char() == '=' {
+                        self.advance();
+                        Ok(Token::LessLessEquals)
+                    } else {
+                        Ok(Token::LessLess)
+                    }
                 } else {
                     Ok(Token::Less)
                 }
@@ -201,6 +241,14 @@ impl Lexer {
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
                     Ok(Token::GreaterEqual)
+                } else if !self.is_at_end() && self.current_char() == '>' {
+                    self.advance();
+                    if !self.is_at_end() && self.current_char() == '=' {
+                        self.advance();
+                        Ok(Token::GreaterGreaterEquals)
+                    } else {
+                        Ok(Token::GreaterGreater)
+                    }
                 } else {
                     Ok(Token::Greater)
                 }
@@ -219,6 +267,9 @@ impl Lexer {
                 if !self.is_at_end() && self.current_char() == '&' {
                     self.advance();
                     Ok(Token::LogicalAnd)
+                } else if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::AmpersandEquals)
                 } else {
                     Ok(Token::Ampersand)
                 }
@@ -228,30 +279,73 @@ impl Lexer {
                 if !self.is_at_end() && self.current_char() == '|' {
                     self.advance();
                     Ok(Token::LogicalOr)
+                } else if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::PipeEquals)
                 } else {
-                    Err("Unexpected character: '|' (use || for logical OR)".to_string())
+                    Ok(Token::Pipe)
                 }
             }
             '+' => {
                 self.advance();
-                Ok(Token::Plus)
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::PlusEquals)
+                } else {
+                    Ok(Token::Plus)
+                }
             }
             '-' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '>' {
                     self.advance();
                     Ok(Token::Arrow)
+                } else if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::MinusEquals)
                 } else {
                     Ok(Token::Minus)
                 }
             }
             '*' => {
                 self.advance();
-                Ok(Token::Star)
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::StarEquals)
+                } else {
+                    Ok(Token::Star)
+                }
             }
             '/' => {
                 self.advance();
-                Ok(Token::Slash)
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::SlashEquals)
+                } else {
+                    Ok(Token::Slash)
+                }
+            }
+            '%' => {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::PercentEquals)
+                } else {
+                    Ok(Token::Percent)
+                }
+            }
+            '^' => {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::CaretEquals)
+                } else {
+                    Ok(Token::Caret)
+                }
+            }
+            '~' => {
+                self.advance();
+                Ok(Token::Tilde)
             }
             _ if ch.is_ascii_digit() => self.read_number(),
             _ if ch.is_ascii_alphabetic() || ch == '_' => self.read_identifier(),

@@ -458,6 +458,33 @@ impl CodeGenerator {
                                     self.emit("    imulq %rcx, %rax");
                                 }
                             }
+                            BinOp::Modulo => {
+                                if int_operands {
+                                    self.emit("    movl %eax, %ebx");
+                                    self.emit("    movl %ecx, %eax");
+                                    if unsigned_ops {
+                                        self.emit("    xorl %edx, %edx");
+                                        self.emit("    divl %ebx");
+                                        self.emit("    movl %edx, %eax");
+                                    } else {
+                                        self.emit("    cltd");
+                                        self.emit("    idivl %ebx");
+                                        self.emit("    movl %edx, %eax");
+                                        self.emit("    cltq");
+                                    }
+                                } else {
+                                    self.emit("    movq %rax, %rbx");
+                                    self.emit("    movq %rcx, %rax");
+                                    if unsigned_ops {
+                                        self.emit("    xorq %rdx, %rdx");
+                                        self.emit("    divq %rbx");
+                                    } else {
+                                        self.emit("    cqto");
+                                        self.emit("    idivq %rbx");
+                                    }
+                                    self.emit("    movq %rdx, %rax");
+                                }
+                            }
                             BinOp::Divide => {
                                 if int_operands {
                                     self.emit("    movl %eax, %ebx");
@@ -480,6 +507,71 @@ impl CodeGenerator {
                                         self.emit("    cqto");
                                         self.emit("    idivq %rbx");
                                     }
+                                }
+                            }
+                            BinOp::BitAnd => {
+                                if int_operands {
+                                    self.emit("    andl %ecx, %eax");
+                                    if !unsigned_ops {
+                                        self.emit("    cltq");
+                                    }
+                                } else {
+                                    self.emit("    andq %rcx, %rax");
+                                }
+                            }
+                            BinOp::BitOr => {
+                                if int_operands {
+                                    self.emit("    orl %ecx, %eax");
+                                    if !unsigned_ops {
+                                        self.emit("    cltq");
+                                    }
+                                } else {
+                                    self.emit("    orq %rcx, %rax");
+                                }
+                            }
+                            BinOp::BitXor => {
+                                if int_operands {
+                                    self.emit("    xorl %ecx, %eax");
+                                    if !unsigned_ops {
+                                        self.emit("    cltq");
+                                    }
+                                } else {
+                                    self.emit("    xorq %rcx, %rax");
+                                }
+                            }
+                            BinOp::ShiftLeft | BinOp::ShiftRight => {
+                                let shift_type = self.shift_result_type(left)?;
+                                let shift_is_int = matches!(shift_type, Type::Int | Type::UInt);
+                                let shift_unsigned = matches!(shift_type, Type::UInt | Type::ULong);
+                                self.emit("    movq %rax, %rbx");
+                                self.emit("    movq %rcx, %rax");
+                                self.emit("    movb %bl, %cl");
+                                match op {
+                                    BinOp::ShiftLeft => {
+                                        if shift_is_int {
+                                            self.emit("    shll %cl, %eax");
+                                            if !shift_unsigned {
+                                                self.emit("    cltq");
+                                            }
+                                        } else {
+                                            self.emit("    shlq %cl, %rax");
+                                        }
+                                    }
+                                    BinOp::ShiftRight => {
+                                        if shift_is_int {
+                                            if shift_unsigned {
+                                                self.emit("    shrl %cl, %eax");
+                                            } else {
+                                                self.emit("    sarl %cl, %eax");
+                                                self.emit("    cltq");
+                                            }
+                                        } else if shift_unsigned {
+                                            self.emit("    shrq %cl, %rax");
+                                        } else {
+                                            self.emit("    sarq %cl, %rax");
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
                             BinOp::Less => {
@@ -570,6 +662,20 @@ impl CodeGenerator {
                     }
                     UnaryOp::Negate => {
                         self.emit("    negq %rax");
+                    }
+                    UnaryOp::BitNot => {
+                        let operand_type = self.expr_type(operand)?;
+                        let promoted = self.promote_integer_type(&operand_type);
+                        let unsigned_ops = matches!(promoted, Type::UInt | Type::ULong);
+                        let int_operands = matches!(promoted, Type::Int | Type::UInt);
+                        if int_operands {
+                            self.emit("    notl %eax");
+                            if !unsigned_ops {
+                                self.emit("    cltq");
+                            }
+                        } else {
+                            self.emit("    notq %rax");
+                        }
                     }
                 }
                 Ok(())
@@ -870,6 +976,14 @@ impl CodeGenerator {
             }
             _ => false,
         }
+    }
+
+    fn shift_result_type(&self, left: &AstNode) -> Result<Type, String> {
+        let left_ty = self.expr_type(left)?;
+        if !self.is_integer_type(&left_ty) {
+            return Err("Shift operands must be integers".to_string());
+        }
+        Ok(self.promote_integer_type(&left_ty))
     }
 
     fn is_integer_type(&self, ty: &Type) -> bool {
@@ -1245,7 +1359,29 @@ impl CodeGenerator {
                         _ => integer_type
                             .ok_or_else(|| "Invalid operands for pointer subtraction".to_string()),
                     },
-                    _ => Ok(Type::Int),
+                    BinOp::ShiftLeft | BinOp::ShiftRight => {
+                        if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type)
+                        {
+                            return Err("Shift operands must be integers".to_string());
+                        }
+                        Ok(self.promote_integer_type(&left_type))
+                    }
+                    BinOp::Multiply
+                    | BinOp::Divide
+                    | BinOp::Modulo
+                    | BinOp::BitAnd
+                    | BinOp::BitOr
+                    | BinOp::BitXor => integer_type.ok_or_else(|| {
+                        "Bitwise and arithmetic operators require integer operands".to_string()
+                    }),
+                    BinOp::Less
+                    | BinOp::Greater
+                    | BinOp::LessEqual
+                    | BinOp::GreaterEqual
+                    | BinOp::EqualEqual
+                    | BinOp::NotEqual
+                    | BinOp::LogicalAnd
+                    | BinOp::LogicalOr => Ok(Type::Int),
                 }
             }
             AstNode::Assignment { name, .. } => {
@@ -1255,7 +1391,14 @@ impl CodeGenerator {
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
                 Ok(symbol.symbol_type.clone())
             }
-            AstNode::UnaryOp { .. } | AstNode::FunctionCall { .. } => Ok(Type::Int),
+            AstNode::UnaryOp { op, operand } => match op {
+                UnaryOp::LogicalNot => Ok(Type::Int),
+                UnaryOp::Negate | UnaryOp::BitNot => {
+                    let operand_type = self.expr_type(operand)?;
+                    Ok(self.promote_integer_type(&operand_type))
+                }
+            },
+            AstNode::FunctionCall { .. } => Ok(Type::Int),
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }

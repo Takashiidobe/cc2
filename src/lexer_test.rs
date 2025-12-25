@@ -83,4 +83,35 @@ mod lexer_tests {
         assert_eq!(tokens[0], Token::Short);
         assert_eq!(tokens[1], Token::Long);
     }
+
+    #[test]
+    fn test_compound_assignment_tokens() {
+        let mut lexer = Lexer::new("+= -= *= /= %= <<= >>= &= |= ^=");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::PlusEquals);
+        assert_eq!(tokens[1], Token::MinusEquals);
+        assert_eq!(tokens[2], Token::StarEquals);
+        assert_eq!(tokens[3], Token::SlashEquals);
+        assert_eq!(tokens[4], Token::PercentEquals);
+        assert_eq!(tokens[5], Token::LessLessEquals);
+        assert_eq!(tokens[6], Token::GreaterGreaterEquals);
+        assert_eq!(tokens[7], Token::AmpersandEquals);
+        assert_eq!(tokens[8], Token::PipeEquals);
+        assert_eq!(tokens[9], Token::CaretEquals);
+    }
+
+    #[test]
+    fn test_bitwise_tokens() {
+        let mut lexer = Lexer::new("& | ^ ~ << >> %");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::Ampersand);
+        assert_eq!(tokens[1], Token::Pipe);
+        assert_eq!(tokens[2], Token::Caret);
+        assert_eq!(tokens[3], Token::Tilde);
+        assert_eq!(tokens[4], Token::LessLess);
+        assert_eq!(tokens[5], Token::GreaterGreater);
+        assert_eq!(tokens[6], Token::Percent);
+    }
 }

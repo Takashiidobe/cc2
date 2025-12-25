@@ -536,4 +536,33 @@ mod parser_tests {
             _ => panic!("Expected program"),
         }
     }
+
+    #[test]
+    fn test_parse_compound_assignment_statement() {
+        let mut lexer = Lexer::new("int main() { int x = 1; x += 2; return x; }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => match &funcs[0] {
+                AstNode::Function { body, .. } => match body.as_ref() {
+                    AstNode::Block(stmts) => match &stmts[1] {
+                        AstNode::Assignment { name, value } => {
+                            assert_eq!(name, "x");
+                            match value.as_ref() {
+                                AstNode::BinaryOp { op: BinOp::Add, .. } => {}
+                                _ => panic!("Expected addition in compound assignment"),
+                            }
+                        }
+                        _ => panic!("Expected assignment statement"),
+                    },
+                    _ => panic!("Expected block"),
+                },
+                _ => panic!("Expected function"),
+            },
+            _ => panic!("Expected program"),
+        }
+    }
 }

@@ -172,32 +172,11 @@ impl Parser {
             Token::Unsigned | Token::Int | Token::Char | Token::Short | Token::Long | Token::Struct => {
                 self.parse_var_decl()
             }
-            Token::Identifier(_) => {
-                let name = match self.current() {
-                    Token::Identifier(s) => s.clone(),
-                    _ => unreachable!(),
-                };
-                self.advance();
-
-                if self.current() == &Token::Equals {
-                    self.advance();
-                    let value = self.parse_expression()?;
-                    self.expect(Token::Semicolon)?;
-                    Ok(AstNode::Assignment {
-                        name,
-                        value: Box::new(value),
-                    })
-                } else {
-                    Err(format!(
-                        "Expected '=' after identifier in statement, got {:?}",
-                        self.current()
-                    ))
-                }
+            _ => {
+                let expr = self.parse_expression()?;
+                self.expect(Token::Semicolon)?;
+                Ok(expr)
             }
-            _ => Err(format!(
-                "Unexpected token in statement: {:?}",
-                self.current()
-            )),
         }
     }
 
@@ -308,22 +287,7 @@ impl Parser {
         let increment = if self.current() == &Token::CloseParen {
             None
         } else {
-            let name = match self.current() {
-                Token::Identifier(s) => s.clone(),
-                _ => {
-                    return Err(format!(
-                        "Expected identifier in for loop increment, got {:?}",
-                        self.current()
-                    ));
-                }
-            };
-            self.advance();
-            self.expect(Token::Equals)?;
-            let value = self.parse_expression()?;
-            Some(Box::new(AstNode::Assignment {
-                name,
-                value: Box::new(value),
-            }))
+            Some(Box::new(self.parse_expression()?))
         };
 
         self.expect(Token::CloseParen)?;
@@ -362,21 +326,67 @@ impl Parser {
     fn parse_assignment(&mut self) -> Result<AstNode, String> {
         let left = self.parse_logical_or()?;
 
-        if self.current() == &Token::Equals {
-            let name = match left {
-                AstNode::Variable(name) => name,
-                _ => {
-                    return Err("Assignment target must be a variable".to_string());
-                }
-            };
-            self.advance();
-            let value = self.parse_assignment()?;
-            Ok(AstNode::Assignment {
-                name,
-                value: Box::new(value),
-            })
-        } else {
-            Ok(left)
+        match self.current() {
+            Token::Equals
+            | Token::PlusEquals
+            | Token::MinusEquals
+            | Token::StarEquals
+            | Token::SlashEquals
+            | Token::PercentEquals
+            | Token::AmpersandEquals
+            | Token::PipeEquals
+            | Token::CaretEquals
+            | Token::LessLessEquals
+            | Token::GreaterGreaterEquals => {
+                let name = match left {
+                    AstNode::Variable(name) => name,
+                    _ => return Err("Assignment target must be a variable".to_string()),
+                };
+                let op_token = self.current().clone();
+                self.advance();
+                let value = self.parse_assignment()?;
+
+                let value = match op_token {
+                    Token::Equals => value,
+                    Token::PlusEquals => AstNode::BinaryOp {
+                        op: BinOp::Add,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::MinusEquals => AstNode::BinaryOp {
+                        op: BinOp::Subtract,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::StarEquals => AstNode::BinaryOp {
+                        op: BinOp::Multiply,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::SlashEquals => AstNode::BinaryOp {
+                        op: BinOp::Divide,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::PercentEquals
+                    | Token::AmpersandEquals
+                    | Token::PipeEquals
+                    | Token::CaretEquals
+                    | Token::LessLessEquals
+                    | Token::GreaterGreaterEquals => {
+                        return Err(
+                            "Compound assignment operator not supported yet".to_string(),
+                        );
+                    }
+                    _ => unreachable!(),
+                };
+
+                Ok(AstNode::Assignment {
+                    name,
+                    value: Box::new(value),
+                })
+            }
+            _ => Ok(left),
         }
     }
 
@@ -397,13 +407,61 @@ impl Parser {
     }
 
     fn parse_logical_and(&mut self) -> Result<AstNode, String> {
-        let mut left = self.parse_equality()?;
+        let mut left = self.parse_bitwise_or()?;
 
         while self.current() == &Token::LogicalAnd {
             self.advance();
             let right = self.parse_equality()?;
             left = AstNode::BinaryOp {
                 op: BinOp::LogicalAnd,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_bitwise_or(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_bitwise_xor()?;
+
+        while self.current() == &Token::Pipe {
+            self.advance();
+            let right = self.parse_bitwise_xor()?;
+            left = AstNode::BinaryOp {
+                op: BinOp::BitOr,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_bitwise_xor(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_bitwise_and()?;
+
+        while self.current() == &Token::Caret {
+            self.advance();
+            let right = self.parse_bitwise_and()?;
+            left = AstNode::BinaryOp {
+                op: BinOp::BitXor,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_bitwise_and(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_equality()?;
+
+        while self.current() == &Token::Ampersand {
+            self.advance();
+            let right = self.parse_equality()?;
+            left = AstNode::BinaryOp {
+                op: BinOp::BitAnd,
                 left: Box::new(left),
                 right: Box::new(right),
             };
@@ -434,7 +492,7 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<AstNode, String> {
-        let mut left = self.parse_additive()?;
+        let mut left = self.parse_shift()?;
 
         while matches!(
             self.current(),
@@ -445,6 +503,27 @@ impl Parser {
                 Token::Greater => BinOp::Greater,
                 Token::LessEqual => BinOp::LessEqual,
                 Token::GreaterEqual => BinOp::GreaterEqual,
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_shift()?;
+            left = AstNode::BinaryOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_shift(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_additive()?;
+
+        while matches!(self.current(), Token::LessLess | Token::GreaterGreater) {
+            let op = match self.current() {
+                Token::LessLess => BinOp::ShiftLeft,
+                Token::GreaterGreater => BinOp::ShiftRight,
                 _ => unreachable!(),
             };
             self.advance();
@@ -483,10 +562,11 @@ impl Parser {
     fn parse_multiplicative(&mut self) -> Result<AstNode, String> {
         let mut left = self.parse_unary()?;
 
-        while matches!(self.current(), Token::Star | Token::Slash) {
+        while matches!(self.current(), Token::Star | Token::Slash | Token::Percent) {
             let op = match self.current() {
                 Token::Star => BinOp::Multiply,
                 Token::Slash => BinOp::Divide,
+                Token::Percent => BinOp::Modulo,
                 _ => unreachable!(),
             };
             self.advance();
@@ -516,6 +596,14 @@ impl Parser {
                 let operand = self.parse_unary()?;
                 Ok(AstNode::UnaryOp {
                     op: UnaryOp::Negate,
+                    operand: Box::new(operand),
+                })
+            }
+            Token::Tilde => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::UnaryOp {
+                    op: UnaryOp::BitNot,
                     operand: Box::new(operand),
                 })
             }
