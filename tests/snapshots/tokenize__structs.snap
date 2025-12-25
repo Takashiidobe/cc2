@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "struct\nIdentifier(Point)\n{\nint\nIdentifier(x)\n;\nint\nIdentifier(y)\n;\n}\n;\nint\nIdentifier(main)\n(\n)\n{\nstruct\nIdentifier(Point)\nIdentifier(p)\n=\n{\nIntLiteral(10)\n,\nIntLiteral(20)\n}\n;\nstruct\nIdentifier(Point)\n*\nIdentifier(ptr)\n=\n&\nIdentifier(p)\n;\nreturn\nIdentifier(ptr)\n->\nIdentifier(x)\n+\nIdentifier(ptr)\n->\nIdentifier(y)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

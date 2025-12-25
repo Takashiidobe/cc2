@@ -26,6 +26,10 @@ pub enum AstNode {
         increment: Option<Box<AstNode>>,
         body: Box<AstNode>,
     },
+    StructDef {
+        name: String,
+        fields: Vec<StructField>,
+    },
     VarDecl {
         name: String,
         var_type: Type,
@@ -56,6 +60,14 @@ pub enum AstNode {
         index: Box<AstNode>,
     },
     ArrayInit(Vec<AstNode>),
+    StructInit(Vec<AstNode>),
+    MemberAccess {
+        base: Box<AstNode>,
+        member: String,
+        through_pointer: bool,
+    },
+    SizeOfType(Type),
+    SizeOfExpr(Box<AstNode>),
     IntLiteral(i64),
 }
 
@@ -88,19 +100,27 @@ pub struct Parameter {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
+    pub name: String,
+    pub field_type: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
     Void,
     Pointer(Box<Type>),
     Array(Box<Type>, usize),
+    Struct(String),
 }
 
 impl Type {
     pub fn size(&self) -> i32 {
         match self {
-            Type::Int | Type::Pointer(_) => 8,
+            Type::Int => 4,
+            Type::Pointer(_) => 8,
             Type::Array(elem, len) => elem.size() * (*len as i32),
-            Type::Void => 0,
+            Type::Void | Type::Struct(_) => 0,
         }
     }
 
@@ -133,6 +153,7 @@ impl fmt::Display for AstNode {
             AstNode::IfStatement { .. } => write!(f, "IfStatement"),
             AstNode::WhileLoop { .. } => write!(f, "WhileLoop"),
             AstNode::ForLoop { .. } => write!(f, "ForLoop"),
+            AstNode::StructDef { name, .. } => write!(f, "StructDef({})", name),
             AstNode::VarDecl { name, .. } => write!(f, "VarDecl({})", name),
             AstNode::Assignment { name, .. } => write!(f, "Assignment({})", name),
             AstNode::Variable(name) => write!(f, "Variable({})", name),
@@ -143,6 +164,10 @@ impl fmt::Display for AstNode {
             AstNode::Dereference(_) => write!(f, "Dereference"),
             AstNode::ArrayIndex { .. } => write!(f, "ArrayIndex"),
             AstNode::ArrayInit(_) => write!(f, "ArrayInit"),
+            AstNode::StructInit(_) => write!(f, "StructInit"),
+            AstNode::MemberAccess { member, .. } => write!(f, "MemberAccess({})", member),
+            AstNode::SizeOfType(_) => write!(f, "SizeOfType"),
+            AstNode::SizeOfExpr(_) => write!(f, "SizeOfExpr"),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
         }
     }

@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "struct\nIdentifier(Pair)\n{\nint\nIdentifier(a)\n;\nint\nIdentifier(b)\n;\n}\n;\nint\nIdentifier(main)\n(\n)\n{\nstruct\nIdentifier(Pair)\nIdentifier(p)\n=\n{\nIntLiteral(3)\n,\nIntLiteral(4)\n}\n;\nstruct\nIdentifier(Pair)\n*\nIdentifier(ptr)\n=\n&\nIdentifier(p)\n;\nreturn\nIdentifier(p)\n.\nIdentifier(a)\n*\nIntLiteral(2)\n+\nIdentifier(ptr)\n->\nIdentifier(b)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

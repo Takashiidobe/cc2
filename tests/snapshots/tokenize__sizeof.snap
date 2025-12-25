@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "struct\nIdentifier(Mix)\n{\nint\nIdentifier(x)\n;\nint\n*\nIdentifier(p)\n;\n}\n;\nint\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(nums)\n[\nIntLiteral(3)\n]\n=\n{\nIntLiteral(1)\n,\nIntLiteral(2)\n,\nIntLiteral(3)\n}\n;\nint\n*\nIdentifier(ptr)\n=\nIdentifier(nums)\n;\nreturn\nsizeof\n(\nint\n)\n+\nsizeof\n(\nint\n*\n)\n+\nsizeof\n(\nIdentifier(nums)\n)\n+\nsizeof\n(\nstruct\nIdentifier(Mix)\n)\n+\nsizeof\n(\n*\nIdentifier(ptr)\n)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

@@ -337,4 +337,84 @@ mod parser_tests {
             _ => panic!("Expected program"),
         }
     }
+
+    #[test]
+    fn test_parse_struct_definition_and_member_access() {
+        let mut lexer = Lexer::new("struct Point { int x; int y; }; int main() { struct Point p = {1, 2}; return p.x; }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(nodes) => {
+                match &nodes[0] {
+                    AstNode::StructDef { name, fields } => {
+                        assert_eq!(name, "Point");
+                        assert_eq!(fields.len(), 2);
+                        assert_eq!(fields[0].name, "x");
+                    }
+                    _ => panic!("Expected struct definition"),
+                }
+                match &nodes[1] {
+                    AstNode::Function { body, .. } => match body.as_ref() {
+                        AstNode::Block(stmts) => {
+                            match &stmts[0] {
+                                AstNode::VarDecl { name, var_type, init } => {
+                                    assert_eq!(name, "p");
+                                    assert_eq!(var_type, &Type::Struct("Point".to_string()));
+                                    match init.as_deref() {
+                                        Some(AstNode::StructInit(values)) => {
+                                            assert_eq!(values.len(), 2);
+                                        }
+                                        _ => panic!("Expected struct initializer"),
+                                    }
+                                }
+                                _ => panic!("Expected struct var decl"),
+                            }
+                            match &stmts[1] {
+                                AstNode::Return(Some(expr)) => match expr.as_ref() {
+                                    AstNode::MemberAccess { member, through_pointer, .. } => {
+                                        assert_eq!(member, "x");
+                                        assert!(!through_pointer);
+                                    }
+                                    _ => panic!("Expected member access"),
+                                },
+                                _ => panic!("Expected return statement"),
+                            }
+                        }
+                        _ => panic!("Expected block"),
+                    },
+                    _ => panic!("Expected function"),
+                }
+            }
+            _ => panic!("Expected program"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sizeof_type() {
+        let mut lexer = Lexer::new("int main() { return sizeof(int); }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => match &funcs[0] {
+                AstNode::Function { body, .. } => match body.as_ref() {
+                    AstNode::Block(stmts) => match &stmts[0] {
+                        AstNode::Return(Some(expr)) => match expr.as_ref() {
+                            AstNode::SizeOfType(ty) => assert_eq!(ty, &Type::Int),
+                            _ => panic!("Expected sizeof(type)"),
+                        },
+                        _ => panic!("Expected return"),
+                    },
+                    _ => panic!("Expected block"),
+                },
+                _ => panic!("Expected function"),
+            },
+            _ => panic!("Expected program"),
+        }
+    }
 }

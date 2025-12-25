@@ -21,7 +21,11 @@ impl Parser {
             if self.current() == &Token::Eof {
                 break;
             }
-            functions.push(self.parse_function()?);
+            if self.is_struct_definition() {
+                functions.push(self.parse_struct_definition()?);
+            } else {
+                functions.push(self.parse_function()?);
+            }
         }
 
         Ok(AstNode::Program(functions))
@@ -55,6 +59,15 @@ impl Parser {
             Token::Int => {
                 self.advance();
                 Type::Int
+            }
+            Token::Struct => {
+                self.advance();
+                let name = match self.current() {
+                    Token::Identifier(s) => s.clone(),
+                    _ => return Err(format!("Expected struct name, got {:?}", self.current())),
+                };
+                self.advance();
+                Type::Struct(name)
             }
             _ => return Err(format!("Expected type, got {:?}", self.current())),
         };
@@ -113,7 +126,7 @@ impl Parser {
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
             Token::For => self.parse_for_loop(),
-            Token::Int => self.parse_var_decl(),
+            Token::Int | Token::Struct => self.parse_var_decl(),
             Token::Identifier(_) => {
                 let name = match self.current() {
                     Token::Identifier(s) => s.clone(),
@@ -151,7 +164,11 @@ impl Parser {
         let init = if self.current() == &Token::Equals {
             self.advance();
             if self.current() == &Token::OpenBrace {
-                Some(Box::new(self.parse_array_initializer()?))
+                if matches!(var_type, Type::Struct(_)) {
+                    Some(Box::new(self.parse_struct_initializer()?))
+                } else {
+                    Some(Box::new(self.parse_array_initializer()?))
+                }
             } else {
                 Some(Box::new(self.parse_expression()?))
             }
@@ -432,6 +449,7 @@ impl Parser {
                 let operand = self.parse_unary()?;
                 Ok(AstNode::AddressOf(Box::new(operand)))
             }
+            Token::Sizeof => self.parse_sizeof(),
             _ => self.parse_primary(),
         }
     }
@@ -476,6 +494,20 @@ impl Parser {
                     expr = AstNode::ArrayIndex {
                         array: Box::new(expr),
                         index: Box::new(index),
+                    };
+                }
+                Token::Dot | Token::Arrow => {
+                    let through_pointer = self.current() == &Token::Arrow;
+                    self.advance();
+                    let member = match self.current() {
+                        Token::Identifier(s) => s.clone(),
+                        _ => return Err(format!("Expected member name, got {:?}", self.current())),
+                    };
+                    self.advance();
+                    expr = AstNode::MemberAccess {
+                        base: Box::new(expr),
+                        member,
+                        through_pointer,
                     };
                 }
                 _ => break,
@@ -564,7 +596,99 @@ impl Parser {
         Ok(AstNode::ArrayInit(values))
     }
 
+    fn parse_struct_definition(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Struct)?;
+        let name = match self.current() {
+            Token::Identifier(s) => s.clone(),
+            _ => return Err(format!("Expected struct name, got {:?}", self.current())),
+        };
+        self.advance();
+        self.expect(Token::OpenBrace)?;
+
+        let mut fields = Vec::new();
+        while self.current() != &Token::CloseBrace {
+            let field_type = self.parse_type()?;
+            let field_name = match self.current() {
+                Token::Identifier(s) => s.clone(),
+                _ => return Err(format!("Expected field name, got {:?}", self.current())),
+            };
+            self.advance();
+            let field_type = self.parse_array_type_suffix(field_type)?;
+            self.expect(Token::Semicolon)?;
+            fields.push(StructField {
+                name: field_name,
+                field_type,
+            });
+        }
+
+        self.expect(Token::CloseBrace)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(AstNode::StructDef { name, fields })
+    }
+
+    fn parse_struct_initializer(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::OpenBrace)?;
+        let mut values = Vec::new();
+
+        if self.current() == &Token::CloseBrace {
+            self.advance();
+            return Ok(AstNode::StructInit(values));
+        }
+
+        loop {
+            values.push(self.parse_expression()?);
+            if self.current() == &Token::Comma {
+                self.advance();
+                if self.current() == &Token::CloseBrace {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        self.expect(Token::CloseBrace)?;
+        Ok(AstNode::StructInit(values))
+    }
+
+    fn parse_sizeof(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Sizeof)?;
+
+        if self.current() == &Token::OpenParen {
+            if self.is_type_start(self.peek(1)) {
+                self.advance();
+                let ty = self.parse_type()?;
+                let ty = self.parse_array_type_suffix(ty)?;
+                self.expect(Token::CloseParen)?;
+                Ok(AstNode::SizeOfType(ty))
+            } else {
+                self.advance();
+                let expr = self.parse_expression()?;
+                self.expect(Token::CloseParen)?;
+                Ok(AstNode::SizeOfExpr(Box::new(expr)))
+            }
+        } else {
+            let expr = self.parse_unary()?;
+            Ok(AstNode::SizeOfExpr(Box::new(expr)))
+        }
+    }
+
     fn is_at_end(&self) -> bool {
         self.position >= self.tokens.len() || self.current() == &Token::Eof
+    }
+
+    fn is_struct_definition(&self) -> bool {
+        matches!(self.current(), Token::Struct)
+            && matches!(self.peek(1), Some(Token::Identifier(_)))
+            && matches!(self.peek(2), Some(Token::OpenBrace))
+    }
+
+    fn is_type_start(&self, token: Option<&Token>) -> bool {
+        matches!(token, Some(Token::Int) | Some(Token::Struct))
+    }
+
+    fn peek(&self, offset: usize) -> Option<&Token> {
+        self.tokens.get(self.position + offset)
     }
 }

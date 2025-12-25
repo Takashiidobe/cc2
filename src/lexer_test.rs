@@ -40,4 +40,22 @@ mod lexer_tests {
         assert_eq!(tokens[2], Token::OpenBracket);
         assert_eq!(tokens[3], Token::CloseBracket);
     }
+
+    #[test]
+    fn test_struct_tokens() {
+        let mut lexer = Lexer::new("struct . ->");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::Struct);
+        assert_eq!(tokens[1], Token::Dot);
+        assert_eq!(tokens[2], Token::Arrow);
+    }
+
+    #[test]
+    fn test_sizeof_token() {
+        let mut lexer = Lexer::new("sizeof");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::Sizeof);
+    }
 }

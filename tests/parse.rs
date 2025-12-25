@@ -2,7 +2,7 @@ use assert_cmd::cargo::CommandCargoExt;
 use insta::assert_yaml_snapshot;
 use insta_cmd::Command;
 use serde::Serialize;
-use std::{io, path::Path, process::Stdio};
+use std::{path::Path, process::Stdio};
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 struct ParseOutput {

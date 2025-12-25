@@ -20,7 +20,8 @@ mod codegen_tests {
         let asm = codegen.generate(&ast).unwrap();
 
         assert!(asm.contains("main:"));
-        assert!(asm.contains("movq $42, %rax"));
+        assert!(asm.contains("movl $42, %eax"));
+        assert!(asm.contains("cltq"));
         assert!(asm.contains("ret"));
     }
 
@@ -44,7 +45,7 @@ mod codegen_tests {
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
 
-        assert!(asm.contains("addq %rcx, %rax"));
+        assert!(asm.contains("addl %ecx, %eax"));
     }
 
     #[test]
@@ -67,7 +68,7 @@ mod codegen_tests {
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
 
-        assert!(asm.contains("imulq %rcx, %rax"));
+        assert!(asm.contains("imull %ecx, %eax"));
     }
 
     #[test]
@@ -101,7 +102,7 @@ mod codegen_tests {
         let asm = codegen.generate(&ast).unwrap();
 
         assert!(asm.contains("leaq"));
-        assert!(asm.contains("movq (%rax), %rax"));
+        assert!(asm.contains("movslq (%rax), %rax"));
     }
 
     #[test]
@@ -132,8 +133,8 @@ mod codegen_tests {
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
 
-        assert!(asm.contains("imulq $8, %rax"));
-        assert!(asm.contains("movq (%rax), %rax"));
+        assert!(asm.contains("imulq $4, %rax"));
+        assert!(asm.contains("movslq (%rax), %rax"));
     }
 
     #[test]
@@ -170,7 +171,75 @@ mod codegen_tests {
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
 
-        assert!(asm.contains("imulq $8, %rax"));
+        assert!(asm.contains("imulq $4, %rax"));
         assert!(asm.contains("addq %rcx, %rax"));
+    }
+
+    #[test]
+    fn test_generate_sizeof_struct() {
+        let ast = AstNode::Program(vec![
+            AstNode::StructDef {
+                name: "Point".to_string(),
+                fields: vec![
+                    StructField {
+                        name: "x".to_string(),
+                        field_type: Type::Int,
+                    },
+                    StructField {
+                        name: "y".to_string(),
+                        field_type: Type::Int,
+                    },
+                ],
+            },
+            AstNode::Function {
+                name: "main".to_string(),
+                return_type: Type::Int,
+                params: vec![],
+                body: Box::new(AstNode::Block(vec![
+                    AstNode::Return(Some(Box::new(AstNode::SizeOfType(Type::Struct(
+                        "Point".to_string(),
+                    ))))),
+                ])),
+            },
+        ]);
+
+        let mut codegen = CodeGenerator::new();
+        let asm = codegen.generate(&ast).unwrap();
+
+        assert!(asm.contains("movq $8, %rax"));
+    }
+
+    #[test]
+    fn test_generate_sizeof_struct_with_padding() {
+        let ast = AstNode::Program(vec![
+            AstNode::StructDef {
+                name: "Mix".to_string(),
+                fields: vec![
+                    StructField {
+                        name: "x".to_string(),
+                        field_type: Type::Int,
+                    },
+                    StructField {
+                        name: "p".to_string(),
+                        field_type: Type::Pointer(Box::new(Type::Int)),
+                    },
+                ],
+            },
+            AstNode::Function {
+                name: "main".to_string(),
+                return_type: Type::Int,
+                params: vec![],
+                body: Box::new(AstNode::Block(vec![
+                    AstNode::Return(Some(Box::new(AstNode::SizeOfType(Type::Struct(
+                        "Mix".to_string(),
+                    ))))),
+                ])),
+            },
+        ]);
+
+        let mut codegen = CodeGenerator::new();
+        let asm = codegen.generate(&ast).unwrap();
+
+        assert!(asm.contains("movq $16, %rax"));
     }
 }

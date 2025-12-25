@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(arr)\n[\nIntLiteral(4)\n]\n=\n{\nIntLiteral(5)\n,\nIntLiteral(6)\n,\nIntLiteral(7)\n,\nIntLiteral(8)\n}\n;\nint\n*\nIdentifier(p)\n=\nIdentifier(arr)\n;\nint\n*\nIdentifier(q)\n=\nIdentifier(p)\n+\nIntLiteral(2)\n;\nreturn\n*\nIdentifier(q)\n+\n*\n(\nIdentifier(p)\n+\nIntLiteral(1)\n)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

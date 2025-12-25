@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(sum)\n(\nint\n*\nIdentifier(arr)\n,\nint\nIdentifier(len)\n)\n{\nint\nIdentifier(total)\n=\nIntLiteral(0)\n;\nfor\n(\nint\nIdentifier(i)\n=\nIntLiteral(0)\n;\nIdentifier(i)\n<\nIdentifier(len)\n;\nIdentifier(i)\n=\nIdentifier(i)\n+\nIntLiteral(1)\n)\n{\nIdentifier(total)\n=\nIdentifier(total)\n+\nIdentifier(arr)\n[\nIdentifier(i)\n]\n;\n}\nreturn\nIdentifier(total)\n;\n}\nint\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(vals)\n[\nIntLiteral(4)\n]\n=\n{\nIntLiteral(2)\n,\nIntLiteral(4)\n,\nIntLiteral(6)\n,\nIntLiteral(8)\n}\n;\nreturn\nIdentifier(sum)\n(\nIdentifier(vals)\n,\nIntLiteral(4)\n)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

@@ -9,6 +9,8 @@ pub enum Token {
     Else,
     While,
     For,
+    Struct,
+    Sizeof,
 
     // Identifiers and literals
     Identifier(String),
@@ -23,6 +25,7 @@ pub enum Token {
     Comma,
     OpenBracket,
     CloseBracket,
+    Dot,
 
     // Operators
     Plus,
@@ -44,6 +47,7 @@ pub enum Token {
     LogicalOr,
     LogicalNot,
     Ampersand,
+    Arrow,
 
     // Special
     Eof,
@@ -58,6 +62,8 @@ impl fmt::Display for Token {
             Token::Else => write!(f, "else"),
             Token::While => write!(f, "while"),
             Token::For => write!(f, "for"),
+            Token::Struct => write!(f, "struct"),
+            Token::Sizeof => write!(f, "sizeof"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::OpenParen => write!(f, "("),
@@ -68,6 +74,7 @@ impl fmt::Display for Token {
             Token::Comma => write!(f, ","),
             Token::OpenBracket => write!(f, "["),
             Token::CloseBracket => write!(f, "]"),
+            Token::Dot => write!(f, "."),
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
@@ -83,6 +90,7 @@ impl fmt::Display for Token {
             Token::LogicalOr => write!(f, "||"),
             Token::LogicalNot => write!(f, "!"),
             Token::Ampersand => write!(f, "&"),
+            Token::Arrow => write!(f, "->"),
             Token::Eof => write!(f, "EOF"),
         }
     }
@@ -150,6 +158,10 @@ impl Lexer {
                 self.advance();
                 Ok(Token::Comma)
             }
+            '.' => {
+                self.advance();
+                Ok(Token::Dot)
+            }
             '[' => {
                 self.advance();
                 Ok(Token::OpenBracket)
@@ -209,7 +221,7 @@ impl Lexer {
                     self.advance();
                     Ok(Token::LogicalOr)
                 } else {
-                    Err(format!("Unexpected character: '|' (use || for logical OR)"))
+                    Err("Unexpected character: '|' (use || for logical OR)".to_string())
                 }
             }
             '+' => {
@@ -218,7 +230,12 @@ impl Lexer {
             }
             '-' => {
                 self.advance();
-                Ok(Token::Minus)
+                if !self.is_at_end() && self.current_char() == '>' {
+                    self.advance();
+                    Ok(Token::Arrow)
+                } else {
+                    Ok(Token::Minus)
+                }
             }
             '*' => {
                 self.advance();
@@ -270,6 +287,8 @@ impl Lexer {
             "else" => Token::Else,
             "while" => Token::While,
             "for" => Token::For,
+            "struct" => Token::Struct,
+            "sizeof" => Token::Sizeof,
             _ => Token::Identifier(ident),
         };
 

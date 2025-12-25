@@ -23,11 +23,26 @@ impl SymbolTable {
     }
 
     pub fn add_variable(&mut self, name: String, var_type: Type) -> Result<i32, String> {
+        let size = var_type.size();
+        let align = align_for_size(size);
+        self.add_variable_with_layout(name, var_type, size, align)
+    }
+
+    pub fn add_variable_with_layout(
+        &mut self,
+        name: String,
+        var_type: Type,
+        size: i32,
+        align: i32,
+    ) -> Result<i32, String> {
         if self.symbols.contains_key(&name) {
             return Err(format!("Variable '{}' already declared in this scope", name));
         }
 
-        let size = align_to_8(var_type.size());
+        let size = size.max(0);
+        let align = align.max(1);
+        let pad = (align - ((-self.next_offset) % align)) % align;
+        self.next_offset -= pad;
         self.next_offset -= size;
         let offset = self.next_offset;
         self.symbols.insert(
@@ -50,11 +65,15 @@ impl SymbolTable {
     }
 }
 
-fn align_to_8(size: i32) -> i32 {
-    if size % 8 == 0 {
-        size
+fn align_for_size(size: i32) -> i32 {
+    if size >= 8 {
+        8
+    } else if size >= 4 {
+        4
+    } else if size >= 2 {
+        2
     } else {
-        size + (8 - (size % 8))
+        1
     }
 }
 
