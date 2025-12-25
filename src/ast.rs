@@ -30,6 +30,10 @@ pub enum AstNode {
         name: String,
         fields: Vec<StructField>,
     },
+    EnumDef {
+        name: String,
+        enumerators: Vec<Enumerator>,
+    },
     VarDecl {
         name: String,
         var_type: Type,
@@ -113,6 +117,12 @@ pub struct StructField {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Enumerator {
+    pub name: String,
+    pub value: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
     UInt,
@@ -126,6 +136,7 @@ pub enum Type {
     Pointer(Box<Type>),
     Array(Box<Type>, usize),
     Struct(String),
+    Enum(String),
 }
 
 impl Type {
@@ -142,6 +153,7 @@ impl Type {
             Type::Pointer(_) => 8,
             Type::Array(elem, len) => elem.size() * (*len as i32),
             Type::Void | Type::Struct(_) => 0,
+            Type::Enum(_) => 4,
         }
     }
 
@@ -175,6 +187,7 @@ impl fmt::Display for AstNode {
             AstNode::WhileLoop { .. } => write!(f, "WhileLoop"),
             AstNode::ForLoop { .. } => write!(f, "ForLoop"),
             AstNode::StructDef { name, .. } => write!(f, "StructDef({})", name),
+            AstNode::EnumDef { name, .. } => write!(f, "EnumDef({})", name),
             AstNode::VarDecl { name, .. } => write!(f, "VarDecl({})", name),
             AstNode::Assignment { name, .. } => write!(f, "Assignment({})", name),
             AstNode::Variable(name) => write!(f, "Variable({})", name),

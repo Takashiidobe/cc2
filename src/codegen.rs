@@ -8,6 +8,7 @@ pub struct CodeGenerator {
     label_counter: usize,
     current_function_end_label: Option<String>,
     struct_layouts: HashMap<String, StructLayout>,
+    enum_constants: HashMap<String, i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +32,7 @@ impl CodeGenerator {
             label_counter: 0,
             current_function_end_label: None,
             struct_layouts: HashMap::new(),
+            enum_constants: HashMap::new(),
         }
     }
 
@@ -40,7 +42,9 @@ impl CodeGenerator {
         self.label_counter = 0;
         self.current_function_end_label = None;
         self.struct_layouts.clear();
+        self.enum_constants.clear();
         self.collect_struct_layouts(ast)?;
+        self.collect_enum_constants(ast)?;
         self.generate_node(ast)?;
         Ok(self.output.clone())
     }
@@ -60,6 +64,7 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::StructDef { .. } => Ok(()),
+            AstNode::EnumDef { .. } => Ok(()),
             AstNode::Function {
                 name, body, params, ..
             } => {
@@ -302,7 +307,7 @@ impl CodeGenerator {
                             }
                             _ => {
                                 self.generate_node(init_expr)?;
-                                if matches!(var_type, Type::Int | Type::UInt) {
+                                if matches!(var_type, Type::Int | Type::UInt | Type::Enum(_)) {
                                     self.emit(&format!("    movl %eax, {}(%rbp)", offset));
                                 } else if matches!(var_type, Type::UShort | Type::Short) {
                                     self.emit(&format!("    movw %ax, {}(%rbp)", offset));
@@ -328,7 +333,7 @@ impl CodeGenerator {
                 let stack_offset = symbol.stack_offset;
 
                 self.generate_node(value)?;
-                if matches!(symbol_type, Type::Int | Type::UInt) {
+                if matches!(symbol_type, Type::Int | Type::UInt | Type::Enum(_)) {
                     self.emit(&format!("    movl %eax, {}(%rbp)", stack_offset));
                 } else if matches!(symbol_type, Type::UShort | Type::Short) {
                     self.emit(&format!("    movw %ax, {}(%rbp)", stack_offset));
@@ -343,6 +348,12 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::Variable(name) => {
+                // Check if this is an enum constant first
+                if let Some(&value) = self.enum_constants.get(name) {
+                    self.emit(&format!("    movq ${}, %rax", value));
+                    return Ok(());
+                }
+
                 let symbol = self
                     .symbol_table
                     .get_variable(name)
@@ -350,7 +361,7 @@ impl CodeGenerator {
 
                 if symbol.symbol_type.is_array() || matches!(symbol.symbol_type, Type::Struct(_)) {
                     self.emit(&format!("    leaq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::Int) {
+                } else if matches!(symbol.symbol_type, Type::Int | Type::Enum(_)) {
                     self.emit(&format!("    movslq {}(%rbp), %rax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::UInt) {
                     self.emit(&format!("    movl {}(%rbp), %eax", symbol.stack_offset));
@@ -1099,6 +1110,7 @@ impl CodeGenerator {
                     .ok_or_else(|| format!("Unknown struct type: {}", name))?;
                 Ok(layout.size)
             }
+            Type::Enum(_) => Ok(4),
         }
     }
 
@@ -1122,6 +1134,7 @@ impl CodeGenerator {
                     .ok_or_else(|| format!("Unknown struct type: {}", name))?;
                 Ok(layout.alignment)
             }
+            Type::Enum(_) => Ok(4),
         }
     }
 
@@ -1217,6 +1230,21 @@ impl CodeGenerator {
             for item in nodes {
                 if let AstNode::StructDef { name, fields } = item {
                     self.register_struct_layout(name, fields)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_enum_constants(&mut self, node: &AstNode) -> Result<(), String> {
+        if let AstNode::Program(nodes) = node {
+            for item in nodes {
+                if let AstNode::EnumDef { enumerators, .. } = item {
+                    for enumerator in enumerators {
+                        if let Some(value) = enumerator.value {
+                            self.enum_constants.insert(enumerator.name.clone(), value);
+                        }
+                    }
                 }
             }
         }
@@ -1409,7 +1437,7 @@ impl CodeGenerator {
             Type::UChar => self.emit("    movzbq %al, %rax"),
             Type::Short => self.emit("    movswq %ax, %rax"),
             Type::UShort => self.emit("    movzwq %ax, %rax"),
-            Type::Int => self.emit("    cltq"),
+            Type::Int | Type::Enum(_) => self.emit("    cltq"),
             Type::UInt => self.emit("    movl %eax, %eax"),
             Type::Long | Type::ULong => {}
             _ => {}

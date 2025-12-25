@@ -23,6 +23,8 @@ impl Parser {
             }
             if self.is_struct_definition() {
                 functions.push(self.parse_struct_definition()?);
+            } else if self.is_enum_definition() {
+                functions.push(self.parse_enum_definition()?);
             } else {
                 functions.push(self.parse_function()?);
             }
@@ -112,6 +114,15 @@ impl Parser {
                 self.advance();
                 Type::Struct(name)
             }
+            Token::Enum => {
+                self.advance();
+                let name = match self.current() {
+                    Token::Identifier(s) => s.clone(),
+                    _ => return Err(format!("Expected enum name, got {:?}", self.current())),
+                };
+                self.advance();
+                Type::Enum(name)
+            }
             _ => return Err(format!("Expected type, got {:?}", self.current())),
         };
 
@@ -169,7 +180,7 @@ impl Parser {
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
             Token::For => self.parse_for_loop(),
-            Token::Unsigned | Token::Int | Token::Char | Token::Short | Token::Long | Token::Struct => {
+            Token::Unsigned | Token::Int | Token::Char | Token::Short | Token::Long | Token::Struct | Token::Enum => {
                 self.parse_var_decl()
             }
             _ => {
@@ -840,6 +851,63 @@ impl Parser {
         Ok(AstNode::StructInit(values))
     }
 
+    fn parse_enum_definition(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Enum)?;
+        let name = match self.current() {
+            Token::Identifier(s) => s.clone(),
+            _ => return Err(format!("Expected enum name, got {:?}", self.current())),
+        };
+        self.advance();
+        self.expect(Token::OpenBrace)?;
+
+        let mut enumerators = Vec::new();
+        let mut next_value = 0i64;
+
+        while self.current() != &Token::CloseBrace {
+            let enumerator_name = match self.current() {
+                Token::Identifier(s) => s.clone(),
+                _ => return Err(format!("Expected enumerator name, got {:?}", self.current())),
+            };
+            self.advance();
+
+            let value = if self.current() == &Token::Equals {
+                self.advance();
+                match self.current() {
+                    Token::IntLiteral(n) => {
+                        let val = *n;
+                        self.advance();
+                        next_value = val + 1;
+                        Some(val)
+                    }
+                    _ => return Err("Enumerator value must be an integer literal".to_string()),
+                }
+            } else {
+                let val = next_value;
+                next_value += 1;
+                Some(val)
+            };
+
+            enumerators.push(Enumerator {
+                name: enumerator_name,
+                value,
+            });
+
+            if self.current() == &Token::Comma {
+                self.advance();
+                if self.current() == &Token::CloseBrace {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        self.expect(Token::CloseBrace)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(AstNode::EnumDef { name, enumerators })
+    }
+
     fn parse_sizeof(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Sizeof)?;
 
@@ -872,6 +940,12 @@ impl Parser {
             && matches!(self.peek(2), Some(Token::OpenBrace))
     }
 
+    fn is_enum_definition(&self) -> bool {
+        matches!(self.current(), Token::Enum)
+            && matches!(self.peek(1), Some(Token::Identifier(_)))
+            && matches!(self.peek(2), Some(Token::OpenBrace))
+    }
+
     fn is_type_start(&self, token: Option<&Token>) -> bool {
         matches!(
             token,
@@ -879,6 +953,7 @@ impl Parser {
                 | Some(Token::Int)
                 | Some(Token::Char)
                 | Some(Token::Struct)
+                | Some(Token::Enum)
                 | Some(Token::Short)
                 | Some(Token::Long)
         )

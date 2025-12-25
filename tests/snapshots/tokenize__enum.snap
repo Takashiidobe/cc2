@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "enum\nIdentifier(Color)\n{\nIdentifier(RED)\n,\nIdentifier(GREEN)\n,\nIdentifier(BLUE)\n}\n;\nenum\nIdentifier(Status)\n{\nIdentifier(OK)\n=\nIntLiteral(0)\n,\nIdentifier(ERROR)\n=\nIntLiteral(1)\n,\nIdentifier(PENDING)\n=\nIntLiteral(5)\n,\nIdentifier(DONE)\n}\n;\nint\nIdentifier(main)\n(\n)\n{\nenum\nIdentifier(Color)\nIdentifier(c)\n=\nIdentifier(RED)\n;\nenum\nIdentifier(Status)\nIdentifier(s)\n=\nIdentifier(PENDING)\n;\nint\nIdentifier(x)\n=\nIdentifier(GREEN)\n;\nint\nIdentifier(y)\n=\nIdentifier(DONE)\n;\nreturn\nIdentifier(c)\n+\nIdentifier(s)\n+\nIdentifier(x)\n+\nIdentifier(y)\n;\n}\nEOF\n"
+stderr: ""
+status: 0
