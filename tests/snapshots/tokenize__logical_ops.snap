@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(x)\n=\nIntLiteral(0)\n;\nif\n(\nIdentifier(x)\n||\nIntLiteral(1)\n)\n{\nreturn\nIntLiteral(42)\n;\n}\nreturn\nIntLiteral(0)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

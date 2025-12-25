@@ -103,6 +103,9 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<AstNode, String> {
         match self.current() {
             Token::Return => self.parse_return(),
+            Token::If => self.parse_if_statement(),
+            Token::While => self.parse_while_loop(),
+            Token::For => self.parse_for_loop(),
             Token::Int => self.parse_var_decl(),
             Token::Identifier(_) => {
                 let name = match self.current() {
@@ -152,6 +155,107 @@ impl Parser {
         })
     }
 
+    fn parse_if_statement(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::If)?;
+        self.expect(Token::OpenParen)?;
+        let condition = self.parse_expression()?;
+        self.expect(Token::CloseParen)?;
+
+        let then_branch = if self.current() == &Token::OpenBrace {
+            self.parse_block()?
+        } else {
+            self.parse_statement()?
+        };
+
+        let else_branch = if self.current() == &Token::Else {
+            self.advance();
+            if self.current() == &Token::OpenBrace {
+                Some(Box::new(self.parse_block()?))
+            } else {
+                Some(Box::new(self.parse_statement()?))
+            }
+        } else {
+            None
+        };
+
+        Ok(AstNode::IfStatement {
+            condition: Box::new(condition),
+            then_branch: Box::new(then_branch),
+            else_branch,
+        })
+    }
+
+    fn parse_while_loop(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::While)?;
+        self.expect(Token::OpenParen)?;
+        let condition = self.parse_expression()?;
+        self.expect(Token::CloseParen)?;
+
+        let body = if self.current() == &Token::OpenBrace {
+            self.parse_block()?
+        } else {
+            self.parse_statement()?
+        };
+
+        Ok(AstNode::WhileLoop {
+            condition: Box::new(condition),
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_for_loop(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::For)?;
+        self.expect(Token::OpenParen)?;
+
+        let init = if self.current() == &Token::Semicolon {
+            self.advance();
+            None
+        } else if self.current() == &Token::Int {
+            let decl = self.parse_var_decl()?;
+            Some(Box::new(decl))
+        } else {
+            return Err("For loop init must be a variable declaration or empty".to_string());
+        };
+
+        let condition = if self.current() == &Token::Semicolon {
+            None
+        } else {
+            Some(Box::new(self.parse_expression()?))
+        };
+        self.expect(Token::Semicolon)?;
+
+        let increment = if self.current() == &Token::CloseParen {
+            None
+        } else {
+            let name = match self.current() {
+                Token::Identifier(s) => s.clone(),
+                _ => return Err(format!("Expected identifier in for loop increment, got {:?}", self.current())),
+            };
+            self.advance();
+            self.expect(Token::Equals)?;
+            let value = self.parse_expression()?;
+            Some(Box::new(AstNode::Assignment {
+                name,
+                value: Box::new(value),
+            }))
+        };
+
+        self.expect(Token::CloseParen)?;
+
+        let body = if self.current() == &Token::OpenBrace {
+            self.parse_block()?
+        } else {
+            self.parse_statement()?
+        };
+
+        Ok(AstNode::ForLoop {
+            init,
+            condition,
+            increment,
+            body: Box::new(body),
+        })
+    }
+
     fn parse_return(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Return)?;
 
@@ -166,7 +270,83 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {
-        self.parse_additive()
+        self.parse_logical_or()
+    }
+
+    fn parse_logical_or(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_logical_and()?;
+
+        while self.current() == &Token::LogicalOr {
+            self.advance();
+            let right = self.parse_logical_and()?;
+            left = AstNode::BinaryOp {
+                op: BinOp::LogicalOr,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_logical_and(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_equality()?;
+
+        while self.current() == &Token::LogicalAnd {
+            self.advance();
+            let right = self.parse_equality()?;
+            left = AstNode::BinaryOp {
+                op: BinOp::LogicalAnd,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_equality(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_comparison()?;
+
+        while matches!(self.current(), Token::EqualEqual | Token::NotEqual) {
+            let op = match self.current() {
+                Token::EqualEqual => BinOp::EqualEqual,
+                Token::NotEqual => BinOp::NotEqual,
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_comparison()?;
+            left = AstNode::BinaryOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_comparison(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_additive()?;
+
+        while matches!(self.current(), Token::Less | Token::Greater | Token::LessEqual | Token::GreaterEqual) {
+            let op = match self.current() {
+                Token::Less => BinOp::Less,
+                Token::Greater => BinOp::Greater,
+                Token::LessEqual => BinOp::LessEqual,
+                Token::GreaterEqual => BinOp::GreaterEqual,
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_additive()?;
+            left = AstNode::BinaryOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
     }
 
     fn parse_additive(&mut self) -> Result<AstNode, String> {
@@ -191,7 +371,7 @@ impl Parser {
     }
 
     fn parse_multiplicative(&mut self) -> Result<AstNode, String> {
-        let mut left = self.parse_primary()?;
+        let mut left = self.parse_unary()?;
 
         while matches!(self.current(), Token::Star | Token::Slash) {
             let op = match self.current() {
@@ -200,7 +380,7 @@ impl Parser {
                 _ => unreachable!(),
             };
             self.advance();
-            let right = self.parse_primary()?;
+            let right = self.parse_unary()?;
             left = AstNode::BinaryOp {
                 op,
                 left: Box::new(left),
@@ -209,6 +389,28 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    fn parse_unary(&mut self) -> Result<AstNode, String> {
+        match self.current() {
+            Token::LogicalNot => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::UnaryOp {
+                    op: UnaryOp::LogicalNot,
+                    operand: Box::new(operand),
+                })
+            }
+            Token::Minus => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::UnaryOp {
+                    op: UnaryOp::Negate,
+                    operand: Box::new(operand),
+                })
+            }
+            _ => self.parse_primary(),
+        }
     }
 
     fn parse_primary(&mut self) -> Result<AstNode, String> {

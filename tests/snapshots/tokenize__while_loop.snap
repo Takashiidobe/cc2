@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(sum)\n=\nIntLiteral(0)\n;\nint\nIdentifier(i)\n=\nIntLiteral(1)\n;\nwhile\n(\nIdentifier(i)\n<=\nIntLiteral(5)\n)\n{\nIdentifier(sum)\n=\nIdentifier(sum)\n+\nIdentifier(i)\n;\nIdentifier(i)\n=\nIdentifier(i)\n+\nIntLiteral(1)\n;\n}\nreturn\nIdentifier(sum)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

@@ -5,6 +5,10 @@ pub enum Token {
     // Keywords
     Int,
     Return,
+    If,
+    Else,
+    While,
+    For,
 
     // Identifiers and literals
     Identifier(String),
@@ -25,6 +29,19 @@ pub enum Token {
     Slash,
     Equals,
 
+    // Comparison operators
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
+    EqualEqual,
+    NotEqual,
+
+    // Logical operators
+    LogicalAnd,
+    LogicalOr,
+    LogicalNot,
+
     // Special
     Eof,
 }
@@ -34,6 +51,10 @@ impl fmt::Display for Token {
         match self {
             Token::Int => write!(f, "int"),
             Token::Return => write!(f, "return"),
+            Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
+            Token::While => write!(f, "while"),
+            Token::For => write!(f, "for"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::OpenParen => write!(f, "("),
@@ -47,6 +68,15 @@ impl fmt::Display for Token {
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
             Token::Equals => write!(f, "="),
+            Token::Less => write!(f, "<"),
+            Token::Greater => write!(f, ">"),
+            Token::LessEqual => write!(f, "<="),
+            Token::GreaterEqual => write!(f, ">="),
+            Token::EqualEqual => write!(f, "=="),
+            Token::NotEqual => write!(f, "!="),
+            Token::LogicalAnd => write!(f, "&&"),
+            Token::LogicalOr => write!(f, "||"),
+            Token::LogicalNot => write!(f, "!"),
             Token::Eof => write!(f, "EOF"),
         }
     }
@@ -116,7 +146,57 @@ impl Lexer {
             }
             '=' => {
                 self.advance();
-                Ok(Token::Equals)
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::EqualEqual)
+                } else {
+                    Ok(Token::Equals)
+                }
+            }
+            '<' => {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::LessEqual)
+                } else {
+                    Ok(Token::Less)
+                }
+            }
+            '>' => {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::GreaterEqual)
+                } else {
+                    Ok(Token::Greater)
+                }
+            }
+            '!' => {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '=' {
+                    self.advance();
+                    Ok(Token::NotEqual)
+                } else {
+                    Ok(Token::LogicalNot)
+                }
+            }
+            '&' => {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '&' {
+                    self.advance();
+                    Ok(Token::LogicalAnd)
+                } else {
+                    Err(format!("Unexpected character: '&' (use && for logical AND)"))
+                }
+            }
+            '|' => {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '|' {
+                    self.advance();
+                    Ok(Token::LogicalOr)
+                } else {
+                    Err(format!("Unexpected character: '|' (use || for logical OR)"))
+                }
             }
             '+' => {
                 self.advance();
@@ -172,6 +252,10 @@ impl Lexer {
         let token = match ident.as_str() {
             "int" => Token::Int,
             "return" => Token::Return,
+            "if" => Token::If,
+            "else" => Token::Else,
+            "while" => Token::While,
+            "for" => Token::For,
             _ => Token::Identifier(ident),
         };
 
