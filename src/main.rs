@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use cc2::{Lexer, Parser, CodeGenerator};
+use cc2::{CodeGenerator, Lexer, Parser};
 
 #[derive(ClapParser, Debug)]
 #[command(name = "cc2")]
@@ -79,9 +79,17 @@ fn main() {
     });
 
     if let Err(e) = fs::write(&output_path, assembly) {
-        eprintln!("Error writing output file '{}': {}", output_path.display(), e);
+        eprintln!(
+            "Error writing output file '{}': {}",
+            output_path.display(),
+            e
+        );
         process::exit(1);
     }
 
-    println!("Compiled {} to {}", args.input.display(), output_path.display());
+    println!(
+        "Compiled {} to {}",
+        args.input.display(),
+        output_path.display()
+    );
 }

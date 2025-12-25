@@ -58,4 +58,29 @@ mod lexer_tests {
 
         assert_eq!(tokens[0], Token::Sizeof);
     }
+
+    #[test]
+    fn test_char_token() {
+        let mut lexer = Lexer::new("char");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::Char);
+    }
+
+    #[test]
+    fn test_unsigned_token() {
+        let mut lexer = Lexer::new("unsigned");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::Unsigned);
+    }
+
+    #[test]
+    fn test_short_long_tokens() {
+        let mut lexer = Lexer::new("short long");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::Short);
+        assert_eq!(tokens[1], Token::Long);
+    }
 }

@@ -60,11 +60,15 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::StructDef { .. } => Ok(()),
-            AstNode::Function { name, body, params, .. } => {
+            AstNode::Function {
+                name, body, params, ..
+            } => {
                 self.symbol_table = SymbolTable::new();
 
                 let param_regs_64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
                 let param_regs_32 = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"];
+                let param_regs_16 = ["%di", "%si", "%dx", "%cx", "%r8w", "%r9w"];
+                let param_regs_8 = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
                 for (i, param) in params.iter().enumerate() {
                     let param_size = self.type_size(&param.param_type)?;
                     let param_align = self.type_alignment(&param.param_type)?;
@@ -90,17 +94,25 @@ impl CodeGenerator {
                 for (i, param) in params.iter().enumerate() {
                     if i < param_regs_64.len() {
                         let symbol = self.symbol_table.get_variable(&param.name).unwrap();
-                        if matches!(param.param_type, Type::Int) {
+                        if matches!(param.param_type, Type::Int | Type::UInt) {
                             self.emit(&format!(
                                 "    movl {}, {}(%rbp)",
-                                param_regs_32[i],
-                                symbol.stack_offset
+                                param_regs_32[i], symbol.stack_offset
+                            ));
+                        } else if matches!(param.param_type, Type::UShort) {
+                            self.emit(&format!(
+                                "    movw {}, {}(%rbp)",
+                                param_regs_16[i], symbol.stack_offset
+                            ));
+                        } else if matches!(param.param_type, Type::Char | Type::UChar) {
+                            self.emit(&format!(
+                                "    movb {}, {}(%rbp)",
+                                param_regs_8[i], symbol.stack_offset
                             ));
                         } else {
                             self.emit(&format!(
                                 "    movq {}, {}(%rbp)",
-                                param_regs_64[i],
-                                symbol.stack_offset
+                                param_regs_64[i], symbol.stack_offset
                             ));
                         }
                     }
@@ -112,7 +124,7 @@ impl CodeGenerator {
                 self.output = saved_output;
 
                 // Now emit function with correct stack allocation
-                let stack_size = self.symbol_table.get_stack_size();
+                let stack_size = align_to(self.symbol_table.get_stack_size(), 16);
                 self.emit(&format!("    .globl {}", name));
                 self.emit(&format!("{}:", name));
                 self.emit("    pushq %rbp");
@@ -150,7 +162,11 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
-            AstNode::IfStatement { condition, then_branch, else_branch } => {
+            AstNode::IfStatement {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
                 let else_label = self.next_label();
                 let end_label = self.next_label();
 
@@ -190,7 +206,12 @@ impl CodeGenerator {
                 self.emit(&format!("{}:", end_label));
                 Ok(())
             }
-            AstNode::ForLoop { init, condition, increment, body } => {
+            AstNode::ForLoop {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
                 let start_label = self.next_label();
                 let end_label = self.next_label();
 
@@ -216,7 +237,11 @@ impl CodeGenerator {
                 self.emit(&format!("{}:", end_label));
                 Ok(())
             }
-            AstNode::VarDecl { name, var_type, init } => {
+            AstNode::VarDecl {
+                name,
+                var_type,
+                init,
+            } => {
                 let var_size = self.type_size(var_type)?;
                 let var_align = self.type_alignment(var_type)?;
                 let offset = self.symbol_table.add_variable_with_layout(
@@ -246,15 +271,21 @@ impl CodeGenerator {
                                 for (i, value) in values.iter().enumerate() {
                                     self.generate_node(value)?;
                                     let elem_offset = offset + (i as i32) * elem_size;
-                                    if matches!(elem_type, Type::Int) {
+                                    if matches!(elem_type, Type::Int | Type::UInt) {
                                         self.emit(&format!("    movl %eax, {}(%rbp)", elem_offset));
+                                    } else if matches!(elem_type, Type::UShort) {
+                                        self.emit(&format!("    movw %ax, {}(%rbp)", elem_offset));
+                                    } else if matches!(elem_type, Type::Char | Type::UChar) {
+                                        self.emit(&format!("    movb %al, {}(%rbp)", elem_offset));
                                     } else {
                                         self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
                                     }
                                 }
                             }
                             _ => {
-                                return Err("Array initializer must be a brace-enclosed list".to_string());
+                                return Err(
+                                    "Array initializer must be a brace-enclosed list".to_string()
+                                );
                             }
                         }
                     } else {
@@ -264,8 +295,12 @@ impl CodeGenerator {
                             }
                             _ => {
                                 self.generate_node(init_expr)?;
-                                if matches!(var_type, Type::Int) {
+                                if matches!(var_type, Type::Int | Type::UInt) {
                                     self.emit(&format!("    movl %eax, {}(%rbp)", offset));
+                                } else if matches!(var_type, Type::UShort) {
+                                    self.emit(&format!("    movw %ax, {}(%rbp)", offset));
+                                } else if matches!(var_type, Type::Char | Type::UChar) {
+                                    self.emit(&format!("    movb %al, {}(%rbp)", offset));
                                 } else {
                                     self.emit(&format!("    movq %rax, {}(%rbp)", offset));
                                 }
@@ -276,27 +311,43 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::Assignment { name, value } => {
-                let symbol = self.symbol_table.get_variable(name)
+                let symbol = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
                 let symbol_type = symbol.symbol_type.clone();
                 let stack_offset = symbol.stack_offset;
 
                 self.generate_node(value)?;
-                if matches!(symbol_type, Type::Int) {
+                if matches!(symbol_type, Type::Int | Type::UInt) {
                     self.emit(&format!("    movl %eax, {}(%rbp)", stack_offset));
+                } else if matches!(symbol_type, Type::UShort) {
+                    self.emit(&format!("    movw %ax, {}(%rbp)", stack_offset));
+                } else if matches!(symbol_type, Type::Char | Type::UChar) {
+                    self.emit(&format!("    movb %al, {}(%rbp)", stack_offset));
                 } else {
                     self.emit(&format!("    movq %rax, {}(%rbp)", stack_offset));
                 }
                 Ok(())
             }
             AstNode::Variable(name) => {
-                let symbol = self.symbol_table.get_variable(name)
+                let symbol = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
 
                 if symbol.symbol_type.is_array() || matches!(symbol.symbol_type, Type::Struct(_)) {
                     self.emit(&format!("    leaq {}(%rbp), %rax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::Int) {
                     self.emit(&format!("    movslq {}(%rbp), %rax", symbol.stack_offset));
+                } else if matches!(symbol.symbol_type, Type::UInt) {
+                    self.emit(&format!("    movl {}(%rbp), %eax", symbol.stack_offset));
+                } else if matches!(symbol.symbol_type, Type::UShort) {
+                    self.emit(&format!("    movzwq {}(%rbp), %rax", symbol.stack_offset));
+                } else if matches!(symbol.symbol_type, Type::Char) {
+                    self.emit(&format!("    movsbq {}(%rbp), %rax", symbol.stack_offset));
+                } else if matches!(symbol.symbol_type, Type::UChar) {
+                    self.emit(&format!("    movzbq {}(%rbp), %rax", symbol.stack_offset));
                 } else {
                     self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
                 }
@@ -370,6 +421,7 @@ impl CodeGenerator {
                     }
                     _ => {
                         let int_operands = self.are_int_operands(left, right);
+                        let unsigned_ops = self.uses_unsigned_ops(left, right);
                         self.generate_node(left)?;
                         self.emit("    pushq %rax");
                         self.generate_node(right)?;
@@ -378,8 +430,14 @@ impl CodeGenerator {
                         match op {
                             BinOp::Multiply => {
                                 if int_operands {
-                                    self.emit("    imull %ecx, %eax");
-                                    self.emit("    cltq");
+                                    if unsigned_ops {
+                                        self.emit("    mull %ecx");
+                                    } else {
+                                        self.emit("    imull %ecx, %eax");
+                                        self.emit("    cltq");
+                                    }
+                                } else if unsigned_ops {
+                                    self.emit("    mulq %rcx");
                                 } else {
                                     self.emit("    imulq %rcx, %rax");
                                 }
@@ -388,14 +446,24 @@ impl CodeGenerator {
                                 if int_operands {
                                     self.emit("    movl %eax, %ebx");
                                     self.emit("    movl %ecx, %eax");
-                                    self.emit("    cltd");
-                                    self.emit("    idivl %ebx");
-                                    self.emit("    cltq");
+                                    if unsigned_ops {
+                                        self.emit("    xorl %edx, %edx");
+                                        self.emit("    divl %ebx");
+                                    } else {
+                                        self.emit("    cltd");
+                                        self.emit("    idivl %ebx");
+                                        self.emit("    cltq");
+                                    }
                                 } else {
                                     self.emit("    movq %rax, %rbx");
                                     self.emit("    movq %rcx, %rax");
-                                    self.emit("    cqto");
-                                    self.emit("    idivq %rbx");
+                                    if unsigned_ops {
+                                        self.emit("    xorq %rdx, %rdx");
+                                        self.emit("    divq %rbx");
+                                    } else {
+                                        self.emit("    cqto");
+                                        self.emit("    idivq %rbx");
+                                    }
                                 }
                             }
                             BinOp::Less => {
@@ -404,7 +472,11 @@ impl CodeGenerator {
                                 } else {
                                     self.emit("    cmpq %rax, %rcx");
                                 }
-                                self.emit("    setl %al");
+                                if unsigned_ops {
+                                    self.emit("    setb %al");
+                                } else {
+                                    self.emit("    setl %al");
+                                }
                                 self.emit("    movzbq %al, %rax");
                             }
                             BinOp::Greater => {
@@ -413,7 +485,11 @@ impl CodeGenerator {
                                 } else {
                                     self.emit("    cmpq %rax, %rcx");
                                 }
-                                self.emit("    setg %al");
+                                if unsigned_ops {
+                                    self.emit("    seta %al");
+                                } else {
+                                    self.emit("    setg %al");
+                                }
                                 self.emit("    movzbq %al, %rax");
                             }
                             BinOp::LessEqual => {
@@ -422,7 +498,11 @@ impl CodeGenerator {
                                 } else {
                                     self.emit("    cmpq %rax, %rcx");
                                 }
-                                self.emit("    setle %al");
+                                if unsigned_ops {
+                                    self.emit("    setbe %al");
+                                } else {
+                                    self.emit("    setle %al");
+                                }
                                 self.emit("    movzbq %al, %rax");
                             }
                             BinOp::GreaterEqual => {
@@ -431,7 +511,11 @@ impl CodeGenerator {
                                 } else {
                                     self.emit("    cmpq %rax, %rcx");
                                 }
-                                self.emit("    setge %al");
+                                if unsigned_ops {
+                                    self.emit("    setae %al");
+                                } else {
+                                    self.emit("    setge %al");
+                                }
                                 self.emit("    movzbq %al, %rax");
                             }
                             BinOp::EqualEqual => {
@@ -452,7 +536,9 @@ impl CodeGenerator {
                                 self.emit("    setne %al");
                                 self.emit("    movzbq %al, %rax");
                             }
-                            BinOp::Add | BinOp::Subtract | BinOp::LogicalAnd | BinOp::LogicalOr => unreachable!(),
+                            BinOp::Add | BinOp::Subtract | BinOp::LogicalAnd | BinOp::LogicalOr => {
+                                unreachable!()
+                            }
                         }
                     }
                 }
@@ -485,6 +571,14 @@ impl CodeGenerator {
                 };
                 if matches!(pointee_type, Type::Int) {
                     self.emit("    movslq (%rax), %rax");
+                } else if matches!(pointee_type, Type::UInt) {
+                    self.emit("    movl (%rax), %eax");
+                } else if matches!(pointee_type, Type::UShort) {
+                    self.emit("    movzwq (%rax), %rax");
+                } else if matches!(pointee_type, Type::Char) {
+                    self.emit("    movsbq (%rax), %rax");
+                } else if matches!(pointee_type, Type::UChar) {
+                    self.emit("    movzbq (%rax), %rax");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -495,6 +589,14 @@ impl CodeGenerator {
                 self.generate_array_index_address(array, index)?;
                 if matches!(elem_type, Type::Int) {
                     self.emit("    movslq (%rax), %rax");
+                } else if matches!(elem_type, Type::UInt) {
+                    self.emit("    movl (%rax), %eax");
+                } else if matches!(elem_type, Type::UShort) {
+                    self.emit("    movzwq (%rax), %rax");
+                } else if matches!(elem_type, Type::Char) {
+                    self.emit("    movsbq (%rax), %rax");
+                } else if matches!(elem_type, Type::UChar) {
+                    self.emit("    movzbq (%rax), %rax");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -502,11 +604,23 @@ impl CodeGenerator {
             }
             AstNode::ArrayInit(_) => Err("Array initializer codegen not implemented".to_string()),
             AstNode::StructInit(_) => Err("Struct initializer codegen not implemented".to_string()),
-            AstNode::MemberAccess { base, member, through_pointer } => {
+            AstNode::MemberAccess {
+                base,
+                member,
+                through_pointer,
+            } => {
                 let field_type = self.member_access_type(base, member, *through_pointer)?;
                 self.generate_member_access_address(base, member, *through_pointer)?;
                 if matches!(field_type, Type::Int) {
                     self.emit("    movslq (%rax), %rax");
+                } else if matches!(field_type, Type::UInt) {
+                    self.emit("    movl (%rax), %eax");
+                } else if matches!(field_type, Type::UShort) {
+                    self.emit("    movzwq (%rax), %rax");
+                } else if matches!(field_type, Type::Char) {
+                    self.emit("    movsbq (%rax), %rax");
+                } else if matches!(field_type, Type::UChar) {
+                    self.emit("    movzbq (%rax), %rax");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -534,7 +648,9 @@ impl CodeGenerator {
     fn generate_lvalue(&mut self, node: &AstNode) -> Result<(), String> {
         match node {
             AstNode::Variable(name) => {
-                let offset = self.symbol_table.get_variable(name)
+                let offset = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?
                     .stack_offset;
                 self.emit(&format!("    leaq {}(%rbp), %rax", offset));
@@ -548,7 +664,11 @@ impl CodeGenerator {
                 self.generate_array_index_address(array, index)?;
                 Ok(())
             }
-            AstNode::MemberAccess { base, member, through_pointer } => {
+            AstNode::MemberAccess {
+                base,
+                member,
+                through_pointer,
+            } => {
                 self.generate_member_access_address(base, member, *through_pointer)?;
                 Ok(())
             }
@@ -583,9 +703,13 @@ impl CodeGenerator {
         through_pointer: bool,
     ) -> Result<(), String> {
         let (struct_name, is_address) = self.resolve_struct_base(base, through_pointer)?;
-        let layout = self.struct_layouts.get(&struct_name)
+        let layout = self
+            .struct_layouts
+            .get(&struct_name)
             .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?;
-        let field = layout.fields.get(member)
+        let field = layout
+            .fields
+            .get(member)
             .ok_or_else(|| format!("Unknown field '{}' on struct {}", member, struct_name))?;
 
         if is_address {
@@ -600,6 +724,7 @@ impl CodeGenerator {
         let left_elem = self.pointer_elem_size(left)?;
         let right_elem = self.pointer_elem_size(right)?;
         let int_operands = self.are_int_operands(left, right);
+        let unsigned_ops = self.uses_unsigned_ops(left, right);
         if left_elem.is_some() && right_elem.is_some() {
             return Err("Cannot add two pointers".to_string());
         }
@@ -617,7 +742,9 @@ impl CodeGenerator {
             self.emit("    addq %rcx, %rax");
         } else if int_operands {
             self.emit("    addl %ecx, %eax");
-            self.emit("    cltq");
+            if !unsigned_ops {
+                self.emit("    cltq");
+            }
         } else {
             self.emit("    addq %rcx, %rax");
         }
@@ -629,6 +756,7 @@ impl CodeGenerator {
         let left_elem = self.pointer_elem_size(left)?;
         let right_elem = self.pointer_elem_size(right)?;
         let int_operands = self.are_int_operands(left, right);
+        let unsigned_ops = self.uses_unsigned_ops(left, right);
 
         if let (Some(left_size), Some(right_size)) = (left_elem, right_elem) {
             if left_size != right_size {
@@ -664,7 +792,9 @@ impl CodeGenerator {
         } else if int_operands {
             self.emit("    subl %eax, %ecx");
             self.emit("    movl %ecx, %eax");
-            self.emit("    cltq");
+            if !unsigned_ops {
+                self.emit("    cltq");
+            }
         } else {
             self.emit("    subq %rax, %rcx");
             self.emit("    movq %rcx, %rax");
@@ -676,7 +806,9 @@ impl CodeGenerator {
     fn pointer_elem_size(&self, node: &AstNode) -> Result<Option<i32>, String> {
         match node {
             AstNode::Variable(name) => {
-                let symbol = self.symbol_table.get_variable(name)
+                let symbol = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
                 self.element_size_from_type(&symbol.symbol_type)
             }
@@ -686,8 +818,61 @@ impl CodeGenerator {
 
     fn are_int_operands(&self, left: &AstNode, right: &AstNode) -> bool {
         match (self.expr_type(left), self.expr_type(right)) {
-            (Ok(Type::Int), Ok(Type::Int)) => true,
+            (Ok(left_ty), Ok(right_ty))
+                if self.is_integer_type(&left_ty) && self.is_integer_type(&right_ty) =>
+            {
+                matches!(
+                    self.binary_integer_type(&left_ty, &right_ty),
+                    Ok(Type::Int | Type::UInt)
+                )
+            }
             _ => false,
+        }
+    }
+
+    fn uses_unsigned_ops(&self, left: &AstNode, right: &AstNode) -> bool {
+        match (self.expr_type(left), self.expr_type(right)) {
+            (Ok(left_ty), Ok(right_ty))
+                if self.is_integer_type(&left_ty) && self.is_integer_type(&right_ty) =>
+            {
+                matches!(
+                    self.binary_integer_type(&left_ty, &right_ty),
+                    Ok(Type::UInt | Type::ULong)
+                )
+            }
+            _ => false,
+        }
+    }
+
+    fn is_integer_type(&self, ty: &Type) -> bool {
+        matches!(
+            ty,
+            Type::Int | Type::UInt | Type::Char | Type::UChar | Type::UShort | Type::ULong
+        )
+    }
+
+    fn promote_integer_type(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Char | Type::UChar | Type::UShort => Type::Int,
+            Type::Int => Type::Int,
+            Type::UInt => Type::UInt,
+            Type::ULong => Type::ULong,
+            _ => ty.clone(),
+        }
+    }
+
+    fn binary_integer_type(&self, left: &Type, right: &Type) -> Result<Type, String> {
+        if !self.is_integer_type(left) || !self.is_integer_type(right) {
+            return Err("Expected integer types".to_string());
+        }
+        let left = self.promote_integer_type(left);
+        let right = self.promote_integer_type(right);
+        if matches!(left, Type::ULong) || matches!(right, Type::ULong) {
+            Ok(Type::ULong)
+        } else if matches!(left, Type::UInt) || matches!(right, Type::UInt) {
+            Ok(Type::UInt)
+        } else {
+            Ok(Type::Int)
         }
     }
 
@@ -700,10 +885,14 @@ impl CodeGenerator {
     fn array_element_size(&self, array: &AstNode) -> Result<i32, String> {
         match array {
             AstNode::Variable(name) => {
-                let symbol = self.symbol_table.get_variable(name)
+                let symbol = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
                 self.element_size_from_type(&symbol.symbol_type)?
-                    .ok_or_else(|| "Array indexing requires array or pointer element type".to_string())
+                    .ok_or_else(|| {
+                        "Array indexing requires array or pointer element type".to_string()
+                    })
             }
             _ => Err("Array indexing only supports array or pointer variables".to_string()),
         }
@@ -720,7 +909,9 @@ impl CodeGenerator {
     fn array_element_type(&self, array: &AstNode) -> Result<Type, String> {
         match array {
             AstNode::Variable(name) => {
-                let symbol = self.symbol_table.get_variable(name)
+                let symbol = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
                 self.array_element_type_from_type(&symbol.symbol_type)
             }
@@ -739,11 +930,18 @@ impl CodeGenerator {
     fn type_size(&self, ty: &Type) -> Result<i32, String> {
         match ty {
             Type::Int => Ok(4),
+            Type::UInt => Ok(4),
+            Type::Char => Ok(1),
+            Type::UChar => Ok(1),
+            Type::UShort => Ok(2),
+            Type::ULong => Ok(8),
             Type::Pointer(_) => Ok(8),
             Type::Void => Ok(0),
             Type::Array(elem, len) => Ok(self.type_size(elem)? * (*len as i32)),
             Type::Struct(name) => {
-                let layout = self.struct_layouts.get(name)
+                let layout = self
+                    .struct_layouts
+                    .get(name)
                     .ok_or_else(|| format!("Unknown struct type: {}", name))?;
                 Ok(layout.size)
             }
@@ -753,22 +951,25 @@ impl CodeGenerator {
     fn type_alignment(&self, ty: &Type) -> Result<i32, String> {
         match ty {
             Type::Int => Ok(4),
+            Type::UInt => Ok(4),
+            Type::Char => Ok(1),
+            Type::UChar => Ok(1),
+            Type::UShort => Ok(2),
+            Type::ULong => Ok(8),
             Type::Pointer(_) => Ok(8),
             Type::Void => Ok(1),
             Type::Array(elem, _) => self.type_alignment(elem),
             Type::Struct(name) => {
-                let layout = self.struct_layouts.get(name)
+                let layout = self
+                    .struct_layouts
+                    .get(name)
                     .ok_or_else(|| format!("Unknown struct type: {}", name))?;
                 Ok(layout.alignment)
             }
         }
     }
 
-    fn register_struct_layout(
-        &mut self,
-        name: &str,
-        fields: &[StructField],
-    ) -> Result<(), String> {
+    fn register_struct_layout(&mut self, name: &str, fields: &[StructField]) -> Result<(), String> {
         if self.struct_layouts.contains_key(name) {
             return Err(format!("Struct '{}' already defined", name));
         }
@@ -813,7 +1014,9 @@ impl CodeGenerator {
         values: &[AstNode],
         base_offset: i32,
     ) -> Result<(), String> {
-        let layout = self.struct_layouts.get(struct_name)
+        let layout = self
+            .struct_layouts
+            .get(struct_name)
             .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?;
         let field_count = layout.fields.len();
         if values.len() > field_count {
@@ -831,10 +1034,22 @@ impl CodeGenerator {
             self.generate_node(value)?;
             let field = &ordered_fields[i];
             let dest_offset = base_offset + field.offset;
-            if matches!(field.field_type, Type::Int) {
-                self.emit(&format!("    movl %eax, {}(%rbp)", dest_offset));
-            } else {
-                self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+            match field.field_type {
+                Type::Char | Type::UChar => {
+                    self.emit(&format!("    movb %al, {}(%rbp)", dest_offset));
+                }
+                Type::UShort => {
+                    self.emit(&format!("    movw %ax, {}(%rbp)", dest_offset));
+                }
+                Type::Int | Type::UInt => {
+                    self.emit(&format!("    movl %eax, {}(%rbp)", dest_offset));
+                }
+                Type::ULong => {
+                    self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+                }
+                _ => {
+                    self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+                }
             }
         }
 
@@ -859,7 +1074,9 @@ impl CodeGenerator {
     ) -> Result<(String, bool), String> {
         match base {
             AstNode::Variable(name) => {
-                let symbol_type = self.symbol_table.get_variable(name)
+                let symbol_type = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?
                     .symbol_type
                     .clone();
@@ -897,9 +1114,13 @@ impl CodeGenerator {
             },
             _ => return Err("Member access base is not a struct".to_string()),
         };
-        let layout = self.struct_layouts.get(&struct_name)
+        let layout = self
+            .struct_layouts
+            .get(&struct_name)
             .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?;
-        let field = layout.fields.get(member)
+        let field = layout
+            .fields
+            .get(member)
             .ok_or_else(|| format!("Unknown field '{}' on struct {}", member, struct_name))?;
         Ok(field.field_type.clone())
     }
@@ -908,7 +1129,9 @@ impl CodeGenerator {
         match expr {
             AstNode::IntLiteral(_) => Ok(Type::Int),
             AstNode::Variable(name) => {
-                let symbol = self.symbol_table.get_variable(name)
+                let symbol = self
+                    .symbol_table
+                    .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
                 Ok(symbol.symbol_type.clone())
             }
@@ -931,24 +1154,48 @@ impl CodeGenerator {
                     _ => Err("Cannot index non-array type".to_string()),
                 }
             }
-            AstNode::MemberAccess { base, member, through_pointer } => {
-                self.member_access_type(base, member, *through_pointer)
-            }
+            AstNode::MemberAccess {
+                base,
+                member,
+                through_pointer,
+            } => self.member_access_type(base, member, *through_pointer),
             AstNode::BinaryOp { op, left, right } => {
                 let left_type = self.expr_type(left)?;
                 let right_type = self.expr_type(right)?;
+                let integer_type =
+                    if self.is_integer_type(&left_type) && self.is_integer_type(&right_type) {
+                        Some(self.binary_integer_type(&left_type, &right_type)?)
+                    } else {
+                        None
+                    };
                 match op {
-                    BinOp::Add => match (left_type, right_type) {
+                    BinOp::Add => match (left_type.clone(), right_type.clone()) {
                         (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee)),
                         (Type::Int, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Int, Type::Int) => Ok(Type::Int),
-                        _ => Err("Invalid operands for pointer addition".to_string()),
+                        (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee)),
+                        (Type::UInt, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::UShort) => Ok(Type::Pointer(pointee)),
+                        (Type::UShort, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
+                        (Type::UChar, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
+                        (Type::Char, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
+                        (Type::ULong, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                        _ => integer_type
+                            .clone()
+                            .ok_or_else(|| "Invalid operands for pointer addition".to_string()),
                     },
                     BinOp::Subtract => match (left_type, right_type) {
                         (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::UShort) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
+                        (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
                         (Type::Pointer(_), Type::Pointer(_)) => Ok(Type::Int),
-                        (Type::Int, Type::Int) => Ok(Type::Int),
-                        _ => Err("Invalid operands for pointer subtraction".to_string()),
+                        _ => integer_type
+                            .ok_or_else(|| "Invalid operands for pointer subtraction".to_string()),
                     },
                     _ => Ok(Type::Int),
                 }

@@ -5,16 +5,14 @@ mod codegen_tests {
 
     #[test]
     fn test_generate_return() {
-        let ast = AstNode::Program(vec![
-            AstNode::Function {
-                name: "main".to_string(),
-                return_type: Type::Int,
-                params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::Return(Some(Box::new(AstNode::IntLiteral(42)))),
-                ])),
-            },
-        ]);
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
+                AstNode::IntLiteral(42),
+            )))])),
+        }]);
 
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
@@ -27,20 +25,18 @@ mod codegen_tests {
 
     #[test]
     fn test_generate_addition() {
-        let ast = AstNode::Program(vec![
-            AstNode::Function {
-                name: "main".to_string(),
-                return_type: Type::Int,
-                params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::Return(Some(Box::new(AstNode::BinaryOp {
-                        op: BinOp::Add,
-                        left: Box::new(AstNode::IntLiteral(2)),
-                        right: Box::new(AstNode::IntLiteral(3)),
-                    }))),
-                ])),
-            },
-        ]);
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
+                AstNode::BinaryOp {
+                    op: BinOp::Add,
+                    left: Box::new(AstNode::IntLiteral(2)),
+                    right: Box::new(AstNode::IntLiteral(3)),
+                },
+            )))])),
+        }]);
 
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
@@ -50,20 +46,18 @@ mod codegen_tests {
 
     #[test]
     fn test_generate_multiplication() {
-        let ast = AstNode::Program(vec![
-            AstNode::Function {
-                name: "main".to_string(),
-                return_type: Type::Int,
-                params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::Return(Some(Box::new(AstNode::BinaryOp {
-                        op: BinOp::Multiply,
-                        left: Box::new(AstNode::IntLiteral(3)),
-                        right: Box::new(AstNode::IntLiteral(4)),
-                    }))),
-                ])),
-            },
-        ]);
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
+                AstNode::BinaryOp {
+                    op: BinOp::Multiply,
+                    left: Box::new(AstNode::IntLiteral(3)),
+                    right: Box::new(AstNode::IntLiteral(4)),
+                },
+            )))])),
+        }]);
 
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
@@ -73,30 +67,28 @@ mod codegen_tests {
 
     #[test]
     fn test_generate_address_of_and_dereference() {
-        let ast = AstNode::Program(vec![
-            AstNode::Function {
-                name: "main".to_string(),
-                return_type: Type::Int,
-                params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::VarDecl {
-                        name: "x".to_string(),
-                        var_type: Type::Int,
-                        init: Some(Box::new(AstNode::IntLiteral(5))),
-                    },
-                    AstNode::VarDecl {
-                        name: "p".to_string(),
-                        var_type: Type::Pointer(Box::new(Type::Int)),
-                        init: Some(Box::new(AstNode::AddressOf(Box::new(
-                            AstNode::Variable("x".to_string()),
-                        )))),
-                    },
-                    AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
-                        AstNode::Variable("p".to_string()),
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "x".to_string(),
+                    var_type: Type::Int,
+                    init: Some(Box::new(AstNode::IntLiteral(5))),
+                },
+                AstNode::VarDecl {
+                    name: "p".to_string(),
+                    var_type: Type::Pointer(Box::new(Type::Int)),
+                    init: Some(Box::new(AstNode::AddressOf(Box::new(AstNode::Variable(
+                        "x".to_string(),
                     ))))),
-                ])),
-            },
-        ]);
+                },
+                AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
+                    AstNode::Variable("p".to_string()),
+                ))))),
+            ])),
+        }]);
 
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
@@ -107,28 +99,26 @@ mod codegen_tests {
 
     #[test]
     fn test_generate_array_init_and_index() {
-        let ast = AstNode::Program(vec![
-            AstNode::Function {
-                name: "main".to_string(),
-                return_type: Type::Int,
-                params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::VarDecl {
-                        name: "a".to_string(),
-                        var_type: Type::Array(Box::new(Type::Int), 3),
-                        init: Some(Box::new(AstNode::ArrayInit(vec![
-                            AstNode::IntLiteral(1),
-                            AstNode::IntLiteral(2),
-                            AstNode::IntLiteral(3),
-                        ]))),
-                    },
-                    AstNode::Return(Some(Box::new(AstNode::ArrayIndex {
-                        array: Box::new(AstNode::Variable("a".to_string())),
-                        index: Box::new(AstNode::IntLiteral(1)),
-                    }))),
-                ])),
-            },
-        ]);
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "a".to_string(),
+                    var_type: Type::Array(Box::new(Type::Int), 3),
+                    init: Some(Box::new(AstNode::ArrayInit(vec![
+                        AstNode::IntLiteral(1),
+                        AstNode::IntLiteral(2),
+                        AstNode::IntLiteral(3),
+                    ]))),
+                },
+                AstNode::Return(Some(Box::new(AstNode::ArrayIndex {
+                    array: Box::new(AstNode::Variable("a".to_string())),
+                    index: Box::new(AstNode::IntLiteral(1)),
+                }))),
+            ])),
+        }]);
 
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
@@ -139,34 +129,32 @@ mod codegen_tests {
 
     #[test]
     fn test_generate_pointer_addition() {
-        let ast = AstNode::Program(vec![
-            AstNode::Function {
-                name: "main".to_string(),
-                return_type: Type::Int,
-                params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::VarDecl {
-                        name: "x".to_string(),
-                        var_type: Type::Int,
-                        init: Some(Box::new(AstNode::IntLiteral(0))),
-                    },
-                    AstNode::VarDecl {
-                        name: "p".to_string(),
-                        var_type: Type::Pointer(Box::new(Type::Int)),
-                        init: Some(Box::new(AstNode::AddressOf(Box::new(
-                            AstNode::Variable("x".to_string()),
-                        )))),
-                    },
-                    AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
-                        AstNode::BinaryOp {
-                            op: BinOp::Add,
-                            left: Box::new(AstNode::Variable("p".to_string())),
-                            right: Box::new(AstNode::IntLiteral(2)),
-                        },
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "x".to_string(),
+                    var_type: Type::Int,
+                    init: Some(Box::new(AstNode::IntLiteral(0))),
+                },
+                AstNode::VarDecl {
+                    name: "p".to_string(),
+                    var_type: Type::Pointer(Box::new(Type::Int)),
+                    init: Some(Box::new(AstNode::AddressOf(Box::new(AstNode::Variable(
+                        "x".to_string(),
                     ))))),
-                ])),
-            },
-        ]);
+                },
+                AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
+                    AstNode::BinaryOp {
+                        op: BinOp::Add,
+                        left: Box::new(AstNode::Variable("p".to_string())),
+                        right: Box::new(AstNode::IntLiteral(2)),
+                    },
+                ))))),
+            ])),
+        }]);
 
         let mut codegen = CodeGenerator::new();
         let asm = codegen.generate(&ast).unwrap();
@@ -195,11 +183,9 @@ mod codegen_tests {
                 name: "main".to_string(),
                 return_type: Type::Int,
                 params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::Return(Some(Box::new(AstNode::SizeOfType(Type::Struct(
-                        "Point".to_string(),
-                    ))))),
-                ])),
+                body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
+                    AstNode::SizeOfType(Type::Struct("Point".to_string())),
+                )))])),
             },
         ]);
 
@@ -229,11 +215,9 @@ mod codegen_tests {
                 name: "main".to_string(),
                 return_type: Type::Int,
                 params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::Return(Some(Box::new(AstNode::SizeOfType(Type::Struct(
-                        "Mix".to_string(),
-                    ))))),
-                ])),
+                body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
+                    AstNode::SizeOfType(Type::Struct("Mix".to_string())),
+                )))])),
             },
         ]);
 
@@ -241,5 +225,98 @@ mod codegen_tests {
         let asm = codegen.generate(&ast).unwrap();
 
         assert!(asm.contains("movq $16, %rax"));
+    }
+
+    #[test]
+    fn test_generate_char_load_store() {
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "c".to_string(),
+                    var_type: Type::Char,
+                    init: Some(Box::new(AstNode::IntLiteral(1))),
+                },
+                AstNode::Return(Some(Box::new(AstNode::Variable("c".to_string())))),
+            ])),
+        }]);
+
+        let mut codegen = CodeGenerator::new();
+        let asm = codegen.generate(&ast).unwrap();
+
+        assert!(asm.contains("movb %al"));
+        assert!(asm.contains("movsbq"));
+    }
+
+    #[test]
+    fn test_generate_unsigned_int_load() {
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "u".to_string(),
+                    var_type: Type::UInt,
+                    init: Some(Box::new(AstNode::IntLiteral(1))),
+                },
+                AstNode::Return(Some(Box::new(AstNode::Variable("u".to_string())))),
+            ])),
+        }]);
+
+        let mut codegen = CodeGenerator::new();
+        let asm = codegen.generate(&ast).unwrap();
+
+        assert!(asm.contains("movl %eax"));
+        assert!(asm.contains("movl "));
+        assert!(!asm.contains("movslq"));
+    }
+
+    #[test]
+    fn test_generate_unsigned_short_load() {
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "s".to_string(),
+                    var_type: Type::UShort,
+                    init: Some(Box::new(AstNode::IntLiteral(2))),
+                },
+                AstNode::Return(Some(Box::new(AstNode::Variable("s".to_string())))),
+            ])),
+        }]);
+
+        let mut codegen = CodeGenerator::new();
+        let asm = codegen.generate(&ast).unwrap();
+
+        assert!(asm.contains("movw %ax"));
+        assert!(asm.contains("movzwq"));
+    }
+
+    #[test]
+    fn test_generate_unsigned_long_load() {
+        let ast = AstNode::Program(vec![AstNode::Function {
+            name: "main".to_string(),
+            return_type: Type::Int,
+            params: vec![],
+            body: Box::new(AstNode::Block(vec![
+                AstNode::VarDecl {
+                    name: "l".to_string(),
+                    var_type: Type::ULong,
+                    init: Some(Box::new(AstNode::IntLiteral(3))),
+                },
+                AstNode::Return(Some(Box::new(AstNode::Variable("l".to_string())))),
+            ])),
+        }]);
+
+        let mut codegen = CodeGenerator::new();
+        let asm = codegen.generate(&ast).unwrap();
+
+        assert!(asm.contains("movq %rax"));
+        assert!(asm.contains("movq "));
     }
 }

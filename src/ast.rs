@@ -108,6 +108,11 @@ pub struct StructField {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
+    UInt,
+    Char,
+    UChar,
+    UShort,
+    ULong,
     Void,
     Pointer(Box<Type>),
     Array(Box<Type>, usize),
@@ -118,6 +123,11 @@ impl Type {
     pub fn size(&self) -> i32 {
         match self {
             Type::Int => 4,
+            Type::UInt => 4,
+            Type::Char => 1,
+            Type::UChar => 1,
+            Type::UShort => 2,
+            Type::ULong => 8,
             Type::Pointer(_) => 8,
             Type::Array(elem, len) => elem.size() * (*len as i32),
             Type::Void | Type::Struct(_) => 0,

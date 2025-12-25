@@ -56,9 +56,38 @@ impl Parser {
 
     fn parse_type(&mut self) -> Result<Type, String> {
         let mut ty = match self.current() {
+            Token::Unsigned => {
+                self.advance();
+                match self.current() {
+                    Token::Char => {
+                        self.advance();
+                        Type::UChar
+                    }
+                    Token::Short => {
+                        self.advance();
+                        Type::UShort
+                    }
+                    Token::Long => {
+                        self.advance();
+                        if self.current() == &Token::Int {
+                            self.advance();
+                        }
+                        Type::ULong
+                    }
+                    Token::Int => {
+                        self.advance();
+                        Type::UInt
+                    }
+                    _ => Type::UInt,
+                }
+            }
             Token::Int => {
                 self.advance();
                 Type::Int
+            }
+            Token::Char => {
+                self.advance();
+                Type::Char
             }
             Token::Struct => {
                 self.advance();
@@ -126,7 +155,7 @@ impl Parser {
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
             Token::For => self.parse_for_loop(),
-            Token::Int | Token::Struct => self.parse_var_decl(),
+            Token::Unsigned | Token::Int | Token::Char | Token::Struct => self.parse_var_decl(),
             Token::Identifier(_) => {
                 let name = match self.current() {
                     Token::Identifier(s) => s.clone(),
@@ -143,10 +172,16 @@ impl Parser {
                         value: Box::new(value),
                     })
                 } else {
-                    Err(format!("Expected '=' after identifier in statement, got {:?}", self.current()))
+                    Err(format!(
+                        "Expected '=' after identifier in statement, got {:?}",
+                        self.current()
+                    ))
                 }
             }
-            _ => Err(format!("Unexpected token in statement: {:?}", self.current())),
+            _ => Err(format!(
+                "Unexpected token in statement: {:?}",
+                self.current()
+            )),
         }
     }
 
@@ -259,7 +294,12 @@ impl Parser {
         } else {
             let name = match self.current() {
                 Token::Identifier(s) => s.clone(),
-                _ => return Err(format!("Expected identifier in for loop increment, got {:?}", self.current())),
+                _ => {
+                    return Err(format!(
+                        "Expected identifier in for loop increment, got {:?}",
+                        self.current()
+                    ));
+                }
             };
             self.advance();
             self.expect(Token::Equals)?;
@@ -359,7 +399,10 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<AstNode, String> {
         let mut left = self.parse_additive()?;
 
-        while matches!(self.current(), Token::Less | Token::Greater | Token::LessEqual | Token::GreaterEqual) {
+        while matches!(
+            self.current(),
+            Token::Less | Token::Greater | Token::LessEqual | Token::GreaterEqual
+        ) {
             let op = match self.current() {
                 Token::Less => BinOp::Less,
                 Token::Greater => BinOp::Greater,
@@ -685,7 +728,15 @@ impl Parser {
     }
 
     fn is_type_start(&self, token: Option<&Token>) -> bool {
-        matches!(token, Some(Token::Int) | Some(Token::Struct))
+        matches!(
+            token,
+            Some(Token::Unsigned)
+                | Some(Token::Int)
+                | Some(Token::Char)
+                | Some(Token::Struct)
+                | Some(Token::Short)
+                | Some(Token::Long)
+        )
     }
 
     fn peek(&self, offset: usize) -> Option<&Token> {

@@ -36,7 +36,10 @@ impl SymbolTable {
         align: i32,
     ) -> Result<i32, String> {
         if self.symbols.contains_key(&name) {
-            return Err(format!("Variable '{}' already declared in this scope", name));
+            return Err(format!(
+                "Variable '{}' already declared in this scope",
+                name
+            ));
         }
 
         let size = size.max(0);

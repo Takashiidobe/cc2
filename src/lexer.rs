@@ -11,6 +11,10 @@ pub enum Token {
     For,
     Struct,
     Sizeof,
+    Char,
+    Unsigned,
+    Short,
+    Long,
 
     // Identifiers and literals
     Identifier(String),
@@ -64,6 +68,10 @@ impl fmt::Display for Token {
             Token::For => write!(f, "for"),
             Token::Struct => write!(f, "struct"),
             Token::Sizeof => write!(f, "sizeof"),
+            Token::Char => write!(f, "char"),
+            Token::Unsigned => write!(f, "unsigned"),
+            Token::Short => write!(f, "short"),
+            Token::Long => write!(f, "long"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::OpenParen => write!(f, "("),
@@ -263,7 +271,8 @@ impl Lexer {
             self.advance();
         }
         let num_str: String = self.input[start..self.position].iter().collect();
-        let num = num_str.parse::<i64>()
+        let num = num_str
+            .parse::<i64>()
             .map_err(|_| format!("Invalid number: {}", num_str))?;
         Ok(Token::IntLiteral(num))
     }
@@ -289,6 +298,10 @@ impl Lexer {
             "for" => Token::For,
             "struct" => Token::Struct,
             "sizeof" => Token::Sizeof,
+            "char" => Token::Char,
+            "unsigned" => Token::Unsigned,
+            "short" => Token::Short,
+            "long" => Token::Long,
             _ => Token::Identifier(ident),
         };
 
