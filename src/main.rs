@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use cc2::{CodeGenerator, Lexer, Parser};
+use cc2::{CodeGenerator, Lexer, Parser, Preprocessor};
 
 #[derive(ClapParser, Debug)]
 #[command(name = "cc2")]
@@ -14,6 +14,9 @@ struct Args {
 
     #[arg(short, long, help = "Output assembly file")]
     output: Option<PathBuf>,
+
+    #[arg(long, help = "Print preprocessed source")]
+    preprocess_only: bool,
 
     #[arg(long, help = "Print tokens (lexer output)")]
     lex_only: bool,
@@ -33,7 +36,22 @@ fn main() {
         }
     };
 
-    let mut lexer = Lexer::new(&source);
+    // Preprocess the source code
+    let mut preprocessor = Preprocessor::new();
+    let preprocessed_source = match preprocessor.preprocess(&source) {
+        Ok(processed) => processed,
+        Err(e) => {
+            eprintln!("Preprocessor error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    if args.preprocess_only {
+        print!("{}", preprocessed_source);
+        return;
+    }
+
+    let mut lexer = Lexer::new(&preprocessed_source);
     let tokens = match lexer.tokenize() {
         Ok(tokens) => tokens,
         Err(e) => {
