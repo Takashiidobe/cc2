@@ -15,6 +15,9 @@ struct Args {
     #[arg(short, long, help = "Output assembly file")]
     output: Option<PathBuf>,
 
+    #[arg(short = 'I', long = "include", help = "Add include search path")]
+    include_paths: Vec<String>,
+
     #[arg(long, help = "Print preprocessed source")]
     preprocess_only: bool,
 
@@ -38,6 +41,12 @@ fn main() {
 
     // Preprocess the source code
     let mut preprocessor = Preprocessor::new();
+
+    // Add user-specified include paths
+    for path in &args.include_paths {
+        preprocessor.add_include_path(path.clone());
+    }
+
     let preprocessed_source = match preprocessor.preprocess(&source) {
         Ok(processed) => processed,
         Err(e) => {

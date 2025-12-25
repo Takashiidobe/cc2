@@ -10,7 +10,9 @@
 /// The preprocessor transforms source text into preprocessed text that
 /// can then be tokenized and parsed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Macro definition stored in the preprocessor symbol table
 #[derive(Debug, Clone, PartialEq)]
@@ -32,8 +34,9 @@ pub struct Preprocessor {
     /// Include paths (-I flags)
     include_paths: Vec<String>,
     /// Current file being processed (for error messages)
-    #[allow(dead_code)]
     current_file: String,
+    /// Stack of files being included (for cycle detection)
+    include_stack: HashSet<PathBuf>,
 }
 
 impl Preprocessor {
@@ -46,6 +49,7 @@ impl Preprocessor {
                 "/usr/local/include".to_string(),
             ],
             current_file: "<input>".to_string(),
+            include_stack: HashSet::new(),
         }
     }
 
@@ -148,14 +152,132 @@ impl Preprocessor {
         }
     }
 
-    /// Process #include directive (stub for now)
+    /// Process #include directive
     fn process_include(
         &mut self,
-        _directive: &str,
+        directive: &str,
         line_num: usize,
     ) -> Result<(usize, String), String> {
-        // TODO: Implement in cc2-9xt
-        Ok((line_num + 1, String::new()))
+        // Parse the include directive to extract filename and type
+        let (filename, is_system) = self.parse_include_directive(directive, line_num)?;
+
+        // Find the file in the include paths
+        let file_path = self.find_include_file(&filename, is_system, line_num)?;
+
+        // Check for circular includes
+        let canonical_path = file_path
+            .canonicalize()
+            .map_err(|e| format!("Failed to canonicalize path '{}': {}", file_path.display(), e))?;
+
+        if self.include_stack.contains(&canonical_path) {
+            return Err(format!(
+                "Circular include detected at line {}: {}",
+                line_num + 1,
+                canonical_path.display()
+            ));
+        }
+
+        // Read the file
+        let content = fs::read_to_string(&file_path).map_err(|e| {
+            format!(
+                "Failed to read include file '{}' at line {}: {}",
+                file_path.display(),
+                line_num + 1,
+                e
+            )
+        })?;
+
+        // Save current state
+        let old_file = self.current_file.clone();
+        self.current_file = file_path.display().to_string();
+        self.include_stack.insert(canonical_path.clone());
+
+        // Recursively preprocess the included file
+        let preprocessed = self.preprocess(&content)?;
+
+        // Restore state
+        self.current_file = old_file;
+        self.include_stack.remove(&canonical_path);
+
+        Ok((line_num + 1, preprocessed))
+    }
+
+    /// Parse #include directive to extract filename and determine type
+    fn parse_include_directive(
+        &self,
+        directive: &str,
+        line_num: usize,
+    ) -> Result<(String, bool), String> {
+        // directive is the part after '#', like "include <stdio.h>" or "include \"foo.h\""
+        let after_include = directive.trim_start();
+        if !after_include.starts_with("include") {
+            return Err(format!("Invalid include directive at line {}", line_num + 1));
+        }
+
+        let rest = after_include[7..].trim_start(); // Skip "include"
+
+        // Check for angle brackets: #include <file.h>
+        if rest.starts_with('<') {
+            let end = rest.find('>').ok_or_else(|| {
+                format!("Missing closing '>' in include directive at line {}", line_num + 1)
+            })?;
+            let filename = rest[1..end].to_string();
+            return Ok((filename, true));
+        }
+
+        // Check for quotes: #include "file.h"
+        if rest.starts_with('"') {
+            let end = rest[1..].find('"').ok_or_else(|| {
+                format!("Missing closing '\"' in include directive at line {}", line_num + 1)
+            })?;
+            let filename = rest[1..end + 1].to_string();
+            return Ok((filename, false));
+        }
+
+        Err(format!(
+            "Invalid include syntax at line {}: expected <file> or \"file\"",
+            line_num + 1
+        ))
+    }
+
+    /// Find an include file in the include paths
+    fn find_include_file(
+        &self,
+        filename: &str,
+        is_system: bool,
+        line_num: usize,
+    ) -> Result<PathBuf, String> {
+        // For quoted includes, search current directory first
+        if !is_system {
+            // Try current directory or relative to current file
+            let current_dir = if self.current_file == "<input>" {
+                PathBuf::from(".")
+            } else {
+                PathBuf::from(&self.current_file)
+                    .parent()
+                    .unwrap_or(Path::new("."))
+                    .to_path_buf()
+            };
+
+            let local_path = current_dir.join(filename);
+            if local_path.exists() {
+                return Ok(local_path);
+            }
+        }
+
+        // Search in include paths
+        for include_path in &self.include_paths {
+            let full_path = PathBuf::from(include_path).join(filename);
+            if full_path.exists() {
+                return Ok(full_path);
+            }
+        }
+
+        Err(format!(
+            "Include file '{}' not found at line {}",
+            filename,
+            line_num + 1
+        ))
     }
 
     /// Process #define directive (stub for now)
@@ -263,5 +385,103 @@ mod tests {
         let source = "#\nint x = 5;\n";
         let result = pp.preprocess(source).unwrap();
         assert_eq!(result, "int x = 5;\n");
+    }
+
+    #[test]
+    fn test_parse_include_quoted() {
+        let pp = Preprocessor::new();
+        let (filename, is_system) = pp.parse_include_directive("include \"foo.h\"", 0).unwrap();
+        assert_eq!(filename, "foo.h");
+        assert!(!is_system);
+    }
+
+    #[test]
+    fn test_parse_include_angle_brackets() {
+        let pp = Preprocessor::new();
+        let (filename, is_system) = pp.parse_include_directive("include <stdio.h>", 0).unwrap();
+        assert_eq!(filename, "stdio.h");
+        assert!(is_system);
+    }
+
+    #[test]
+    fn test_parse_include_missing_close_quote() {
+        let pp = Preprocessor::new();
+        let result = pp.parse_include_directive("include \"foo.h", 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_include_missing_close_angle() {
+        let pp = Preprocessor::new();
+        let result = pp.parse_include_directive("include <stdio.h", 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_include_file_not_found() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        let mut pp = Preprocessor::new();
+        pp.include_paths.clear();
+        pp.include_paths.push(temp_path.to_str().unwrap().to_string());
+
+        let source = "#include \"nonexistent.h\"\n";
+        let result = pp.preprocess(source);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_include_basic() {
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create a header file
+        let header_path = temp_path.join("test.h");
+        let mut header_file = fs::File::create(&header_path).unwrap();
+        writeln!(header_file, "int foo = 42;").unwrap();
+
+        let mut pp = Preprocessor::new();
+        pp.include_paths.clear();
+        pp.include_paths.push(temp_path.to_str().unwrap().to_string());
+
+        let source = "#include \"test.h\"\nint main() {{ return 0; }}\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int foo = 42;"));
+        assert!(result.contains("int main()"));
+    }
+
+    #[test]
+    fn test_include_circular_detection() {
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create a.h that includes b.h
+        let a_path = temp_path.join("a.h");
+        let mut a_file = fs::File::create(&a_path).unwrap();
+        writeln!(a_file, "#include \"b.h\"").unwrap();
+
+        // Create b.h that includes a.h (circular)
+        let b_path = temp_path.join("b.h");
+        let mut b_file = fs::File::create(&b_path).unwrap();
+        writeln!(b_file, "#include \"a.h\"").unwrap();
+
+        let mut pp = Preprocessor::new();
+        pp.include_paths.clear();
+        pp.include_paths.push(temp_path.to_str().unwrap().to_string());
+
+        let source = "#include \"a.h\"\n";
+        let result = pp.preprocess(source);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Circular include"));
     }
 }
