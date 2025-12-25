@@ -16,12 +16,14 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     Semicolon,
+    Comma,
 
     // Operators
     Plus,
     Minus,
     Star,
     Slash,
+    Equals,
 
     // Special
     Eof,
@@ -39,10 +41,12 @@ impl fmt::Display for Token {
             Token::OpenBrace => write!(f, "{{"),
             Token::CloseBrace => write!(f, "}}"),
             Token::Semicolon => write!(f, ";"),
+            Token::Comma => write!(f, ","),
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
+            Token::Equals => write!(f, "="),
             Token::Eof => write!(f, "EOF"),
         }
     }
@@ -105,6 +109,14 @@ impl Lexer {
             ';' => {
                 self.advance();
                 Ok(Token::Semicolon)
+            }
+            ',' => {
+                self.advance();
+                Ok(Token::Comma)
+            }
+            '=' => {
+                self.advance();
+                Ok(Token::Equals)
             }
             '+' => {
                 self.advance();

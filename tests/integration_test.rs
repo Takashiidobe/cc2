@@ -164,3 +164,74 @@ fn test_compile_arithmetic_subtraction() {
     fs::remove_file(test_file).ok();
     fs::remove_file(output_file).ok();
 }
+
+#[test]
+fn test_compile_variable_declaration() {
+    let test_file = "tests/fixtures/var_decl.c";
+    fs::write(test_file, "int main() { int x = 5; return x; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/var_decl.s";
+    let asm = fs::read_to_string(output_file).unwrap();
+
+    assert!(asm.contains("movq"));
+    assert!(asm.contains("%rbp"));
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}
+
+#[test]
+fn test_compile_multiple_variables() {
+    let test_file = "tests/fixtures/multi_vars.c";
+    fs::write(test_file, "int main() { int x = 2; int y = 3; return x + y; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/multi_vars.s";
+    assert!(std::path::Path::new(output_file).exists());
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}
+
+#[test]
+fn test_compile_function_with_parameters() {
+    let test_file = "tests/fixtures/func_params.c";
+    fs::write(test_file, "int add(int a, int b) { return a + b; } int main() { return add(2, 3); }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/func_params.s";
+    let asm = fs::read_to_string(output_file).unwrap();
+
+    assert!(asm.contains("add:"));
+    assert!(asm.contains("call add"));
+    assert!(asm.contains("%rdi"));
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}
+
+#[test]
+fn test_compile_assignment() {
+    let test_file = "tests/fixtures/assignment.c";
+    fs::write(test_file, "int main() { int x = 5; x = 10; return x; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/assignment.s";
+    assert!(std::path::Path::new(output_file).exists());
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}

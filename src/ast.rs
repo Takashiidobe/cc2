@@ -11,6 +11,20 @@ pub enum AstNode {
     },
     Block(Vec<AstNode>),
     Return(Option<Box<AstNode>>),
+    VarDecl {
+        name: String,
+        var_type: Type,
+        init: Option<Box<AstNode>>,
+    },
+    Assignment {
+        name: String,
+        value: Box<AstNode>,
+    },
+    Variable(String),
+    FunctionCall {
+        name: String,
+        args: Vec<AstNode>,
+    },
     BinaryOp {
         op: BinOp,
         left: Box<AstNode>,
@@ -52,6 +66,10 @@ impl fmt::Display for AstNode {
             AstNode::Function { name, .. } => write!(f, "Function({})", name),
             AstNode::Block(_) => write!(f, "Block"),
             AstNode::Return(_) => write!(f, "Return"),
+            AstNode::VarDecl { name, .. } => write!(f, "VarDecl({})", name),
+            AstNode::Assignment { name, .. } => write!(f, "Assignment({})", name),
+            AstNode::Variable(name) => write!(f, "Variable({})", name),
+            AstNode::FunctionCall { name, .. } => write!(f, "FunctionCall({})", name),
             AstNode::BinaryOp { op, .. } => write!(f, "BinaryOp({:?})", op),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
         }

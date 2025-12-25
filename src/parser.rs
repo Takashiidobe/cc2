@@ -61,7 +61,31 @@ impl Parser {
     }
 
     fn parse_parameters(&mut self) -> Result<Vec<Parameter>, String> {
-        Ok(Vec::new())
+        let mut params = Vec::new();
+
+        if self.current() == &Token::CloseParen {
+            return Ok(params);
+        }
+
+        loop {
+            let param_type = self.parse_type()?;
+
+            let name = match self.current() {
+                Token::Identifier(s) => s.clone(),
+                _ => return Err(format!("Expected parameter name, got {:?}", self.current())),
+            };
+            self.advance();
+
+            params.push(Parameter { name, param_type });
+
+            if self.current() == &Token::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(params)
     }
 
     fn parse_block(&mut self) -> Result<AstNode, String> {
@@ -79,8 +103,53 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<AstNode, String> {
         match self.current() {
             Token::Return => self.parse_return(),
+            Token::Int => self.parse_var_decl(),
+            Token::Identifier(_) => {
+                let name = match self.current() {
+                    Token::Identifier(s) => s.clone(),
+                    _ => unreachable!(),
+                };
+                self.advance();
+
+                if self.current() == &Token::Equals {
+                    self.advance();
+                    let value = self.parse_expression()?;
+                    self.expect(Token::Semicolon)?;
+                    Ok(AstNode::Assignment {
+                        name,
+                        value: Box::new(value),
+                    })
+                } else {
+                    Err(format!("Expected '=' after identifier in statement, got {:?}", self.current()))
+                }
+            }
             _ => Err(format!("Unexpected token in statement: {:?}", self.current())),
         }
+    }
+
+    fn parse_var_decl(&mut self) -> Result<AstNode, String> {
+        let var_type = self.parse_type()?;
+
+        let name = match self.current() {
+            Token::Identifier(s) => s.clone(),
+            _ => return Err(format!("Expected variable name, got {:?}", self.current())),
+        };
+        self.advance();
+
+        let init = if self.current() == &Token::Equals {
+            self.advance();
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        self.expect(Token::Semicolon)?;
+
+        Ok(AstNode::VarDecl {
+            name,
+            var_type,
+            init,
+        })
     }
 
     fn parse_return(&mut self) -> Result<AstNode, String> {
@@ -149,6 +218,19 @@ impl Parser {
                 self.advance();
                 Ok(AstNode::IntLiteral(val))
             }
+            Token::Identifier(name) => {
+                let name = name.clone();
+                self.advance();
+
+                if self.current() == &Token::OpenParen {
+                    self.advance();
+                    let args = self.parse_arguments()?;
+                    self.expect(Token::CloseParen)?;
+                    Ok(AstNode::FunctionCall { name, args })
+                } else {
+                    Ok(AstNode::Variable(name))
+                }
+            }
             Token::OpenParen => {
                 self.advance();
                 let expr = self.parse_expression()?;
@@ -157,6 +239,26 @@ impl Parser {
             }
             _ => Err(format!("Expected expression, got {:?}", self.current())),
         }
+    }
+
+    fn parse_arguments(&mut self) -> Result<Vec<AstNode>, String> {
+        let mut args = Vec::new();
+
+        if self.current() == &Token::CloseParen {
+            return Ok(args);
+        }
+
+        loop {
+            args.push(self.parse_expression()?);
+
+            if self.current() == &Token::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(args)
     }
 
     fn current(&self) -> &Token {

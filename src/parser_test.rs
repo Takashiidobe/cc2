@@ -147,4 +147,97 @@ mod parser_tests {
             _ => panic!("Expected program"),
         }
     }
+
+    #[test]
+    fn test_parse_variable_declaration() {
+        let mut lexer = Lexer::new("int main() { int x = 5; return x; }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => {
+                match &funcs[0] {
+                    AstNode::Function { body, .. } => {
+                        match body.as_ref() {
+                            AstNode::Block(stmts) => {
+                                assert_eq!(stmts.len(), 2);
+                                match &stmts[0] {
+                                    AstNode::VarDecl { name, .. } => {
+                                        assert_eq!(name, "x");
+                                    }
+                                    _ => panic!("Expected var decl"),
+                                }
+                            }
+                            _ => panic!("Expected block"),
+                        }
+                    }
+                    _ => panic!("Expected function"),
+                }
+            }
+            _ => panic!("Expected program"),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_call() {
+        let mut lexer = Lexer::new("int main() { return add(2, 3); }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => {
+                match &funcs[0] {
+                    AstNode::Function { body, .. } => {
+                        match body.as_ref() {
+                            AstNode::Block(stmts) => {
+                                match &stmts[0] {
+                                    AstNode::Return(Some(expr)) => {
+                                        match expr.as_ref() {
+                                            AstNode::FunctionCall { name, args } => {
+                                                assert_eq!(name, "add");
+                                                assert_eq!(args.len(), 2);
+                                            }
+                                            _ => panic!("Expected function call"),
+                                        }
+                                    }
+                                    _ => panic!("Expected return"),
+                                }
+                            }
+                            _ => panic!("Expected block"),
+                        }
+                    }
+                    _ => panic!("Expected function"),
+                }
+            }
+            _ => panic!("Expected program"),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_with_parameters() {
+        let mut lexer = Lexer::new("int add(int a, int b) { return a + b; }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => {
+                match &funcs[0] {
+                    AstNode::Function { name, params, .. } => {
+                        assert_eq!(name, "add");
+                        assert_eq!(params.len(), 2);
+                        assert_eq!(params[0].name, "a");
+                        assert_eq!(params[1].name, "b");
+                    }
+                    _ => panic!("Expected function"),
+                }
+            }
+            _ => panic!("Expected program"),
+        }
+    }
 }

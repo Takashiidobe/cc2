@@ -2,11 +2,13 @@ pub mod ast;
 pub mod lexer;
 pub mod parser;
 pub mod codegen;
+pub mod symbol_table;
 
 pub use ast::*;
 pub use lexer::*;
 pub use parser::*;
 pub use codegen::*;
+pub use symbol_table::*;
 
 #[cfg(test)]
 mod lexer_test;
