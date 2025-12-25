@@ -18,6 +18,12 @@ struct Args {
     #[arg(short = 'I', long = "include", help = "Add include search path")]
     include_paths: Vec<String>,
 
+    #[arg(long = "isystem", help = "Add system include search path")]
+    system_include_paths: Vec<String>,
+
+    #[arg(long = "nostdinc", help = "Do not search standard system directories")]
+    no_std_includes: bool,
+
     #[arg(long, help = "Print preprocessed source")]
     preprocess_only: bool,
 
@@ -40,11 +46,20 @@ fn main() {
     };
 
     // Preprocess the source code
-    let mut preprocessor = Preprocessor::new();
+    let mut preprocessor = if args.no_std_includes {
+        Preprocessor::new_no_std()
+    } else {
+        Preprocessor::new()
+    };
 
     // Add user-specified include paths
     for path in &args.include_paths {
         preprocessor.add_include_path(path.clone());
+    }
+
+    // Add system include paths
+    for path in &args.system_include_paths {
+        preprocessor.add_system_include_path(path.clone());
     }
 
     let preprocessed_source = match preprocessor.preprocess(&source) {
