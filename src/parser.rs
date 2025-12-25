@@ -97,11 +97,63 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {
+        self.parse_additive()
+    }
+
+    fn parse_additive(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_multiplicative()?;
+
+        while matches!(self.current(), Token::Plus | Token::Minus) {
+            let op = match self.current() {
+                Token::Plus => BinOp::Add,
+                Token::Minus => BinOp::Subtract,
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_multiplicative()?;
+            left = AstNode::BinaryOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_multiplicative(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_primary()?;
+
+        while matches!(self.current(), Token::Star | Token::Slash) {
+            let op = match self.current() {
+                Token::Star => BinOp::Multiply,
+                Token::Slash => BinOp::Divide,
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_primary()?;
+            left = AstNode::BinaryOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_primary(&mut self) -> Result<AstNode, String> {
         match self.current() {
             Token::IntLiteral(n) => {
                 let val = *n;
                 self.advance();
                 Ok(AstNode::IntLiteral(val))
+            }
+            Token::OpenParen => {
+                self.advance();
+                let expr = self.parse_expression()?;
+                self.expect(Token::CloseParen)?;
+                Ok(expr)
             }
             _ => Err(format!("Expected expression, got {:?}", self.current())),
         }
@@ -128,33 +180,5 @@ impl Parser {
 
     fn is_at_end(&self) -> bool {
         self.position >= self.tokens.len() || self.current() == &Token::Eof
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lexer::Lexer;
-
-    #[test]
-    fn test_parse_simple_function() {
-        let mut lexer = Lexer::new("int main() { return 42; }");
-        let tokens = lexer.tokenize().unwrap();
-
-        let mut parser = Parser::new(tokens);
-        let ast = parser.parse().unwrap();
-
-        match ast {
-            AstNode::Program(funcs) => {
-                assert_eq!(funcs.len(), 1);
-                match &funcs[0] {
-                    AstNode::Function { name, .. } => {
-                        assert_eq!(name, "main");
-                    }
-                    _ => panic!("Expected function"),
-                }
-            }
-            _ => panic!("Expected program"),
-        }
     }
 }

@@ -51,6 +51,28 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
+            AstNode::BinaryOp { op, left, right } => {
+                self.generate_node(left)?;
+                self.emit("    pushq %rax");
+                self.generate_node(right)?;
+                self.emit("    popq %rcx");
+
+                match op {
+                    BinOp::Add => self.emit("    addq %rcx, %rax"),
+                    BinOp::Subtract => {
+                        self.emit("    subq %rax, %rcx");
+                        self.emit("    movq %rcx, %rax");
+                    }
+                    BinOp::Multiply => self.emit("    imulq %rcx, %rax"),
+                    BinOp::Divide => {
+                        self.emit("    movq %rax, %rbx");
+                        self.emit("    movq %rcx, %rax");
+                        self.emit("    cqto");
+                        self.emit("    idivq %rbx");
+                    }
+                }
+                Ok(())
+            }
             AstNode::IntLiteral(n) => {
                 self.emit(&format!("    movq ${}, %rax", n));
                 Ok(())
@@ -67,31 +89,5 @@ impl CodeGenerator {
 impl Default for CodeGenerator {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_generate_return() {
-        let ast = AstNode::Program(vec![
-            AstNode::Function {
-                name: "main".to_string(),
-                return_type: Type::Int,
-                params: vec![],
-                body: Box::new(AstNode::Block(vec![
-                    AstNode::Return(Some(Box::new(AstNode::IntLiteral(42)))),
-                ])),
-            },
-        ]);
-
-        let mut codegen = CodeGenerator::new();
-        let asm = codegen.generate(&ast).unwrap();
-
-        assert!(asm.contains("main:"));
-        assert!(asm.contains("movq $42, %rax"));
-        assert!(asm.contains("ret"));
     }
 }

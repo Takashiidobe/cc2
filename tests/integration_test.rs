@@ -70,3 +70,97 @@ fn test_parse_only_flag() {
 
     fs::remove_file(test_file).ok();
 }
+
+#[test]
+fn test_compile_arithmetic_addition() {
+    let test_file = "tests/fixtures/arithmetic_add.c";
+    fs::write(test_file, "int main() { return 2 + 3; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/arithmetic_add.s";
+    assert!(std::path::Path::new(output_file).exists());
+
+    let asm = fs::read_to_string(output_file).unwrap();
+    assert!(asm.contains("addq %rcx, %rax"));
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}
+
+#[test]
+fn test_compile_arithmetic_precedence() {
+    let test_file = "tests/fixtures/arithmetic_precedence.c";
+    fs::write(test_file, "int main() { return 2 + 3 * 4; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/arithmetic_precedence.s";
+    let asm = fs::read_to_string(output_file).unwrap();
+
+    assert!(asm.contains("imulq"));
+    assert!(asm.contains("addq"));
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}
+
+#[test]
+fn test_compile_arithmetic_parentheses() {
+    let test_file = "tests/fixtures/arithmetic_parens.c";
+    fs::write(test_file, "int main() { return (2 + 3) * 4; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/arithmetic_parens.s";
+    let asm = fs::read_to_string(output_file).unwrap();
+
+    assert!(asm.contains("addq"));
+    assert!(asm.contains("imulq"));
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}
+
+#[test]
+fn test_compile_arithmetic_division() {
+    let test_file = "tests/fixtures/arithmetic_div.c";
+    fs::write(test_file, "int main() { return 20 / 4; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/arithmetic_div.s";
+    let asm = fs::read_to_string(output_file).unwrap();
+
+    assert!(asm.contains("idivq"));
+    assert!(asm.contains("cqto"));
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}
+
+#[test]
+fn test_compile_arithmetic_subtraction() {
+    let test_file = "tests/fixtures/arithmetic_sub.c";
+    fs::write(test_file, "int main() { return 10 - 3; }").unwrap();
+
+    let mut cmd = Command::cargo_bin("cc2").unwrap();
+    cmd.arg(test_file);
+    cmd.assert().success();
+
+    let output_file = "tests/fixtures/arithmetic_sub.s";
+    let asm = fs::read_to_string(output_file).unwrap();
+
+    assert!(asm.contains("subq"));
+
+    fs::remove_file(test_file).ok();
+    fs::remove_file(output_file).ok();
+}

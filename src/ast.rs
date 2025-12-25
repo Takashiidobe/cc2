@@ -11,7 +11,20 @@ pub enum AstNode {
     },
     Block(Vec<AstNode>),
     Return(Option<Box<AstNode>>),
+    BinaryOp {
+        op: BinOp,
+        left: Box<AstNode>,
+        right: Box<AstNode>,
+    },
     IntLiteral(i64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BinOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +52,7 @@ impl fmt::Display for AstNode {
             AstNode::Function { name, .. } => write!(f, "Function({})", name),
             AstNode::Block(_) => write!(f, "Block"),
             AstNode::Return(_) => write!(f, "Return"),
+            AstNode::BinaryOp { op, .. } => write!(f, "BinaryOp({:?})", op),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
         }
     }
