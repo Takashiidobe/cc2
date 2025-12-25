@@ -49,6 +49,13 @@ pub enum AstNode {
         op: UnaryOp,
         operand: Box<AstNode>,
     },
+    AddressOf(Box<AstNode>),
+    Dereference(Box<AstNode>),
+    ArrayIndex {
+        array: Box<AstNode>,
+        index: Box<AstNode>,
+    },
+    ArrayInit(Vec<AstNode>),
     IntLiteral(i64),
 }
 
@@ -84,6 +91,30 @@ pub struct Parameter {
 pub enum Type {
     Int,
     Void,
+    Pointer(Box<Type>),
+    Array(Box<Type>, usize),
+}
+
+impl Type {
+    pub fn size(&self) -> i32 {
+        match self {
+            Type::Int | Type::Pointer(_) => 8,
+            Type::Array(elem, len) => elem.size() * (*len as i32),
+            Type::Void => 0,
+        }
+    }
+
+    pub fn element_size(&self) -> Option<i32> {
+        match self {
+            Type::Pointer(pointee) => Some(pointee.size()),
+            Type::Array(elem, _) => Some(elem.size()),
+            _ => None,
+        }
+    }
+
+    pub fn is_array(&self) -> bool {
+        matches!(self, Type::Array(_, _))
+    }
 }
 
 impl fmt::Display for AstNode {
@@ -108,6 +139,10 @@ impl fmt::Display for AstNode {
             AstNode::FunctionCall { name, .. } => write!(f, "FunctionCall({})", name),
             AstNode::BinaryOp { op, .. } => write!(f, "BinaryOp({:?})", op),
             AstNode::UnaryOp { op, .. } => write!(f, "UnaryOp({:?})", op),
+            AstNode::AddressOf(_) => write!(f, "AddressOf"),
+            AstNode::Dereference(_) => write!(f, "Dereference"),
+            AstNode::ArrayIndex { .. } => write!(f, "ArrayIndex"),
+            AstNode::ArrayInit(_) => write!(f, "ArrayInit"),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
         }
     }

@@ -51,13 +51,20 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
-        match self.current() {
+        let mut ty = match self.current() {
             Token::Int => {
                 self.advance();
-                Ok(Type::Int)
+                Type::Int
             }
-            _ => Err(format!("Expected type, got {:?}", self.current())),
+            _ => return Err(format!("Expected type, got {:?}", self.current())),
+        };
+
+        while self.current() == &Token::Star {
+            self.advance();
+            ty = Type::Pointer(Box::new(ty));
         }
+
+        Ok(ty)
     }
 
     fn parse_parameters(&mut self) -> Result<Vec<Parameter>, String> {
@@ -139,9 +146,15 @@ impl Parser {
         };
         self.advance();
 
+        let var_type = self.parse_array_type_suffix(var_type)?;
+
         let init = if self.current() == &Token::Equals {
             self.advance();
-            Some(Box::new(self.parse_expression()?))
+            if self.current() == &Token::OpenBrace {
+                Some(Box::new(self.parse_array_initializer()?))
+            } else {
+                Some(Box::new(self.parse_expression()?))
+            }
         } else {
             None
         };
@@ -409,38 +422,67 @@ impl Parser {
                     operand: Box::new(operand),
                 })
             }
+            Token::Star => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::Dereference(Box::new(operand)))
+            }
+            Token::Ampersand => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::AddressOf(Box::new(operand)))
+            }
             _ => self.parse_primary(),
         }
     }
 
     fn parse_primary(&mut self) -> Result<AstNode, String> {
-        match self.current() {
+        let mut expr = match self.current() {
             Token::IntLiteral(n) => {
                 let val = *n;
                 self.advance();
-                Ok(AstNode::IntLiteral(val))
+                AstNode::IntLiteral(val)
             }
             Token::Identifier(name) => {
                 let name = name.clone();
                 self.advance();
-
-                if self.current() == &Token::OpenParen {
-                    self.advance();
-                    let args = self.parse_arguments()?;
-                    self.expect(Token::CloseParen)?;
-                    Ok(AstNode::FunctionCall { name, args })
-                } else {
-                    Ok(AstNode::Variable(name))
-                }
+                AstNode::Variable(name)
             }
             Token::OpenParen => {
                 self.advance();
                 let expr = self.parse_expression()?;
                 self.expect(Token::CloseParen)?;
-                Ok(expr)
+                expr
             }
-            _ => Err(format!("Expected expression, got {:?}", self.current())),
+            _ => return Err(format!("Expected expression, got {:?}", self.current())),
+        };
+
+        loop {
+            match self.current() {
+                Token::OpenParen => {
+                    self.advance();
+                    let args = self.parse_arguments()?;
+                    self.expect(Token::CloseParen)?;
+                    if let AstNode::Variable(name) = expr {
+                        expr = AstNode::FunctionCall { name, args };
+                    } else {
+                        return Err("Function call target must be an identifier".to_string());
+                    }
+                }
+                Token::OpenBracket => {
+                    self.advance();
+                    let index = self.parse_expression()?;
+                    self.expect(Token::CloseBracket)?;
+                    expr = AstNode::ArrayIndex {
+                        array: Box::new(expr),
+                        index: Box::new(index),
+                    };
+                }
+                _ => break,
+            }
         }
+
+        Ok(expr)
     }
 
     fn parse_arguments(&mut self) -> Result<Vec<AstNode>, String> {
@@ -480,6 +522,46 @@ impl Parser {
         } else {
             Err(format!("Expected {:?}, got {:?}", expected, self.current()))
         }
+    }
+
+    fn parse_array_type_suffix(&mut self, base: Type) -> Result<Type, String> {
+        let mut ty = base;
+        while self.current() == &Token::OpenBracket {
+            self.advance();
+            let len = match self.current() {
+                Token::IntLiteral(n) if *n >= 0 => *n as usize,
+                _ => return Err("Array length must be a non-negative integer literal".to_string()),
+            };
+            self.advance();
+            self.expect(Token::CloseBracket)?;
+            ty = Type::Array(Box::new(ty), len);
+        }
+        Ok(ty)
+    }
+
+    fn parse_array_initializer(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::OpenBrace)?;
+        let mut values = Vec::new();
+
+        if self.current() == &Token::CloseBrace {
+            self.advance();
+            return Ok(AstNode::ArrayInit(values));
+        }
+
+        loop {
+            values.push(self.parse_expression()?);
+            if self.current() == &Token::Comma {
+                self.advance();
+                if self.current() == &Token::CloseBrace {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        self.expect(Token::CloseBrace)?;
+        Ok(AstNode::ArrayInit(values))
     }
 
     fn is_at_end(&self) -> bool {

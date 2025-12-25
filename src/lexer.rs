@@ -21,6 +21,8 @@ pub enum Token {
     CloseBrace,
     Semicolon,
     Comma,
+    OpenBracket,
+    CloseBracket,
 
     // Operators
     Plus,
@@ -41,6 +43,7 @@ pub enum Token {
     LogicalAnd,
     LogicalOr,
     LogicalNot,
+    Ampersand,
 
     // Special
     Eof,
@@ -63,6 +66,8 @@ impl fmt::Display for Token {
             Token::CloseBrace => write!(f, "}}"),
             Token::Semicolon => write!(f, ";"),
             Token::Comma => write!(f, ","),
+            Token::OpenBracket => write!(f, "["),
+            Token::CloseBracket => write!(f, "]"),
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
@@ -77,6 +82,7 @@ impl fmt::Display for Token {
             Token::LogicalAnd => write!(f, "&&"),
             Token::LogicalOr => write!(f, "||"),
             Token::LogicalNot => write!(f, "!"),
+            Token::Ampersand => write!(f, "&"),
             Token::Eof => write!(f, "EOF"),
         }
     }
@@ -144,6 +150,14 @@ impl Lexer {
                 self.advance();
                 Ok(Token::Comma)
             }
+            '[' => {
+                self.advance();
+                Ok(Token::OpenBracket)
+            }
+            ']' => {
+                self.advance();
+                Ok(Token::CloseBracket)
+            }
             '=' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
@@ -186,7 +200,7 @@ impl Lexer {
                     self.advance();
                     Ok(Token::LogicalAnd)
                 } else {
-                    Err(format!("Unexpected character: '&' (use && for logical AND)"))
+                    Ok(Token::Ampersand)
                 }
             }
             '|' => {

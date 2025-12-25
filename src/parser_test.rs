@@ -240,4 +240,101 @@ mod parser_tests {
             _ => panic!("Expected program"),
         }
     }
+
+    #[test]
+    fn test_parse_pointer_and_address_of() {
+        let mut lexer = Lexer::new("int main() { int x = 1; int* p = &x; return *p; }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => match &funcs[0] {
+                AstNode::Function { body, .. } => match body.as_ref() {
+                    AstNode::Block(stmts) => {
+                        match &stmts[1] {
+                            AstNode::VarDecl { name, var_type, init } => {
+                                assert_eq!(name, "p");
+                                assert_eq!(var_type, &Type::Pointer(Box::new(Type::Int)));
+                                match init.as_deref() {
+                                    Some(AstNode::AddressOf(inner)) => match inner.as_ref() {
+                                        AstNode::Variable(var) => assert_eq!(var, "x"),
+                                        _ => panic!("Expected address-of variable"),
+                                    },
+                                    _ => panic!("Expected address-of initializer"),
+                                }
+                            }
+                            _ => panic!("Expected pointer var decl"),
+                        }
+
+                        match &stmts[2] {
+                            AstNode::Return(Some(expr)) => match expr.as_ref() {
+                                AstNode::Dereference(inner) => match inner.as_ref() {
+                                    AstNode::Variable(var) => assert_eq!(var, "p"),
+                                    _ => panic!("Expected dereference of variable"),
+                                },
+                                _ => panic!("Expected dereference in return"),
+                            },
+                            _ => panic!("Expected return statement"),
+                        }
+                    }
+                    _ => panic!("Expected block"),
+                },
+                _ => panic!("Expected function"),
+            },
+            _ => panic!("Expected program"),
+        }
+    }
+
+    #[test]
+    fn test_parse_array_declaration_and_index() {
+        let mut lexer = Lexer::new("int main() { int a[3] = {1, 2, 3}; return a[1]; }");
+        let tokens = lexer.tokenize().unwrap();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.parse().unwrap();
+
+        match ast {
+            AstNode::Program(funcs) => match &funcs[0] {
+                AstNode::Function { body, .. } => match body.as_ref() {
+                    AstNode::Block(stmts) => {
+                        match &stmts[0] {
+                            AstNode::VarDecl { name, var_type, init } => {
+                                assert_eq!(name, "a");
+                                assert_eq!(var_type, &Type::Array(Box::new(Type::Int), 3));
+                                match init.as_deref() {
+                                    Some(AstNode::ArrayInit(values)) => {
+                                        assert_eq!(values.len(), 3);
+                                    }
+                                    _ => panic!("Expected array initializer"),
+                                }
+                            }
+                            _ => panic!("Expected array var decl"),
+                        }
+
+                        match &stmts[1] {
+                            AstNode::Return(Some(expr)) => match expr.as_ref() {
+                                AstNode::ArrayIndex { array, index } => {
+                                    match array.as_ref() {
+                                        AstNode::Variable(var) => assert_eq!(var, "a"),
+                                        _ => panic!("Expected array variable"),
+                                    }
+                                    match index.as_ref() {
+                                        AstNode::IntLiteral(1) => {}
+                                        _ => panic!("Expected index literal"),
+                                    }
+                                }
+                                _ => panic!("Expected array index in return"),
+                            },
+                            _ => panic!("Expected return statement"),
+                        }
+                    }
+                    _ => panic!("Expected block"),
+                },
+                _ => panic!("Expected function"),
+            },
+            _ => panic!("Expected program"),
+        }
+    }
 }

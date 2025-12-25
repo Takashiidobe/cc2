@@ -29,4 +29,15 @@ mod lexer_tests {
         assert_eq!(tokens[2], Token::Star);
         assert_eq!(tokens[3], Token::Slash);
     }
+
+    #[test]
+    fn test_pointer_and_array_tokens() {
+        let mut lexer = Lexer::new("& * [ ]");
+        let tokens = lexer.tokenize().unwrap();
+
+        assert_eq!(tokens[0], Token::Ampersand);
+        assert_eq!(tokens[1], Token::Star);
+        assert_eq!(tokens[2], Token::OpenBracket);
+        assert_eq!(tokens[3], Token::CloseBracket);
+    }
 }

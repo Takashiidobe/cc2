@@ -18,7 +18,7 @@ impl SymbolTable {
     pub fn new() -> Self {
         SymbolTable {
             symbols: HashMap::new(),
-            next_offset: -8,
+            next_offset: 0,
         }
     }
 
@@ -27,6 +27,8 @@ impl SymbolTable {
             return Err(format!("Variable '{}' already declared in this scope", name));
         }
 
+        let size = align_to_8(var_type.size());
+        self.next_offset -= size;
         let offset = self.next_offset;
         self.symbols.insert(
             name.clone(),
@@ -36,7 +38,6 @@ impl SymbolTable {
                 stack_offset: offset,
             },
         );
-        self.next_offset -= 8;
         Ok(offset)
     }
 
@@ -45,7 +46,15 @@ impl SymbolTable {
     }
 
     pub fn get_stack_size(&self) -> i32 {
-        -self.next_offset + 8
+        -self.next_offset
+    }
+}
+
+fn align_to_8(size: i32) -> i32 {
+    if size % 8 == 0 {
+        size
+    } else {
+        size + (8 - (size % 8))
     }
 }
 
