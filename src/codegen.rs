@@ -110,36 +110,18 @@ impl CodeGenerator {
             AstNode::FunctionCall { name, args } => {
                 let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
 
-                for (i, arg) in args.iter().enumerate().rev() {
-                    if i >= arg_regs.len() {
-                        self.generate_node(arg)?;
-                        self.emit("    pushq %rax");
-                    }
+                for arg in args.iter() {
+                    self.generate_node(arg)?;
+                    self.emit("    pushq %rax");
                 }
 
-                for (i, arg) in args.iter().enumerate() {
+                for (i, _) in args.iter().enumerate().rev() {
                     if i < arg_regs.len() {
-                        self.generate_node(arg)?;
-                        if i > 0 {
-                            self.emit("    pushq %rax");
-                        }
+                        self.emit(&format!("    popq {}", arg_regs[i]));
                     }
-                }
-
-                for i in (1..args.len().min(arg_regs.len())).rev() {
-                    self.emit(&format!("    popq {}", arg_regs[i]));
-                }
-
-                if !args.is_empty() && args.len() <= arg_regs.len() {
-                    self.emit(&format!("    movq %rax, {}", arg_regs[0]));
                 }
 
                 self.emit(&format!("    call {}", name));
-
-                if args.len() > arg_regs.len() {
-                    let stack_args = (args.len() - arg_regs.len()) * 8;
-                    self.emit(&format!("    addq ${}, %rsp", stack_args));
-                }
 
                 Ok(())
             }
