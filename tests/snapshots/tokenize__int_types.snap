@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(main)\n(\n)\n{\nchar\nIdentifier(c)\n=\n-\nIntLiteral(1)\n;\nunsigned\nchar\nIdentifier(uc)\n=\nIntLiteral(200)\n;\nshort\nIdentifier(s)\n=\n-\nIntLiteral(123)\n;\nunsigned\nshort\nIdentifier(us)\n=\nIntLiteral(60000)\n;\nint\nIdentifier(i)\n=\n-\nIntLiteral(123456)\n;\nunsigned\nint\nIdentifier(ui)\n=\nIntLiteral(100000)\n;\nlong\nIdentifier(l)\n=\n-\nIntLiteral(300000)\n;\nunsigned\nlong\nIdentifier(ul)\n=\nIntLiteral(300000)\n;\nreturn\nIdentifier(c)\n+\nIdentifier(uc)\n+\nIdentifier(s)\n+\nIdentifier(us)\n+\nIdentifier(i)\n+\nIdentifier(ui)\n+\nIdentifier(l)\n+\nIdentifier(ul)\n;\n}\nEOF\n"
+stderr: ""
+status: 0
