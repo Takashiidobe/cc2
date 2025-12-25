@@ -280,23 +280,166 @@ impl Preprocessor {
         ))
     }
 
-    /// Process #define directive (stub for now)
+    /// Process #define directive
     fn process_define(
         &mut self,
-        _directive: &str,
+        directive: &str,
         line_num: usize,
     ) -> Result<(usize, String), String> {
-        // TODO: Implement in cc2-krg
+        // directive is like "define NAME value" or "define NAME(params) body"
+        let after_define = directive.trim_start();
+        if !after_define.starts_with("define") {
+            return Err(format!("Invalid define directive at line {}", line_num + 1));
+        }
+
+        let rest = after_define[6..].trim_start(); // Skip "define"
+
+        if rest.is_empty() {
+            return Err(format!("Missing macro name in #define at line {}", line_num + 1));
+        }
+
+        // Check if this is a function-like macro by looking for '(' immediately after name
+        // Note: There must be NO space between name and '(' for function-like macros
+        let (name, macro_def) = if let Some(paren_pos) = rest.find('(') {
+            // Check if there's a space before the paren - if so, it's object-like
+            let name_part = &rest[..paren_pos];
+            if name_part.chars().last().map_or(false, |c| c.is_whitespace()) {
+                // Space before paren - this is object-like macro
+                self.parse_object_like_macro(rest, line_num)?
+            } else {
+                // No space - this is function-like macro
+                self.parse_function_like_macro(rest, line_num)?
+            }
+        } else {
+            // No parentheses - object-like macro
+            self.parse_object_like_macro(rest, line_num)?
+        };
+
+        self.macros.insert(name, macro_def);
         Ok((line_num + 1, String::new()))
     }
 
-    /// Process #undef directive (stub for now)
+    /// Parse object-like macro: #define NAME replacement
+    fn parse_object_like_macro(
+        &self,
+        text: &str,
+        line_num: usize,
+    ) -> Result<(String, MacroDef), String> {
+        let mut parts = text.splitn(2, |c: char| c.is_whitespace());
+        let name = parts
+            .next()
+            .ok_or_else(|| format!("Missing macro name at line {}", line_num + 1))?
+            .to_string();
+
+        // Validate macro name
+        if !Self::is_valid_identifier(&name) {
+            return Err(format!("Invalid macro name '{}' at line {}", name, line_num + 1));
+        }
+
+        let replacement = parts.next().unwrap_or("").trim().to_string();
+
+        Ok((name, MacroDef::Object(replacement)))
+    }
+
+    /// Parse function-like macro: #define NAME(params) body
+    fn parse_function_like_macro(
+        &self,
+        text: &str,
+        line_num: usize,
+    ) -> Result<(String, MacroDef), String> {
+        // Find the macro name (everything before '(')
+        let paren_start = text
+            .find('(')
+            .ok_or_else(|| format!("Expected '(' in function-like macro at line {}", line_num + 1))?;
+        let name = text[..paren_start].trim().to_string();
+
+        // Validate macro name
+        if !Self::is_valid_identifier(&name) {
+            return Err(format!("Invalid macro name '{}' at line {}", name, line_num + 1));
+        }
+
+        // Find the closing parenthesis
+        let paren_end = text
+            .find(')')
+            .ok_or_else(|| format!("Missing ')' in function-like macro at line {}", line_num + 1))?;
+
+        // Extract parameter list
+        let param_text = &text[paren_start + 1..paren_end];
+        let mut params = Vec::new();
+        let mut is_variadic = false;
+
+        if !param_text.trim().is_empty() {
+            for param in param_text.split(',') {
+                let param = param.trim();
+                if param == "..." {
+                    is_variadic = true;
+                } else if param.is_empty() {
+                    return Err(format!("Empty parameter in macro at line {}", line_num + 1));
+                } else if !Self::is_valid_identifier(param) {
+                    return Err(format!("Invalid parameter name '{}' at line {}", param, line_num + 1));
+                } else {
+                    params.push(param.to_string());
+                }
+            }
+        }
+
+        // Extract the body (everything after ')')
+        let body = text[paren_end + 1..].trim().to_string();
+
+        Ok((
+            name,
+            MacroDef::Function {
+                params,
+                body,
+                is_variadic,
+            },
+        ))
+    }
+
+    /// Check if a string is a valid C identifier
+    fn is_valid_identifier(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+
+        let mut chars = s.chars();
+        let first = chars.next().unwrap();
+
+        // First character must be letter or underscore
+        if !first.is_alphabetic() && first != '_' {
+            return false;
+        }
+
+        // Remaining characters must be alphanumeric or underscore
+        chars.all(|c| c.is_alphanumeric() || c == '_')
+    }
+
+    /// Process #undef directive
     fn process_undef(
         &mut self,
-        _directive: &str,
+        directive: &str,
         line_num: usize,
     ) -> Result<(usize, String), String> {
-        // TODO: Implement in cc2-krg
+        // directive is like "undef NAME"
+        let after_undef = directive.trim_start();
+        if !after_undef.starts_with("undef") {
+            return Err(format!("Invalid undef directive at line {}", line_num + 1));
+        }
+
+        let rest = after_undef[5..].trim(); // Skip "undef"
+
+        if rest.is_empty() {
+            return Err(format!("Missing macro name in #undef at line {}", line_num + 1));
+        }
+
+        // Extract macro name (should be a single identifier)
+        let name = rest.split_whitespace().next().unwrap().to_string();
+
+        if !Self::is_valid_identifier(&name) {
+            return Err(format!("Invalid macro name '{}' in #undef at line {}", name, line_num + 1));
+        }
+
+        self.macros.remove(&name);
         Ok((line_num + 1, String::new()))
     }
 
@@ -321,11 +464,332 @@ impl Preprocessor {
         Ok((line_num + 1, String::new()))
     }
 
-    /// Expand macros in a line of text (stub for now)
+    /// Expand macros in a line of text
     fn expand_macros(&self, line: &str) -> Result<String, String> {
-        // TODO: Implement macro expansion in cc2-krg
-        // For now, just return the line unchanged
-        Ok(line.to_string())
+        let mut result = String::new();
+        let mut remaining = line;
+
+        while !remaining.is_empty() {
+            // Find the next identifier that could be a macro
+            if let Some((before, ident, after)) = self.find_next_identifier(remaining) {
+                // Add everything before the identifier
+                result.push_str(before);
+
+                // Check if this identifier is a macro
+                if let Some(macro_def) = self.macros.get(ident) {
+                    match macro_def {
+                        MacroDef::Object(replacement) => {
+                            // Simple object-like macro - replace with its value
+                            let expanded = self.expand_macros(replacement)?;
+                            result.push_str(&expanded);
+                        }
+                        MacroDef::Function {
+                            params,
+                            body,
+                            is_variadic,
+                        } => {
+                            // Function-like macro - need to parse arguments
+                            let after_trimmed = after.trim_start();
+                            if after_trimmed.starts_with('(') {
+                                // This is a macro invocation
+                                let (args, rest) = self.parse_macro_arguments(after_trimmed)?;
+
+                                // Expand the macro with arguments
+                                let expanded = self.expand_function_macro(
+                                    params,
+                                    body,
+                                    *is_variadic,
+                                    &args,
+                                )?;
+                                result.push_str(&expanded);
+                                remaining = rest;
+                                continue;
+                            } else {
+                                // Function-like macro without '(' - don't expand
+                                result.push_str(ident);
+                            }
+                        }
+                    }
+                } else {
+                    // Not a macro - keep the identifier as-is
+                    result.push_str(ident);
+                }
+
+                remaining = after;
+            } else {
+                // No more identifiers - add the rest of the line
+                result.push_str(remaining);
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Find the next identifier in the text
+    /// Returns (text_before, identifier, text_after) or None
+    fn find_next_identifier<'a>(&self, text: &'a str) -> Option<(&'a str, &'a str, &'a str)> {
+        let mut start_idx = None;
+        let mut end_idx = None;
+
+        for (i, ch) in text.char_indices() {
+            if ch.is_alphabetic() || ch == '_' {
+                if start_idx.is_none() {
+                    start_idx = Some(i);
+                }
+            } else if start_idx.is_some() && end_idx.is_none() {
+                if ch.is_alphanumeric() || ch == '_' {
+                    // Continue identifier
+                } else {
+                    end_idx = Some(i);
+                    break;
+                }
+            }
+        }
+
+        if let Some(start) = start_idx {
+            let end = end_idx.unwrap_or(text.len());
+            Some((&text[..start], &text[start..end], &text[end..]))
+        } else {
+            None
+        }
+    }
+
+    /// Parse macro arguments from a function call
+    /// Returns (arguments, remaining_text)
+    fn parse_macro_arguments<'a>(
+        &self,
+        text: &'a str,
+    ) -> Result<(Vec<String>, &'a str), String> {
+        if !text.starts_with('(') {
+            return Err("Expected '(' for macro arguments".to_string());
+        }
+
+        let mut args = Vec::new();
+        let mut current_arg = String::new();
+        let mut depth = 0;
+        let mut chars = text.char_indices();
+        let mut end_pos = 0;
+
+        // Skip the opening '('
+        chars.next();
+
+        for (i, ch) in chars {
+            match ch {
+                '(' => {
+                    depth += 1;
+                    current_arg.push(ch);
+                }
+                ')' => {
+                    if depth == 0 {
+                        // End of arguments
+                        if !current_arg.trim().is_empty() || !args.is_empty() {
+                            args.push(current_arg.trim().to_string());
+                        }
+                        end_pos = i + 1;
+                        break;
+                    } else {
+                        depth -= 1;
+                        current_arg.push(ch);
+                    }
+                }
+                ',' if depth == 0 => {
+                    // Argument separator at top level
+                    args.push(current_arg.trim().to_string());
+                    current_arg.clear();
+                }
+                _ => {
+                    current_arg.push(ch);
+                }
+            }
+        }
+
+        if end_pos == 0 {
+            return Err("Unclosed macro argument list".to_string());
+        }
+
+        Ok((args, &text[end_pos..]))
+    }
+
+    /// Expand a function-like macro with arguments
+    fn expand_function_macro(
+        &self,
+        params: &[String],
+        body: &str,
+        is_variadic: bool,
+        args: &[String],
+    ) -> Result<String, String> {
+        // Check argument count
+        if is_variadic {
+            if args.len() < params.len() {
+                return Err(format!(
+                    "Too few arguments for variadic macro: expected at least {}, got {}",
+                    params.len(),
+                    args.len()
+                ));
+            }
+        } else if args.len() != params.len() {
+            return Err(format!(
+                "Wrong number of arguments for macro: expected {}, got {}",
+                params.len(),
+                args.len()
+            ));
+        }
+
+        let mut result = body.to_string();
+
+        // Handle __VA_ARGS__ for variadic macros
+        if is_variadic && args.len() > params.len() {
+            let variadic_args = args[params.len()..].join(", ");
+            result = result.replace("__VA_ARGS__", &variadic_args);
+        }
+
+        // First pass: handle stringification (#param) - must be done before ## processing
+        // BUT we need to be careful not to replace # that's part of ##
+        for (i, param) in params.iter().enumerate() {
+            let stringified = format!("\"{}\"", args[i]);
+            let pattern = format!("#{}", param);
+
+            // Replace only if it's not preceded by another #
+            let mut new_result = String::new();
+            let mut remaining = result.as_str();
+
+            while let Some(pos) = remaining.find(&pattern) {
+                // Check if there's a # before this position
+                let is_token_paste = pos > 0 && remaining.as_bytes()[pos - 1] == b'#';
+
+                new_result.push_str(&remaining[..pos]);
+                if is_token_paste {
+                    // This is ##param, not #param - don't stringify
+                    new_result.push_str(&pattern);
+                } else {
+                    // This is #param - stringify it
+                    new_result.push_str(&stringified);
+                }
+                remaining = &remaining[pos + pattern.len()..];
+            }
+            new_result.push_str(remaining);
+            result = new_result;
+        }
+
+        // Second pass: handle token pasting (##)
+        // Token pasting must be done before regular replacement
+        result = self.process_token_pasting(&result, params, args);
+
+        // Third pass: regular parameter replacement
+        for (i, param) in params.iter().enumerate() {
+            result = self.replace_parameter(&result, param, &args[i]);
+        }
+
+        // Recursively expand macros in the result
+        self.expand_macros(&result)
+    }
+
+    /// Process token pasting operators (##) in macro body
+    fn process_token_pasting(
+        &self,
+        body: &str,
+        params: &[String],
+        args: &[String],
+    ) -> String {
+        let mut result = body.to_string();
+
+        // Process ## operators
+        // Look for patterns like "param1##param2" or "param1##literal" or "literal##param2"
+        while let Some(paste_pos) = result.find("##") {
+            // Find the token before ##
+            let before_paste = &result[..paste_pos].trim_end();
+            let left_token = self.get_last_token(before_paste);
+
+            // Find the token after ##
+            let after_paste = &result[paste_pos + 2..].trim_start();
+            let right_token = self.get_first_token(after_paste);
+
+            // Replace parameter names with their values
+            let left_value = self.param_to_arg(left_token, params, args);
+            let right_value = self.param_to_arg(right_token, params, args);
+
+            // Concatenate the tokens
+            let concatenated = format!("{}{}", left_value, right_value);
+
+            // Build the new result
+            let before_left = &result[..paste_pos - left_token.len()];
+            let after_right = &result[paste_pos + 2 + right_token.len()..];
+            result = format!("{}{}{}", before_left.trim_end(), concatenated, after_right.trim_start());
+        }
+
+        result
+    }
+
+    /// Get the last token from a string
+    fn get_last_token<'a>(&self, text: &'a str) -> &'a str {
+        let trimmed = text.trim_end();
+        let mut start = trimmed.len();
+
+        for (i, ch) in trimmed.char_indices().rev() {
+            if ch.is_alphanumeric() || ch == '_' {
+                start = i;
+            } else {
+                break;
+            }
+        }
+
+        &trimmed[start..]
+    }
+
+    /// Get the first token from a string
+    fn get_first_token<'a>(&self, text: &'a str) -> &'a str {
+        let trimmed = text.trim_start();
+        let mut end = 0;
+
+        for (i, ch) in trimmed.char_indices() {
+            if ch.is_alphanumeric() || ch == '_' {
+                end = i + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+
+        if end == 0 && !trimmed.is_empty() {
+            // Single character that's not alphanumeric
+            let first_char = trimmed.chars().next().unwrap();
+            &trimmed[..first_char.len_utf8()]
+        } else {
+            &trimmed[..end]
+        }
+    }
+
+    /// Convert parameter name to argument value, or return as-is if not a parameter
+    fn param_to_arg(&self, token: &str, params: &[String], args: &[String]) -> String {
+        for (i, param) in params.iter().enumerate() {
+            if token == param {
+                return args[i].clone();
+            }
+        }
+        token.to_string()
+    }
+
+    /// Replace a parameter with its argument, respecting identifier boundaries
+    fn replace_parameter(&self, text: &str, param: &str, arg: &str) -> String {
+        let mut result = String::new();
+        let mut remaining = text;
+
+        while !remaining.is_empty() {
+            if let Some((before, ident, after)) = self.find_next_identifier(remaining) {
+                result.push_str(before);
+                if ident == param {
+                    result.push_str(arg);
+                } else {
+                    result.push_str(ident);
+                }
+                remaining = after;
+            } else {
+                result.push_str(remaining);
+                break;
+            }
+        }
+
+        result
     }
 }
 
@@ -483,5 +947,152 @@ mod tests {
         let result = pp.preprocess(source);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Circular include"));
+    }
+
+    // Macro tests
+
+    #[test]
+    fn test_define_object_like_macro() {
+        let mut pp = Preprocessor::new();
+        let source = "#define PI 3.14\nreturn PI;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("3.14"));
+        assert!(!result.contains("PI"));
+    }
+
+    #[test]
+    fn test_define_object_like_macro_no_value() {
+        let mut pp = Preprocessor::new();
+        let source = "#define FLAG\nint x = FLAG;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int x = ;"));
+    }
+
+    #[test]
+    fn test_define_function_like_macro() {
+        let mut pp = Preprocessor::new();
+        let source = "#define ADD(a, b) a + b\nreturn ADD(1, 2);\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("1 + 2"));
+        assert!(!result.contains("ADD"));
+    }
+
+    #[test]
+    fn test_define_function_like_macro_no_params() {
+        let mut pp = Preprocessor::new();
+        let source = "#define GETVAL() 42\nreturn GETVAL();\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("42"));
+    }
+
+    #[test]
+    fn test_undef_directive() {
+        let mut pp = Preprocessor::new();
+        let source = "#define FOO 1\nint a = FOO;\n#undef FOO\nint b = FOO;\n";
+        let result = pp.preprocess(source).unwrap();
+        // First FOO should be expanded
+        assert!(result.contains("int a = 1;"));
+        // Second FOO should not be expanded (it's undefined)
+        assert!(result.contains("int b = FOO;"));
+    }
+
+    #[test]
+    fn test_variadic_macro() {
+        let mut pp = Preprocessor::new();
+        let source = "#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)\nLOG(\"x=%d\", x);\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("printf(\"x=%d\", x)"));
+    }
+
+    #[test]
+    fn test_variadic_macro_multiple_args() {
+        let mut pp = Preprocessor::new();
+        let source = "#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)\nLOG(\"%d %d\", a, b);\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("printf(\"%d %d\", a, b)"));
+    }
+
+    #[test]
+    fn test_stringification() {
+        let mut pp = Preprocessor::new();
+        let source = "#define STR(x) #x\nreturn STR(hello);\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("\"hello\""));
+    }
+
+    #[test]
+    fn test_token_pasting_prefix() {
+        let mut pp = Preprocessor::new();
+        let source = "#define CONCAT(a, b) a##b\nint CONCAT(x, 123) = 5;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("x123"));
+    }
+
+    #[test]
+    fn test_token_pasting_suffix() {
+        let mut pp = Preprocessor::new();
+        let source = "#define SUFFIX(x) var##x\nint SUFFIX(123) = 5;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("var123"));
+    }
+
+    #[test]
+    fn test_recursive_macro_expansion() {
+        let mut pp = Preprocessor::new();
+        let source = "#define A B\n#define B 42\nreturn A;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("42"));
+    }
+
+    #[test]
+    fn test_function_macro_without_parentheses() {
+        let mut pp = Preprocessor::new();
+        let source = "#define ADD(a, b) a + b\nint x = ADD;\n";
+        let result = pp.preprocess(source).unwrap();
+        // Function-like macro should not expand without parentheses
+        assert!(result.contains("int x = ADD;"));
+    }
+
+    #[test]
+    fn test_macro_wrong_argument_count() {
+        let mut pp = Preprocessor::new();
+        let source = "#define ADD(a, b) a + b\nreturn ADD(1);\n";
+        let result = pp.preprocess(source);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Wrong number of arguments"));
+    }
+
+    #[test]
+    fn test_parse_object_vs_function_macro() {
+        let mut pp = Preprocessor::new();
+        // Space before ( makes it object-like
+        let source1 = "#define MAX (100)\nint x = MAX;\n";
+        let result1 = pp.preprocess(source1).unwrap();
+        assert!(result1.contains("(100)"));
+
+        // No space before ( makes it function-like
+        let mut pp2 = Preprocessor::new();
+        let source2 = "#define MAX() 100\nint x = MAX();\n";
+        let result2 = pp2.preprocess(source2).unwrap();
+        assert!(result2.contains("100"));
+    }
+
+    #[test]
+    fn test_macro_with_nested_calls() {
+        let mut pp = Preprocessor::new();
+        let source = "#define DOUBLE(x) (x * 2)\nint y = DOUBLE(DOUBLE(5));\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("((5 * 2) * 2)"));
+    }
+
+    #[test]
+    fn test_is_valid_identifier() {
+        assert!(Preprocessor::is_valid_identifier("foo"));
+        assert!(Preprocessor::is_valid_identifier("_bar"));
+        assert!(Preprocessor::is_valid_identifier("foo123"));
+        assert!(Preprocessor::is_valid_identifier("_"));
+        assert!(!Preprocessor::is_valid_identifier("123foo"));
+        assert!(!Preprocessor::is_valid_identifier(""));
+        assert!(!Preprocessor::is_valid_identifier("foo-bar"));
     }
 }
