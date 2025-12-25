@@ -43,12 +43,13 @@ mod lexer_tests {
 
     #[test]
     fn test_struct_tokens() {
-        let mut lexer = Lexer::new("struct . ->");
+        let mut lexer = Lexer::new("struct enum . ->");
         let tokens = lexer.tokenize().unwrap();
 
         assert_eq!(tokens[0], Token::Struct);
-        assert_eq!(tokens[1], Token::Dot);
-        assert_eq!(tokens[2], Token::Arrow);
+        assert_eq!(tokens[1], Token::Enum);
+        assert_eq!(tokens[2], Token::Dot);
+        assert_eq!(tokens[3], Token::Arrow);
     }
 
     #[test]
