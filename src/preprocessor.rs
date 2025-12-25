@@ -443,15 +443,145 @@ impl Preprocessor {
         Ok((line_num + 1, String::new()))
     }
 
-    /// Process #ifdef or #ifndef directive (stub for now)
+    /// Process #ifdef or #ifndef directive
     fn process_ifdef(
         &mut self,
-        _lines: &[&str],
+        lines: &[&str],
         line_num: usize,
-        _is_ifndef: bool,
+        is_ifndef: bool,
     ) -> Result<(usize, String), String> {
-        // TODO: Implement in cc2-a3g
-        Ok((line_num + 1, String::new()))
+        let line = lines[line_num];
+        let trimmed = line.trim_start();
+
+        // Extract the directive and macro name
+        let directive_name = if is_ifndef { "ifndef" } else { "ifdef" };
+        let after_hash = trimmed[1..].trim_start(); // Skip '#'
+
+        if !after_hash.starts_with(directive_name) {
+            return Err(format!(
+                "Expected #{} directive at line {}",
+                directive_name,
+                line_num + 1
+            ));
+        }
+
+        let rest = after_hash[directive_name.len()..].trim();
+        if rest.is_empty() {
+            return Err(format!(
+                "Missing macro name in #{} at line {}",
+                directive_name,
+                line_num + 1
+            ));
+        }
+
+        // Extract macro name (first word)
+        let macro_name = rest.split_whitespace().next().unwrap();
+
+        if !Self::is_valid_identifier(macro_name) {
+            return Err(format!(
+                "Invalid macro name '{}' in #{} at line {}",
+                macro_name, directive_name, line_num + 1
+            ));
+        }
+
+        // Check the condition
+        let is_defined = self.is_defined(macro_name);
+        let condition = if is_ifndef { !is_defined } else { is_defined };
+
+        // Find the matching #endif and process the block
+        let (end_line, block_output) = if condition {
+            // Condition is true - process the block normally
+            self.process_conditional_block(lines, line_num + 1, true)?
+        } else {
+            // Condition is false - skip the block
+            self.skip_conditional_block(lines, line_num + 1)?
+        };
+
+        Ok((end_line, block_output))
+    }
+
+    /// Process a conditional block when condition is true
+    fn process_conditional_block(
+        &mut self,
+        lines: &[&str],
+        start_line: usize,
+        _is_active: bool,
+    ) -> Result<(usize, String), String> {
+        let mut output = String::new();
+        let mut current_line = start_line;
+
+        while current_line < lines.len() {
+            let line = lines[current_line];
+            let trimmed = line.trim_start();
+
+            if trimmed.starts_with('#') {
+                let after_hash = trimmed[1..].trim_start();
+
+                if after_hash.starts_with("endif") {
+                    // This is our matching #endif
+                    return Ok((current_line + 1, output));
+                } else if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") {
+                    // Process the nested conditional - it will handle its own #endif
+                    let (new_line, directive_output) = self.process_directive(lines, current_line)?;
+                    current_line = new_line;
+                    output.push_str(&directive_output);
+                } else {
+                    // Other directive - process normally
+                    let (new_line, directive_output) = self.process_directive(lines, current_line)?;
+                    current_line = new_line;
+                    output.push_str(&directive_output);
+                }
+            } else {
+                // Regular line - expand macros
+                let expanded = self.expand_macros(line)?;
+                output.push_str(&expanded);
+                output.push('\n');
+                current_line += 1;
+            }
+        }
+
+        Err(format!(
+            "Missing #endif for conditional starting at line {}",
+            start_line
+        ))
+    }
+
+    /// Skip a conditional block when condition is false
+    fn skip_conditional_block(
+        &mut self,
+        lines: &[&str],
+        start_line: usize,
+    ) -> Result<(usize, String), String> {
+        let mut current_line = start_line;
+        let mut nesting_level = 0;
+
+        while current_line < lines.len() {
+            let line = lines[current_line];
+            let trimmed = line.trim_start();
+
+            if trimmed.starts_with('#') {
+                let after_hash = trimmed[1..].trim_start();
+
+                // Check for nested conditionals
+                if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") || after_hash.starts_with("if") {
+                    nesting_level += 1;
+                } else if after_hash.starts_with("endif") {
+                    if nesting_level == 0 {
+                        // This is our matching #endif - skip it and return
+                        return Ok((current_line + 1, String::new()));
+                    } else {
+                        nesting_level -= 1;
+                    }
+                }
+            }
+
+            current_line += 1;
+        }
+
+        Err(format!(
+            "Missing #endif for conditional starting at line {}",
+            start_line
+        ))
     }
 
     /// Process #if directive (stub for now)
@@ -1094,5 +1224,131 @@ mod tests {
         assert!(!Preprocessor::is_valid_identifier("123foo"));
         assert!(!Preprocessor::is_valid_identifier(""));
         assert!(!Preprocessor::is_valid_identifier("foo-bar"));
+    }
+
+    // Conditional compilation tests
+
+    #[test]
+    fn test_ifdef_defined() {
+        let mut pp = Preprocessor::new();
+        let source = "#define FOO\n#ifdef FOO\nint x = 1;\n#endif\nint y = 2;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int x = 1;"));
+        assert!(result.contains("int y = 2;"));
+    }
+
+    #[test]
+    fn test_ifdef_not_defined() {
+        let mut pp = Preprocessor::new();
+        let source = "#ifdef FOO\nint x = 1;\n#endif\nint y = 2;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(!result.contains("int x = 1;"));
+        assert!(result.contains("int y = 2;"));
+    }
+
+    #[test]
+    fn test_ifndef_defined() {
+        let mut pp = Preprocessor::new();
+        let source = "#define FOO\n#ifndef FOO\nint x = 1;\n#endif\nint y = 2;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(!result.contains("int x = 1;"));
+        assert!(result.contains("int y = 2;"));
+    }
+
+    #[test]
+    fn test_ifndef_not_defined() {
+        let mut pp = Preprocessor::new();
+        let source = "#ifndef FOO\nint x = 1;\n#endif\nint y = 2;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int x = 1;"));
+        assert!(result.contains("int y = 2;"));
+    }
+
+    #[test]
+    fn test_nested_ifdef() {
+        let mut pp = Preprocessor::new();
+        let source = "#define FOO\n#define BAR\n#ifdef FOO\n#ifdef BAR\nint x = 1;\n#endif\n#endif\nint y = 2;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int x = 1;"));
+        assert!(result.contains("int y = 2;"));
+    }
+
+    #[test]
+    fn test_nested_ifdef_partial() {
+        let mut pp = Preprocessor::new();
+        let source = "#define FOO\n#ifdef FOO\n#ifdef BAR\nint x = 1;\n#endif\nint y = 2;\n#endif\nint z = 3;\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(!result.contains("int x = 1;"));
+        assert!(result.contains("int y = 2;"));
+        assert!(result.contains("int z = 3;"));
+    }
+
+    #[test]
+    fn test_include_guard_pattern() {
+        let mut pp = Preprocessor::new();
+        // Typical include guard pattern
+        let source = "#ifndef HEADER_H\n#define HEADER_H\nint foo();\n#endif\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int foo();"));
+
+        // Second inclusion should be empty
+        let mut pp2 = Preprocessor::new();
+        pp2.define_macro("HEADER_H".to_string(), MacroDef::Object(String::new()));
+        let result2 = pp2.preprocess(source).unwrap();
+        assert!(!result2.contains("int foo();"));
+    }
+
+    #[test]
+    fn test_ifdef_with_macro_expansion() {
+        let mut pp = Preprocessor::new();
+        let source = "#define FOO 42\n#ifdef FOO\nint x = FOO;\n#endif\n";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int x = 42;"));
+    }
+
+    #[test]
+    fn test_ifdef_missing_endif() {
+        let mut pp = Preprocessor::new();
+        let source = "#ifdef FOO\nint x = 1;\n";
+        let result = pp.preprocess(source);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing #endif"));
+    }
+
+    #[test]
+    fn test_ifdef_missing_macro_name() {
+        let mut pp = Preprocessor::new();
+        let source = "#ifdef\nint x = 1;\n#endif\n";
+        let result = pp.preprocess(source);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing macro name"));
+    }
+
+    #[test]
+    fn test_complex_nested_conditionals() {
+        let mut pp = Preprocessor::new();
+        let source = "\
+#define A
+#define B
+#ifdef A
+  #ifdef B
+    int ab = 1;
+  #endif
+  #ifdef C
+    int ac = 2;
+  #endif
+  int a = 3;
+#endif
+#ifndef A
+  int not_a = 4;
+#endif
+int done = 5;
+";
+        let result = pp.preprocess(source).unwrap();
+        assert!(result.contains("int ab = 1;"));
+        assert!(!result.contains("int ac = 2;"));
+        assert!(result.contains("int a = 3;"));
+        assert!(!result.contains("int not_a = 4;"));
+        assert!(result.contains("int done = 5;"));
     }
 }
