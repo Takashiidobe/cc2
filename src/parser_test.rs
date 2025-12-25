@@ -550,8 +550,11 @@ mod parser_tests {
                 AstNode::Function { body, .. } => match body.as_ref() {
                     AstNode::Block(stmts) => {
                         match &stmts[1] {
-                            AstNode::Assignment { name, value } => {
-                                assert_eq!(name, "x");
+                            AstNode::Assignment { target, value } => {
+                                match target.as_ref() {
+                                    AstNode::Variable(name) => assert_eq!(name, "x"),
+                                    _ => panic!("Expected variable as assignment target"),
+                                }
                                 match value.as_ref() {
                                     AstNode::BinaryOp { op: BinOp::Add, .. } => {}
                                     _ => panic!("Expected addition in compound assignment"),
@@ -560,8 +563,11 @@ mod parser_tests {
                             _ => panic!("Expected assignment statement"),
                         }
                         match &stmts[2] {
-                            AstNode::Assignment { name, value } => {
-                                assert_eq!(name, "x");
+                            AstNode::Assignment { target, value } => {
+                                match target.as_ref() {
+                                    AstNode::Variable(name) => assert_eq!(name, "x"),
+                                    _ => panic!("Expected variable as assignment target"),
+                                }
                                 match value.as_ref() {
                                     AstNode::BinaryOp { op: BinOp::ShiftLeft, .. } => {}
                                     _ => panic!("Expected shift in compound assignment"),

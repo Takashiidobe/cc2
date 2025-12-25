@@ -23,6 +23,8 @@ impl Parser {
             }
             if self.is_struct_definition() {
                 functions.push(self.parse_struct_definition()?);
+            } else if self.is_union_definition() {
+                functions.push(self.parse_union_definition()?);
             } else if self.is_enum_definition() {
                 functions.push(self.parse_enum_definition()?);
             } else {
@@ -114,6 +116,15 @@ impl Parser {
                 self.advance();
                 Type::Struct(name)
             }
+            Token::Union => {
+                self.advance();
+                let name = match self.current() {
+                    Token::Identifier(s) => s.clone(),
+                    _ => return Err(format!("Expected union name, got {:?}", self.current())),
+                };
+                self.advance();
+                Type::Union(name)
+            }
             Token::Enum => {
                 self.advance();
                 let name = match self.current() {
@@ -180,7 +191,7 @@ impl Parser {
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
             Token::For => self.parse_for_loop(),
-            Token::Unsigned | Token::Int | Token::Char | Token::Short | Token::Long | Token::Struct | Token::Enum => {
+            Token::Unsigned | Token::Int | Token::Char | Token::Short | Token::Long | Token::Struct | Token::Union | Token::Enum => {
                 self.parse_var_decl()
             }
             _ => {
@@ -349,71 +360,68 @@ impl Parser {
             | Token::CaretEquals
             | Token::LessLessEquals
             | Token::GreaterGreaterEquals => {
-                let name = match left {
-                    AstNode::Variable(name) => name,
-                    _ => return Err("Assignment target must be a variable".to_string()),
-                };
+                // left is now the lvalue (could be Variable, MemberAccess, ArrayIndex, Dereference)
                 let op_token = self.current().clone();
                 self.advance();
-                let value = self.parse_assignment()?;
+                let right_value = self.parse_assignment()?;
 
                 let value = match op_token {
-                    Token::Equals => value,
+                    Token::Equals => right_value,
                     Token::PlusEquals => AstNode::BinaryOp {
                         op: BinOp::Add,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::MinusEquals => AstNode::BinaryOp {
                         op: BinOp::Subtract,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::StarEquals => AstNode::BinaryOp {
                         op: BinOp::Multiply,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::SlashEquals => AstNode::BinaryOp {
                         op: BinOp::Divide,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::PercentEquals => AstNode::BinaryOp {
                         op: BinOp::Modulo,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::AmpersandEquals => AstNode::BinaryOp {
                         op: BinOp::BitAnd,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::PipeEquals => AstNode::BinaryOp {
                         op: BinOp::BitOr,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::CaretEquals => AstNode::BinaryOp {
                         op: BinOp::BitXor,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::LessLessEquals => AstNode::BinaryOp {
                         op: BinOp::ShiftLeft,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     Token::GreaterGreaterEquals => AstNode::BinaryOp {
                         op: BinOp::ShiftRight,
-                        left: Box::new(AstNode::Variable(name.clone())),
-                        right: Box::new(value),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right_value),
                     },
                     _ => unreachable!(),
                 };
 
                 Ok(AstNode::Assignment {
-                    name,
+                    target: Box::new(left),
                     value: Box::new(value),
                 })
             }
@@ -851,6 +859,37 @@ impl Parser {
         Ok(AstNode::StructInit(values))
     }
 
+    fn parse_union_definition(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Union)?;
+        let name = match self.current() {
+            Token::Identifier(s) => s.clone(),
+            _ => return Err(format!("Expected union name, got {:?}", self.current())),
+        };
+        self.advance();
+        self.expect(Token::OpenBrace)?;
+
+        let mut fields = Vec::new();
+        while self.current() != &Token::CloseBrace {
+            let field_type = self.parse_type()?;
+            let field_name = match self.current() {
+                Token::Identifier(s) => s.clone(),
+                _ => return Err(format!("Expected field name, got {:?}", self.current())),
+            };
+            self.advance();
+            let field_type = self.parse_array_type_suffix(field_type)?;
+            self.expect(Token::Semicolon)?;
+            fields.push(StructField {
+                name: field_name,
+                field_type,
+            });
+        }
+
+        self.expect(Token::CloseBrace)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(AstNode::UnionDef { name, fields })
+    }
+
     fn parse_enum_definition(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Enum)?;
         let name = match self.current() {
@@ -940,6 +979,12 @@ impl Parser {
             && matches!(self.peek(2), Some(Token::OpenBrace))
     }
 
+    fn is_union_definition(&self) -> bool {
+        matches!(self.current(), Token::Union)
+            && matches!(self.peek(1), Some(Token::Identifier(_)))
+            && matches!(self.peek(2), Some(Token::OpenBrace))
+    }
+
     fn is_enum_definition(&self) -> bool {
         matches!(self.current(), Token::Enum)
             && matches!(self.peek(1), Some(Token::Identifier(_)))
@@ -953,6 +998,7 @@ impl Parser {
                 | Some(Token::Int)
                 | Some(Token::Char)
                 | Some(Token::Struct)
+                | Some(Token::Union)
                 | Some(Token::Enum)
                 | Some(Token::Short)
                 | Some(Token::Long)

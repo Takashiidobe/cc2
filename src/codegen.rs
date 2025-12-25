@@ -8,6 +8,7 @@ pub struct CodeGenerator {
     label_counter: usize,
     current_function_end_label: Option<String>,
     struct_layouts: HashMap<String, StructLayout>,
+    union_layouts: HashMap<String, StructLayout>,
     enum_constants: HashMap<String, i64>,
 }
 
@@ -32,6 +33,7 @@ impl CodeGenerator {
             label_counter: 0,
             current_function_end_label: None,
             struct_layouts: HashMap::new(),
+            union_layouts: HashMap::new(),
             enum_constants: HashMap::new(),
         }
     }
@@ -42,8 +44,10 @@ impl CodeGenerator {
         self.label_counter = 0;
         self.current_function_end_label = None;
         self.struct_layouts.clear();
+        self.union_layouts.clear();
         self.enum_constants.clear();
         self.collect_struct_layouts(ast)?;
+        self.collect_union_layouts(ast)?;
         self.collect_enum_constants(ast)?;
         self.generate_node(ast)?;
         Ok(self.output.clone())
@@ -64,6 +68,7 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::StructDef { .. } => Ok(()),
+            AstNode::UnionDef { .. } => Ok(()),
             AstNode::EnumDef { .. } => Ok(()),
             AstNode::Function {
                 name, body, params, ..
@@ -324,27 +329,32 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
-            AstNode::Assignment { name, value } => {
-                let symbol = self
-                    .symbol_table
-                    .get_variable(name)
-                    .ok_or_else(|| format!("Undefined variable: {}", name))?;
-                let symbol_type = symbol.symbol_type.clone();
-                let stack_offset = symbol.stack_offset;
-
+            AstNode::Assignment { target, value } => {
+                // Generate the value first
                 self.generate_node(value)?;
-                if matches!(symbol_type, Type::Int | Type::UInt | Type::Enum(_)) {
-                    self.emit(&format!("    movl %eax, {}(%rbp)", stack_offset));
-                } else if matches!(symbol_type, Type::UShort | Type::Short) {
-                    self.emit(&format!("    movw %ax, {}(%rbp)", stack_offset));
-                } else if matches!(symbol_type, Type::Char | Type::UChar) {
-                    self.emit(&format!("    movb %al, {}(%rbp)", stack_offset));
-                } else if matches!(symbol_type, Type::Long | Type::ULong) {
-                    self.emit(&format!("    movq %rax, {}(%rbp)", stack_offset));
+                self.emit("    pushq %rax");
+
+                // Generate lvalue address
+                self.generate_lvalue(target)?;
+                self.emit("    movq %rax, %rcx");  // %rcx = address
+                self.emit("    popq %rax");        // %rax = value
+
+                // Determine the type to store
+                let target_type = self.expr_type(target)?;
+
+                // Store value at address in %rcx
+                if matches!(target_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                    self.emit("    movl %eax, (%rcx)");
+                } else if matches!(target_type, Type::UShort | Type::Short) {
+                    self.emit("    movw %ax, (%rcx)");
+                } else if matches!(target_type, Type::Char | Type::UChar) {
+                    self.emit("    movb %al, (%rcx)");
+                } else if matches!(target_type, Type::Long | Type::ULong) {
+                    self.emit("    movq %rax, (%rcx)");
                 } else {
-                    self.emit(&format!("    movq %rax, {}(%rbp)", stack_offset));
+                    self.emit("    movq %rax, (%rcx)");
                 }
-                self.coerce_rax_to_type(&symbol_type);
+                self.coerce_rax_to_type(&target_type);
                 Ok(())
             }
             AstNode::Variable(name) => {
@@ -359,7 +369,7 @@ impl CodeGenerator {
                     .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
 
-                if symbol.symbol_type.is_array() || matches!(symbol.symbol_type, Type::Struct(_)) {
+                if symbol.symbol_type.is_array() || matches!(symbol.symbol_type, Type::Struct(_) | Type::Union(_)) {
                     self.emit(&format!("    leaq {}(%rbp), %rax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::Int | Type::Enum(_)) {
                     self.emit(&format!("    movslq {}(%rbp), %rax", symbol.stack_offset));
@@ -847,15 +857,19 @@ impl CodeGenerator {
         member: &str,
         through_pointer: bool,
     ) -> Result<(), String> {
-        let (struct_name, is_address) = self.resolve_struct_base(base, through_pointer)?;
+        let (struct_or_union_name, is_address) = self.resolve_struct_or_union_base(base, through_pointer)?;
+
+        // Try struct first, then union
         let layout = self
             .struct_layouts
-            .get(&struct_name)
-            .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?;
+            .get(&struct_or_union_name)
+            .or_else(|| self.union_layouts.get(&struct_or_union_name))
+            .ok_or_else(|| format!("Unknown struct/union type: {}", struct_or_union_name))?;
+
         let field = layout
             .fields
             .get(member)
-            .ok_or_else(|| format!("Unknown field '{}' on struct {}", member, struct_name))?;
+            .ok_or_else(|| format!("Unknown field '{}' on struct/union {}", member, struct_or_union_name))?;
 
         if is_address {
             self.emit(&format!("    addq ${}, %rax", field.offset));
@@ -1110,6 +1124,13 @@ impl CodeGenerator {
                     .ok_or_else(|| format!("Unknown struct type: {}", name))?;
                 Ok(layout.size)
             }
+            Type::Union(name) => {
+                let layout = self
+                    .union_layouts
+                    .get(name)
+                    .ok_or_else(|| format!("Unknown union type: {}", name))?;
+                Ok(layout.size)
+            }
             Type::Enum(_) => Ok(4),
         }
     }
@@ -1132,6 +1153,13 @@ impl CodeGenerator {
                     .struct_layouts
                     .get(name)
                     .ok_or_else(|| format!("Unknown struct type: {}", name))?;
+                Ok(layout.alignment)
+            }
+            Type::Union(name) => {
+                let layout = self
+                    .union_layouts
+                    .get(name)
+                    .ok_or_else(|| format!("Unknown union type: {}", name))?;
                 Ok(layout.alignment)
             }
             Type::Enum(_) => Ok(4),
@@ -1166,6 +1194,45 @@ impl CodeGenerator {
         let size = align_to(offset, max_align);
 
         self.struct_layouts.insert(
+            name.to_string(),
+            StructLayout {
+                fields: field_map,
+                alignment: max_align,
+                size,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn register_union_layout(&mut self, name: &str, fields: &[StructField]) -> Result<(), String> {
+        if self.union_layouts.contains_key(name) {
+            return Err(format!("Union '{}' already defined", name));
+        }
+
+        let mut max_size = 0;
+        let mut max_align = 1;
+        let mut field_map = HashMap::new();
+        for field in fields {
+            let field_size = self.type_size(&field.field_type)?;
+            let field_align = self.type_alignment(&field.field_type)?;
+            if field_size == 0 {
+                return Err(format!("Field '{}' has invalid size", field.name));
+            }
+            max_size = max_size.max(field_size);
+            max_align = max_align.max(field_align);
+            // All fields in a union are at offset 0
+            field_map.insert(
+                field.name.clone(),
+                StructFieldInfo {
+                    field_type: field.field_type.clone(),
+                    offset: 0,
+                },
+            );
+        }
+        let size = align_to(max_size, max_align);
+
+        self.union_layouts.insert(
             name.to_string(),
             StructLayout {
                 fields: field_map,
@@ -1236,6 +1303,17 @@ impl CodeGenerator {
         Ok(())
     }
 
+    fn collect_union_layouts(&mut self, node: &AstNode) -> Result<(), String> {
+        if let AstNode::Program(nodes) = node {
+            for item in nodes {
+                if let AstNode::UnionDef { name, fields } = item {
+                    self.register_union_layout(name, fields)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn collect_enum_constants(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
@@ -1251,7 +1329,7 @@ impl CodeGenerator {
         Ok(())
     }
 
-    fn resolve_struct_base(
+    fn resolve_struct_or_union_base(
         &mut self,
         base: &AstNode,
         through_pointer: bool,
@@ -1265,18 +1343,18 @@ impl CodeGenerator {
                     .symbol_type
                     .clone();
                 match (symbol_type, through_pointer) {
-                    (Type::Struct(struct_name), false) => {
+                    (Type::Struct(name), false) | (Type::Union(name), false) => {
                         self.generate_lvalue(base)?;
-                        Ok((struct_name, true))
+                        Ok((name, true))
                     }
                     (Type::Pointer(pointee), true) => match pointee.as_ref() {
-                        Type::Struct(struct_name) => {
+                        Type::Struct(name) | Type::Union(name) => {
                             self.generate_node(base)?;
-                            Ok((struct_name.clone(), true))
+                            Ok((name.clone(), true))
                         }
-                        _ => Err("Pointer does not target a struct".to_string()),
+                        _ => Err("Pointer does not target a struct/union".to_string()),
                     },
-                    _ => Err("Member access base is not a struct".to_string()),
+                    _ => Err("Member access base is not a struct/union".to_string()),
                 }
             }
             _ => Err("Unsupported member access base".to_string()),
@@ -1290,22 +1368,26 @@ impl CodeGenerator {
         through_pointer: bool,
     ) -> Result<Type, String> {
         let base_type = self.expr_type(base)?;
-        let struct_name = match (base_type, through_pointer) {
-            (Type::Struct(name), false) => name,
+        let struct_or_union_name = match (base_type, through_pointer) {
+            (Type::Struct(name), false) | (Type::Union(name), false) => name,
             (Type::Pointer(pointee), true) => match *pointee {
-                Type::Struct(name) => name,
-                _ => return Err("Pointer does not target a struct".to_string()),
+                Type::Struct(name) | Type::Union(name) => name,
+                _ => return Err("Pointer does not target a struct/union".to_string()),
             },
-            _ => return Err("Member access base is not a struct".to_string()),
+            _ => return Err("Member access base is not a struct/union".to_string()),
         };
+
+        // Try struct first, then union
         let layout = self
             .struct_layouts
-            .get(&struct_name)
-            .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?;
+            .get(&struct_or_union_name)
+            .or_else(|| self.union_layouts.get(&struct_or_union_name))
+            .ok_or_else(|| format!("Unknown struct/union type: {}", struct_or_union_name))?;
+
         let field = layout
             .fields
             .get(member)
-            .ok_or_else(|| format!("Unknown field '{}' on struct {}", member, struct_name))?;
+            .ok_or_else(|| format!("Unknown field '{}' on struct/union {}", member, struct_or_union_name))?;
         Ok(field.field_type.clone())
     }
 
@@ -1412,12 +1494,8 @@ impl CodeGenerator {
                     | BinOp::LogicalOr => Ok(Type::Int),
                 }
             }
-            AstNode::Assignment { name, .. } => {
-                let symbol = self
-                    .symbol_table
-                    .get_variable(name)
-                    .ok_or_else(|| format!("Undefined variable: {}", name))?;
-                Ok(symbol.symbol_type.clone())
+            AstNode::Assignment { target, .. } => {
+                self.expr_type(target)
             }
             AstNode::UnaryOp { op, operand } => match op {
                 UnaryOp::LogicalNot => Ok(Type::Int),

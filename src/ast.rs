@@ -34,13 +34,17 @@ pub enum AstNode {
         name: String,
         enumerators: Vec<Enumerator>,
     },
+    UnionDef {
+        name: String,
+        fields: Vec<StructField>,
+    },
     VarDecl {
         name: String,
         var_type: Type,
         init: Option<Box<AstNode>>,
     },
     Assignment {
-        name: String,
+        target: Box<AstNode>,
         value: Box<AstNode>,
     },
     Variable(String),
@@ -136,6 +140,7 @@ pub enum Type {
     Pointer(Box<Type>),
     Array(Box<Type>, usize),
     Struct(String),
+    Union(String),
     Enum(String),
 }
 
@@ -152,7 +157,7 @@ impl Type {
             Type::ULong => 8,
             Type::Pointer(_) => 8,
             Type::Array(elem, len) => elem.size() * (*len as i32),
-            Type::Void | Type::Struct(_) => 0,
+            Type::Void | Type::Struct(_) | Type::Union(_) => 0,
             Type::Enum(_) => 4,
         }
     }
@@ -187,9 +192,10 @@ impl fmt::Display for AstNode {
             AstNode::WhileLoop { .. } => write!(f, "WhileLoop"),
             AstNode::ForLoop { .. } => write!(f, "ForLoop"),
             AstNode::StructDef { name, .. } => write!(f, "StructDef({})", name),
+            AstNode::UnionDef { name, .. } => write!(f, "UnionDef({})", name),
             AstNode::EnumDef { name, .. } => write!(f, "EnumDef({})", name),
             AstNode::VarDecl { name, .. } => write!(f, "VarDecl({})", name),
-            AstNode::Assignment { name, .. } => write!(f, "Assignment({})", name),
+            AstNode::Assignment { .. } => write!(f, "Assignment"),
             AstNode::Variable(name) => write!(f, "Variable({})", name),
             AstNode::FunctionCall { name, .. } => write!(f, "FunctionCall({})", name),
             AstNode::BinaryOp { op, .. } => write!(f, "BinaryOp({:?})", op),

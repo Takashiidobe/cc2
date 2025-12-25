@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "union\nIdentifier(Data)\n{\nint\nIdentifier(i)\n;\nchar\nIdentifier(c)\n;\nlong\nIdentifier(l)\n;\n}\n;\nint\nIdentifier(main)\n(\n)\n{\nunion\nIdentifier(Data)\nIdentifier(d)\n;\nIdentifier(d)\n.\nIdentifier(i)\n=\nIntLiteral(42)\n;\nint\nIdentifier(x)\n=\nIdentifier(d)\n.\nIdentifier(i)\n;\nIdentifier(d)\n.\nIdentifier(c)\n=\nIntLiteral(65)\n;\nint\nIdentifier(y)\n=\nIdentifier(d)\n.\nIdentifier(c)\n;\nIdentifier(d)\n.\nIdentifier(l)\n=\nIntLiteral(100)\n;\nint\nIdentifier(z)\n=\nIdentifier(d)\n.\nIdentifier(l)\n;\nreturn\nIdentifier(x)\n+\nIdentifier(y)\n+\nIdentifier(z)\n;\n}\nEOF\n"
+stderr: ""
+status: 0
