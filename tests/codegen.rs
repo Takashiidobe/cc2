@@ -117,5 +117,5 @@ fn run_case(path: &Path) -> datatest_stable::Result<()> {
 }
 
 datatest_stable::harness! {
-    { test = run_case, root = "./tests/codegen/", pattern = r#"^.*.c$"# },
+    { test = run_case, root = "./tests/files/", pattern = r#"^.*.c$"# },
 }
