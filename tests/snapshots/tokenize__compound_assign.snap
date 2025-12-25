@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "int\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(x)\n=\nIntLiteral(10)\n;\nunsigned\nint\nIdentifier(u)\n=\nIntLiteral(100)\n;\nIdentifier(x)\n+=\nIntLiteral(5)\n;\nIdentifier(x)\n-=\nIntLiteral(3)\n;\nIdentifier(x)\n*=\nIntLiteral(2)\n;\nIdentifier(x)\n/=\nIntLiteral(3)\n;\nIdentifier(u)\n+=\nIntLiteral(20)\n;\nIdentifier(u)\n-=\nIntLiteral(10)\n;\nIdentifier(u)\n*=\nIntLiteral(2)\n;\nIdentifier(u)\n/=\nIntLiteral(5)\n;\nreturn\n(\nIdentifier(x)\n+\nIdentifier(u)\n)\n&\nIntLiteral(255)\n;\n}\nEOF\n"
+stdout: "int\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(x)\n=\nIntLiteral(10)\n;\nunsigned\nint\nIdentifier(u)\n=\nIntLiteral(100)\n;\nIdentifier(x)\n+=\nIntLiteral(5)\n;\nIdentifier(x)\n-=\nIntLiteral(3)\n;\nIdentifier(x)\n*=\nIntLiteral(2)\n;\nIdentifier(x)\n/=\nIntLiteral(3)\n;\nIdentifier(x)\n%=\nIntLiteral(7)\n;\nIdentifier(x)\n<<=\nIntLiteral(2)\n;\nIdentifier(x)\n>>=\nIntLiteral(1)\n;\nIdentifier(x)\n&=\nIntLiteral(31)\n;\nIdentifier(x)\n|=\nIntLiteral(3)\n;\nIdentifier(x)\n^=\nIntLiteral(5)\n;\nIdentifier(u)\n+=\nIntLiteral(20)\n;\nIdentifier(u)\n-=\nIntLiteral(10)\n;\nIdentifier(u)\n*=\nIntLiteral(2)\n;\nIdentifier(u)\n/=\nIntLiteral(5)\n;\nIdentifier(u)\n%=\nIntLiteral(9)\n;\nIdentifier(u)\n<<=\nIntLiteral(1)\n;\nIdentifier(u)\n>>=\nIntLiteral(2)\n;\nIdentifier(u)\n&=\nIntLiteral(255)\n;\nIdentifier(u)\n|=\nIntLiteral(1)\n;\nIdentifier(u)\n^=\nIntLiteral(4)\n;\nreturn\n(\nIdentifier(x)\n+\nIdentifier(u)\n)\n&\nIntLiteral(255)\n;\n}\nEOF\n"
 stderr: ""
 status: 0

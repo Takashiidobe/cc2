@@ -3,4 +3,4 @@ source: tests/codegen.rs
 expression: "&mine"
 ---
 stdout: ""
-status: 52
+status: 7

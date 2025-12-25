@@ -368,16 +368,36 @@ impl Parser {
                         left: Box::new(AstNode::Variable(name.clone())),
                         right: Box::new(value),
                     },
-                    Token::PercentEquals
-                    | Token::AmpersandEquals
-                    | Token::PipeEquals
-                    | Token::CaretEquals
-                    | Token::LessLessEquals
-                    | Token::GreaterGreaterEquals => {
-                        return Err(
-                            "Compound assignment operator not supported yet".to_string(),
-                        );
-                    }
+                    Token::PercentEquals => AstNode::BinaryOp {
+                        op: BinOp::Modulo,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::AmpersandEquals => AstNode::BinaryOp {
+                        op: BinOp::BitAnd,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::PipeEquals => AstNode::BinaryOp {
+                        op: BinOp::BitOr,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::CaretEquals => AstNode::BinaryOp {
+                        op: BinOp::BitXor,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::LessLessEquals => AstNode::BinaryOp {
+                        op: BinOp::ShiftLeft,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
+                    Token::GreaterGreaterEquals => AstNode::BinaryOp {
+                        op: BinOp::ShiftRight,
+                        left: Box::new(AstNode::Variable(name.clone())),
+                        right: Box::new(value),
+                    },
                     _ => unreachable!(),
                 };
 
