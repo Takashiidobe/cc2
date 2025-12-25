@@ -1,4 +1,4 @@
-# C Compiler in Rust - Incremental Implementation Plan
+# C Compiler in Rust - Implementation Plan
 
 This document outlines the incremental approach to building a C compiler in Rust. Each phase builds on the previous one, ensuring we always have a working (if limited) compiler at each step.
 
@@ -7,9 +7,9 @@ This document outlines the incremental approach to building a C compiler in Rust
 The compiler follows a traditional multi-phase design:
 
 1. **Lexer (Tokenizer)**: Converts source text into tokens
-2. **Parser**: Builds an Abstract Syntax Tree (AST) from tokens
-3. **Semantic Analyzer**: Type checking and semantic validation
-4. **Code Generator**: Emits x86-64 assembly (targeting Linux ABI initially)
+2. **Parser**: Builds an Abstract Syntax Tree (AST) from tokens using recursive descent
+3. **Symbol Table**: Tracks variables, functions, types, and enum constants
+4. **Code Generator**: Emits x86-64 assembly (targeting Linux System V ABI)
 
 ## Design Decisions
 
@@ -20,8 +20,8 @@ The compiler follows a traditional multi-phase design:
 - Growing ecosystem for compiler tools
 
 ### Target Architecture: x86-64
-- Start with Linux System V ABI
-- Direct assembly generation (no LLVM initially for learning purposes)
+- Linux System V ABI (32-bit int, 8-byte pointers)
+- Direct assembly generation (no LLVM for learning purposes)
 - Can add other backends later
 
 ### Parsing Strategy: Recursive Descent
@@ -32,234 +32,299 @@ The compiler follows a traditional multi-phase design:
 
 ### Testing Strategy
 - Test-driven development with .c input files
-- Compare output with GCC/Clang for correctness
+- Compare output with GCC/Clang using `datatest-stable` for correctness
 - Integration tests that compile and run programs
+- Snapshot testing with `insta` for parser and codegen output
 - Unit tests for individual components
 
-## Implementation Phases
+## Implementation Status
 
-### Phase 0: Project Setup and Basic Infrastructure
-**Priority: P1** | **Beads ID: cc2-786**
+### ✅ Phase 0: Project Setup and Basic Infrastructure
+**Priority: P1** | **Beads ID: cc2-786** | **Status: COMPLETE**
 
 Set up the Rust project structure and basic tooling.
 
 **Deliverables:**
-- Cargo project with proper structure (src/lexer, src/parser, src/codegen)
-- CLI interface for the compiler
-- Test infrastructure
-- Documentation setup
-- CI/CD basic configuration
+- ✅ Cargo project with proper structure (src/lexer, src/parser, src/codegen)
+- ✅ CLI interface for the compiler
+- ✅ Test infrastructure with datatest-stable and insta
+- ✅ Documentation setup
+- ✅ Integration with beads for issue tracking
 
 **Success Criteria:**
-- `cargo build` succeeds
-- Can invoke `cc2 input.c` (even if it does nothing yet)
-- Tests can run with `cargo test`
+- ✅ `cargo build` succeeds
+- ✅ Can invoke `cc2 input.c -o output.S`
+- ✅ Tests run with `cargo test`
 
 ---
 
-### Phase 1: Minimal Integer Calculator
-**Priority: P1** | **Beads ID: cc2-0oj** | **Depends on: Phase 0**
+### ✅ Phase 1: Minimal Integer Calculator
+**Priority: P1** | **Beads ID: cc2-0oj** | **Status: COMPLETE**
 
-Build the absolute minimum viable compiler that can compile:
-```c
-int main() { return 42; }
-```
+Build the minimum viable compiler that can compile integer arithmetic.
+
+**Implemented Features:**
+- ✅ Compile `int main() { return 42; }`
+- ✅ Binary operators: `+`, `-`, `*`, `/`, `%`
+- ✅ Operator precedence (3 + 4 * 5 = 23)
+- ✅ Parenthesized expressions
+- ✅ Integer literals
 
 **Components:**
-- **Lexer**: Recognize tokens: `int`, `main`, `(`, `)`, `{`, `}`, `return`, integers, `;`
-- **Parser**: Parse function definition with single return statement
-- **AST**: Minimal tree structure (Function, ReturnStmt, IntLiteral)
-- **Codegen**: Emit x86-64 assembly with proper prologue/epilogue
+- **Lexer**: Tokens for `int`, `main`, `(`, `)`, `{`, `}`, `return`, integers, `;`, arithmetic operators
+- **Parser**: Function definitions, return statements, expression parsing with precedence
+- **AST**: Function, ReturnStmt, IntLiteral, BinaryOp nodes
+- **Codegen**: x86-64 assembly with proper prologue/epilogue, register allocation
 
-**Extended to handle:**
-```c
-int main() { return 2 + 3 * 4; }  // Arithmetic expressions
-```
-
-**New Components:**
-- Lexer: operators `+`, `-`, `*`, `/`
-- Parser: Expression parsing with operator precedence
-- AST: BinaryOp nodes
-- Codegen: Register allocation for expressions
-
-**Success Criteria:**
-- Can compile and run programs that return integer literals
-- Can compile and run programs with arithmetic expressions
-- Correct operator precedence (3 + 4 * 5 = 23, not 35)
+**Test Files:**
+- `return_literal.c`
+- `arithmetic.c`
+- `add_5_2.c`
 
 ---
 
-### Phase 2: Variables and Function Calls
-**Priority: P2** | **Beads ID: cc2-7ep** | **Depends on: Phase 1**
+### ✅ Phase 2: Variables and Function Calls
+**Priority: P2** | **Beads ID: cc2-7ep** | **Status: COMPLETE**
 
-Add support for local variables and function calls:
-```c
-int add(int a, int b) {
-    return a + b;
-}
+Add support for local variables and function calls.
 
-int main() {
-    int x = 5;
-    int y = 3;
-    return add(x, y);
-}
-```
+**Implemented Features:**
+- ✅ Local variable declarations
+- ✅ Variable assignment
+- ✅ Multiple functions
+- ✅ Function parameters (up to 6 via registers)
+- ✅ Function calls with arguments
+- ✅ System V ABI calling convention
 
 **Components:**
 - **Lexer**: Identifiers
 - **Parser**: Variable declarations, function parameters, function calls
-- **AST**: VarDecl, Identifier, FunctionCall nodes
-- **Semantic Analysis**: Symbol table, scope management
-- **Codegen**: Stack frame management, calling convention (System V ABI)
+- **AST**: VarDecl, Assignment, Variable, FunctionCall nodes
+- **Symbol Table**: Track variables and their stack offsets
+- **Codegen**: Stack frame management, parameter passing via registers
 
-**Success Criteria:**
-- Can compile programs with local variables
-- Can compile programs with multiple functions
-- Function arguments passed correctly
-- Return values work correctly
+**Test Files:**
+- `variables.c`
+- `function_call.c`
 
 ---
 
-### Phase 3: Control Flow
-**Priority: P2** | **Beads ID: cc2-oq5** | **Depends on: Phase 2**
+### ✅ Phase 3: Control Flow
+**Priority: P2** | **Beads ID: cc2-oq5** | **Status: COMPLETE**
 
-Add conditional statements and loops:
-```c
-int factorial(int n) {
-    if (n <= 1) {
-        return 1;
-    }
-    int result = 1;
-    for (int i = 2; i <= n; i++) {
-        result = result * i;
-    }
-    return result;
-}
-```
+Add conditional statements and loops.
+
+**Implemented Features:**
+- ✅ If statements
+- ✅ If-else statements
+- ✅ While loops
+- ✅ For loops (with variable initialization)
+- ✅ Comparison operators: `<`, `>`, `<=`, `>=`, `==`, `!=`
+- ✅ Logical operators: `&&`, `||`, `!`
 
 **Components:**
-- **Lexer**: Keywords `if`, `else`, `while`, `for`, comparison operators `<`, `>`, `<=`, `>=`, `==`, `!=`
+- **Lexer**: Keywords `if`, `else`, `while`, `for`, comparison and logical operators
 - **Parser**: If statements, while loops, for loops
-- **AST**: IfStmt, WhileStmt, ForStmt, ComparisonOp nodes
+- **AST**: IfStmt, WhileStmt, ForStmt, ComparisonOp, LogicalOp nodes
 - **Codegen**: Labels and jumps, condition code handling
 
-**Success Criteria:**
-- Can compile if/else statements
-- Can compile while loops
-- Can compile for loops
-- Comparison operators work correctly
-- Can implement algorithms like factorial, fibonacci
+**Test Files:**
+- `if_else.c`
+- `while_loop.c`
+- `for_loop.c`
+- `comparisons.c`
+- `compare_logic.c`
+- `logical_ops.c`
+- `control_mix.c`
 
 ---
 
-### Phase 4: Pointers and Arrays
-**Priority: P2** | **Beads ID: cc2-2h8** | **Depends on: Phase 3**
+### ✅ Phase 4: Pointers and Arrays
+**Priority: P2** | **Beads ID: cc2-2h8** | **Status: COMPLETE**
 
-Add pointer operations and arrays:
-```c
-int sum_array(int* arr, int len) {
-    int total = 0;
-    for (int i = 0; i < len; i++) {
-        total = total + arr[i];
-    }
-    return total;
-}
+Add pointer operations and arrays.
 
-int main() {
-    int numbers[5] = {1, 2, 3, 4, 5};
-    return sum_array(numbers, 5);
-}
-```
+**Implemented Features:**
+- ✅ Pointer types
+- ✅ Address-of operator (`&`)
+- ✅ Dereference operator (`*`)
+- ✅ Array declarations
+- ✅ Array initialization with `{...}`
+- ✅ Array indexing `arr[i]`
+- ✅ Pointer arithmetic
+- ✅ `sizeof` operator (for types and expressions)
 
 **Components:**
-- **Lexer**: Operators `&`, `*` (unary), `[`, `]`
-- **Parser**: Pointer types, array declarations, array indexing
+- **Lexer**: Operators `&`, `*` (unary), `[`, `]`, `sizeof`
+- **Parser**: Pointer types, array declarations, array indexing, sizeof
 - **Type System**: Pointer types, array types, type compatibility
-- **AST**: AddressOf, Dereference, ArrayIndex, ArrayInit nodes
-- **Codegen**: Pointer arithmetic, array layout in memory
+- **AST**: AddressOf, Dereference, ArrayIndex, ArrayInit, SizeOfType, SizeOfExpr nodes
+- **Codegen**: Pointer arithmetic, array layout in memory, element size calculation
 
-**Success Criteria:**
-- Can take address of variables (&)
-- Can dereference pointers (*)
-- Can declare and use arrays
-- Array indexing works correctly
-- Can pass arrays to functions
+**Test Files:**
+- `pointers_arrays.c`
+- `array_sum.c`
+- `pointer_math.c`
+- `sizeof.c`
 
 ---
 
-### Phase 5: Structs and Complex Types
-**Priority: P2** | **Beads ID: cc2-ki5** | **Depends on: Phase 4**
+### ✅ Phase 5: Structs and Complex Types
+**Priority: P2** | **Beads ID: cc2-ki5** | **Status: COMPLETE**
 
-Add struct definitions and member access:
-```c
-struct Point {
-    int x;
-    int y;
-};
+Add struct definitions and member access.
 
-int main() {
-    struct Point p = {10, 20};
-    struct Point* ptr = &p;
-    return ptr->x + ptr->y;
-}
-```
+**Implemented Features:**
+- ✅ Struct definitions
+- ✅ Struct variables
+- ✅ Struct initialization with `{...}`
+- ✅ Member access with `.`
+- ✅ Member access through pointers with `->`
+- ✅ Nested structs
+- ✅ Struct alignment and padding
+- ✅ sizeof works for structs
 
 **Components:**
 - **Lexer**: Keywords `struct`, operators `.`, `->`
 - **Parser**: Struct definitions, struct literals, member access
-- **Type System**: Struct types, member offset calculation
-- **AST**: StructDef, StructLiteral, MemberAccess nodes
-- **Codegen**: Struct layout, member offset calculation, sizeof
+- **Type System**: Struct types, member offset calculation, alignment
+- **AST**: StructDef, StructInit, MemberAccess nodes, StructField type
+- **Codegen**: Struct layout with proper alignment, member offset calculation
 
-**Success Criteria:**
-- Can define structs
-- Can declare struct variables
-- Can access members with `.`
-- Can access members through pointers with `->`
-- sizeof works for structs
+**Test Files:**
+- `structs.c`
+- `struct_ops.c`
 
 ---
 
-### Phase 6: Preprocessor and Multi-file Compilation
-**Priority: P3** | **Beads ID: cc2-cph** | **Depends on: Phase 5**
+### ✅ Phase 6: Extended Type System
+**Priority: P2** | **Status: COMPLETE**
 
-Add preprocessor and ability to compile multiple files:
-```c
-// math.h
-#ifndef MATH_H
-#define MATH_H
+Expand type system with unsigned types, multiple integer sizes, enums, and unions.
 
-int add(int a, int b);
+#### ✅ Phase 6.1: Unsigned Integers
+**Beads ID: cc2-2h8.1** | **Status: COMPLETE**
 
-#endif
+**Implemented Features:**
+- ✅ `unsigned int`, `unsigned char`, `unsigned short`, `unsigned long`
+- ✅ Unsigned arithmetic
+- ✅ Unsigned comparisons
+- ✅ Type-aware code generation
 
-// math.c
-#include "math.h"
+**Test Files:**
+- `unsigned_ops.c`
+- `unsigned_compare.c`
+- `unsigned_ptr_index.c`
+- `unsigned_sizes.c`
 
-int add(int a, int b) {
-    return a + b;
-}
+#### ✅ Phase 6.2: Signed Integer Types
+**Beads ID: cc2-2h8.2** | **Status: COMPLETE**
 
-// main.c
-#include "math.h"
+**Implemented Features:**
+- ✅ `short` (2 bytes)
+- ✅ `long` (8 bytes)
+- ✅ Sign extension for signed types
+- ✅ Zero extension for unsigned types
 
-int main() {
-    return add(5, 3);
-}
-```
+**Test Files:**
+- `int_types.c`
 
-**Components:**
-- **Preprocessor**: #include, #define, #ifdef/#ifndef/#endif, #if/#else
-- **Linker**: Combine multiple object files
-- **Build System**: Compile multiple source files
-- **Standard Library**: Basic subset (printf, malloc, etc.)
+#### ✅ Phase 6.3: Bitwise and Shift Operators
+**Beads ID: cc2-2h8.3** | **Status: COMPLETE**
 
-**Success Criteria:**
-- Can process #include directives
-- Can process #define macros
-- Can compile multiple .c files into one executable
-- Can link with minimal libc functions
-- Can compile simple real-world programs
+**Implemented Features:**
+- ✅ Bitwise AND (`&`), OR (`|`), XOR (`^`), NOT (`~`)
+- ✅ Left shift (`<<`), right shift (`>>`)
+- ✅ Proper operator precedence
+
+**Test Files:**
+- `bitwise_ops.c`
+- `shift_mod.c`
+
+#### ✅ Phase 6.4: Compound Assignment Operators
+**Beads ID: cc2-2h8.4** | **Status: COMPLETE**
+
+**Implemented Features:**
+- ✅ `+=`, `-=`, `*=`, `/=`, `%=`
+- ✅ `&=`, `|=`, `^=`
+- ✅ `<<=`, `>>=`
+- ✅ Assignment expressions (value is the assigned value)
+- ✅ Type truncation on assignment
+
+**Test Files:**
+- `compound_assign.c`
+- `assignment_truncation.c`
+
+#### ✅ Phase 6.5: Enums
+**Beads ID: cc2-5nz** | **Status: COMPLETE**
+
+**Implemented Features:**
+- ✅ Enum declarations
+- ✅ Enumerators with auto-incrementing values
+- ✅ Explicit enumerator values
+- ✅ Enum constants replaced with integers at compile time
+- ✅ Enum types (4-byte signed int)
+
+**Test Files:**
+- `enum.c`
+
+#### ✅ Phase 6.6: Unions
+**Beads ID: cc2-7ho** | **Status: COMPLETE**
+
+**Implemented Features:**
+- ✅ Union declarations
+- ✅ Union member access
+- ✅ All members at offset 0
+- ✅ Size is maximum of all member sizes
+- ✅ Proper alignment
+
+**Bonus Feature:**
+- ✅ Generalized lvalue assignments (supports member access, array indexing, dereferences)
+
+**Test Files:**
+- `union.c`
+
+---
+
+### 📋 Phase 7: Documentation Update
+**Priority: P2** | **Beads ID: cc2-zco** | **Status: IN PROGRESS**
+
+Update all project documentation to reflect current implementation.
+
+**Tasks:**
+- ✅ Update IMPLEMENTATION_PLAN.md with completed phases
+- 🔄 Update README.md with current features
+- 🔄 Create docs/dev/architecture.md
+- 🔄 Create docs/dev/features.md
+- 🔄 Update docs/dev/tests.md
+
+---
+
+### 📋 Phase 8: Preprocessor (Future)
+**Priority: P3** | **Status: PLANNED**
+
+Add preprocessor and ability to compile multiple files.
+
+**Planned Features:**
+- `#include` directives
+- `#define` macros
+- `#ifdef`/`#ifndef`/`#endif`
+- `#if`/`#else`
+- Multi-file compilation
+- Linker integration
+
+---
+
+### 📋 Phase 9: Standard Library (Future)
+**Priority: P3** | **Status: PLANNED**
+
+Add support for standard library functions.
+
+**Planned Features:**
+- `printf`, `scanf`
+- `malloc`, `free`
+- String functions (`strlen`, `strcpy`, etc.)
+- File I/O
 
 ---
 
@@ -267,34 +332,51 @@ int main() {
 
 For each phase:
 
-1. **Plan**: Review phase requirements, identify unknowns
+1. **Plan**: Review phase requirements, create beads issues
 2. **Test First**: Write failing integration tests for the phase
 3. **Implement**: Build components incrementally
 4. **Test**: Ensure tests pass, add more tests
 5. **Document**: Update docs with what was learned
 6. **Refactor**: Clean up before moving to next phase
 
-## Testing Strategy
+## Testing Infrastructure
 
-Each phase should have:
+The project uses multiple testing approaches:
 
-- **Unit tests**: For lexer tokens, parser nodes, etc.
-- **Integration tests**: Full .c files that compile and run
-- **Regression tests**: Ensure previous phases still work
+### Integration Tests (`tests/codegen.rs`, `tests/parse.rs`, `tests/tokenize.rs`)
+- Test full compilation pipeline
+- Compare output with GCC/Clang
+- Use `datatest-stable` to run all `.c` files in `tests/files/`
+- Snapshot testing with `insta` for AST and assembly output
 
-Example test structure:
-```
-tests/
-  phase1/
-    return_literal.c
-    arithmetic.c
-  phase2/
-    variables.c
-    function_calls.c
-  phase3/
-    if_else.c
-    loops.c
-```
+### Unit Tests (`src/*_test.rs`)
+- Test individual components (lexer, parser, etc.)
+- Located in separate `*_test.rs` files (not inline)
+- Fast and focused
+
+### Test Files (`tests/files/*.c`)
+- Real C programs that should compile and run
+- Organized by feature/phase
+- Each test file is automatically run by integration tests
+
+## Current Capabilities
+
+The cc2 compiler can currently compile C programs with:
+
+- ✅ Integer arithmetic and expressions
+- ✅ Variables and assignments (including lvalue assignments)
+- ✅ Functions with parameters and return values
+- ✅ Control flow (if/else, while, for)
+- ✅ Pointers and pointer arithmetic
+- ✅ Arrays and array indexing
+- ✅ Structs with member access
+- ✅ Unions with member access
+- ✅ Enums
+- ✅ Multiple integer types (char, short, int, long, signed/unsigned variants)
+- ✅ Bitwise and shift operators
+- ✅ Logical operators
+- ✅ Compound assignment operators
+- ✅ sizeof operator
 
 ## References and Resources
 
@@ -307,7 +389,7 @@ tests/
 ## Notes
 
 - Start simple, add complexity gradually
-- Each phase should produce a working compiler
-- Test-driven development helps catch bugs early
+- Each phase produces a working compiler
+- Test-driven development catches bugs early
 - Don't optimize prematurely - correctness first
 - Document decisions and learnings as we go
