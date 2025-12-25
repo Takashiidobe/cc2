@@ -339,6 +339,7 @@ impl CodeGenerator {
                 } else {
                     self.emit(&format!("    movq %rax, {}(%rbp)", stack_offset));
                 }
+                self.coerce_rax_to_type(&symbol_type);
                 Ok(())
             }
             AstNode::Variable(name) => {
@@ -1247,8 +1248,28 @@ impl CodeGenerator {
                     _ => Ok(Type::Int),
                 }
             }
+            AstNode::Assignment { name, .. } => {
+                let symbol = self
+                    .symbol_table
+                    .get_variable(name)
+                    .ok_or_else(|| format!("Undefined variable: {}", name))?;
+                Ok(symbol.symbol_type.clone())
+            }
             AstNode::UnaryOp { .. } | AstNode::FunctionCall { .. } => Ok(Type::Int),
             _ => Err("Unsupported expression in sizeof".to_string()),
+        }
+    }
+
+    fn coerce_rax_to_type(&mut self, ty: &Type) {
+        match ty {
+            Type::Char => self.emit("    movsbq %al, %rax"),
+            Type::UChar => self.emit("    movzbq %al, %rax"),
+            Type::Short => self.emit("    movswq %ax, %rax"),
+            Type::UShort => self.emit("    movzwq %ax, %rax"),
+            Type::Int => self.emit("    cltq"),
+            Type::UInt => self.emit("    movl %eax, %eax"),
+            Type::Long | Type::ULong => {}
+            _ => {}
         }
     }
 

@@ -356,7 +356,28 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {
-        self.parse_logical_or()
+        self.parse_assignment()
+    }
+
+    fn parse_assignment(&mut self) -> Result<AstNode, String> {
+        let left = self.parse_logical_or()?;
+
+        if self.current() == &Token::Equals {
+            let name = match left {
+                AstNode::Variable(name) => name,
+                _ => {
+                    return Err("Assignment target must be a variable".to_string());
+                }
+            };
+            self.advance();
+            let value = self.parse_assignment()?;
+            Ok(AstNode::Assignment {
+                name,
+                value: Box::new(value),
+            })
+        } else {
+            Ok(left)
+        }
     }
 
     fn parse_logical_or(&mut self) -> Result<AstNode, String> {

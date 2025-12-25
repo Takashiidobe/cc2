@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(main)\n(\n)\n{\nchar\nIdentifier(c)\n;\nunsigned\nchar\nIdentifier(uc)\n;\nshort\nIdentifier(s)\n;\nunsigned\nshort\nIdentifier(us)\n;\nreturn\n(\n(\nIdentifier(c)\n=\nIntLiteral(255)\n)\n<\nIntLiteral(0)\n)\n+\n(\n(\nIdentifier(uc)\n=\nIntLiteral(255)\n)\n<\nIntLiteral(0)\n)\n+\n(\n(\nIdentifier(s)\n=\nIntLiteral(65535)\n)\n<\nIntLiteral(0)\n)\n+\n(\n(\nIdentifier(us)\n=\nIntLiteral(65535)\n)\n<\nIntLiteral(0)\n)\n;\n}\nEOF\n"
+stderr: ""
+status: 0
