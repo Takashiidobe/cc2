@@ -504,9 +504,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_short_long_variables() {
-        let mut lexer = Lexer::new(
-            "int main() { short s = 1; long l = 2; return 0; }",
-        );
+        let mut lexer = Lexer::new("int main() { short s = 1; long l = 2; return 0; }");
         let tokens = lexer.tokenize().unwrap();
 
         let mut parser = Parser::new(tokens);
@@ -569,7 +567,10 @@ mod parser_tests {
                                     _ => panic!("Expected variable as assignment target"),
                                 }
                                 match value.as_ref() {
-                                    AstNode::BinaryOp { op: BinOp::ShiftLeft, .. } => {}
+                                    AstNode::BinaryOp {
+                                        op: BinOp::ShiftLeft,
+                                        ..
+                                    } => {}
                                     _ => panic!("Expected shift in compound assignment"),
                                 }
                             }

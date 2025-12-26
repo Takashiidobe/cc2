@@ -336,8 +336,8 @@ impl CodeGenerator {
 
                 // Generate lvalue address
                 self.generate_lvalue(target)?;
-                self.emit("    movq %rax, %rcx");  // %rcx = address
-                self.emit("    popq %rax");        // %rax = value
+                self.emit("    movq %rax, %rcx"); // %rcx = address
+                self.emit("    popq %rax"); // %rax = value
 
                 // Determine the type to store
                 let target_type = self.expr_type(target)?;
@@ -369,7 +369,9 @@ impl CodeGenerator {
                     .get_variable(name)
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
 
-                if symbol.symbol_type.is_array() || matches!(symbol.symbol_type, Type::Struct(_) | Type::Union(_)) {
+                if symbol.symbol_type.is_array()
+                    || matches!(symbol.symbol_type, Type::Struct(_) | Type::Union(_))
+                {
                     self.emit(&format!("    leaq {}(%rbp), %rax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::Int | Type::Enum(_)) {
                     self.emit(&format!("    movslq {}(%rbp), %rax", symbol.stack_offset));
@@ -882,7 +884,8 @@ impl CodeGenerator {
         member: &str,
         through_pointer: bool,
     ) -> Result<(), String> {
-        let (struct_or_union_name, is_address) = self.resolve_struct_or_union_base(base, through_pointer)?;
+        let (struct_or_union_name, is_address) =
+            self.resolve_struct_or_union_base(base, through_pointer)?;
 
         // Try struct first, then union
         let layout = self
@@ -891,10 +894,12 @@ impl CodeGenerator {
             .or_else(|| self.union_layouts.get(&struct_or_union_name))
             .ok_or_else(|| format!("Unknown struct/union type: {}", struct_or_union_name))?;
 
-        let field = layout
-            .fields
-            .get(member)
-            .ok_or_else(|| format!("Unknown field '{}' on struct/union {}", member, struct_or_union_name))?;
+        let field = layout.fields.get(member).ok_or_else(|| {
+            format!(
+                "Unknown field '{}' on struct/union {}",
+                member, struct_or_union_name
+            )
+        })?;
 
         if is_address {
             self.emit(&format!("    addq ${}, %rax", field.offset));
@@ -1409,10 +1414,12 @@ impl CodeGenerator {
             .or_else(|| self.union_layouts.get(&struct_or_union_name))
             .ok_or_else(|| format!("Unknown struct/union type: {}", struct_or_union_name))?;
 
-        let field = layout
-            .fields
-            .get(member)
-            .ok_or_else(|| format!("Unknown field '{}' on struct/union {}", member, struct_or_union_name))?;
+        let field = layout.fields.get(member).ok_or_else(|| {
+            format!(
+                "Unknown field '{}' on struct/union {}",
+                member, struct_or_union_name
+            )
+        })?;
         Ok(field.field_type.clone())
     }
 
@@ -1495,8 +1502,7 @@ impl CodeGenerator {
                             .ok_or_else(|| "Invalid operands for pointer subtraction".to_string()),
                     },
                     BinOp::ShiftLeft | BinOp::ShiftRight => {
-                        if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type)
-                        {
+                        if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type) {
                             return Err("Shift operands must be integers".to_string());
                         }
                         Ok(self.promote_integer_type(&left_type))
@@ -1535,9 +1541,7 @@ impl CodeGenerator {
                     Ok(Type::Int)
                 }
             }
-            AstNode::Assignment { target, .. } => {
-                self.expr_type(target)
-            }
+            AstNode::Assignment { target, .. } => self.expr_type(target),
             AstNode::UnaryOp { op, operand } => match op {
                 UnaryOp::LogicalNot => Ok(Type::Int),
                 UnaryOp::Negate | UnaryOp::BitNot => {

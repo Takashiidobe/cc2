@@ -191,9 +191,14 @@ impl Parser {
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
             Token::For => self.parse_for_loop(),
-            Token::Unsigned | Token::Int | Token::Char | Token::Short | Token::Long | Token::Struct | Token::Union | Token::Enum => {
-                self.parse_var_decl()
-            }
+            Token::Unsigned
+            | Token::Int
+            | Token::Char
+            | Token::Short
+            | Token::Long
+            | Token::Struct
+            | Token::Union
+            | Token::Enum => self.parse_var_decl(),
             _ => {
                 let expr = self.parse_expression()?;
                 self.expect(Token::Semicolon)?;
@@ -924,7 +929,12 @@ impl Parser {
         while self.current() != &Token::CloseBrace {
             let enumerator_name = match self.current() {
                 Token::Identifier(s) => s.clone(),
-                _ => return Err(format!("Expected enumerator name, got {:?}", self.current())),
+                _ => {
+                    return Err(format!(
+                        "Expected enumerator name, got {:?}",
+                        self.current()
+                    ));
+                }
             };
             self.advance();
 

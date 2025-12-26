@@ -9,7 +9,6 @@
 ///
 /// The preprocessor transforms source text into preprocessed text that
 /// can then be tokenized and parsed.
-
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -192,8 +191,7 @@ impl Preprocessor {
 
             if trimmed.starts_with('#') {
                 // This is a preprocessor directive
-                let (new_line_num, directive_output) =
-                    self.process_directive(&lines, line_num)?;
+                let (new_line_num, directive_output) = self.process_directive(&lines, line_num)?;
                 line_num = new_line_num;
                 output.push_str(&directive_output);
             } else {
@@ -220,15 +218,15 @@ impl Preprocessor {
         let trimmed = line.trim_start();
 
         if !trimmed.starts_with('#') {
-            return Err(format!("Expected preprocessor directive at line {}", line_num + 1));
+            return Err(format!(
+                "Expected preprocessor directive at line {}",
+                line_num + 1
+            ));
         }
 
         // Extract directive name (first word after #)
         let after_hash = trimmed[1..].trim_start();
-        let directive_name = after_hash
-            .split_whitespace()
-            .next()
-            .unwrap_or("");
+        let directive_name = after_hash.split_whitespace().next().unwrap_or("");
 
         match directive_name {
             "include" => self.process_include(after_hash, line_num),
@@ -269,9 +267,13 @@ impl Preprocessor {
         let file_path = self.find_include_file(&filename, is_system, line_num)?;
 
         // Check for circular includes
-        let canonical_path = file_path
-            .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize path '{}': {}", file_path.display(), e))?;
+        let canonical_path = file_path.canonicalize().map_err(|e| {
+            format!(
+                "Failed to canonicalize path '{}': {}",
+                file_path.display(),
+                e
+            )
+        })?;
 
         if self.include_stack.contains(&canonical_path) {
             return Err(format!(
@@ -315,7 +317,10 @@ impl Preprocessor {
         // directive is the part after '#', like "include <stdio.h>" or "include \"foo.h\""
         let after_include = directive.trim_start();
         if !after_include.starts_with("include") {
-            return Err(format!("Invalid include directive at line {}", line_num + 1));
+            return Err(format!(
+                "Invalid include directive at line {}",
+                line_num + 1
+            ));
         }
 
         let rest = after_include[7..].trim_start(); // Skip "include"
@@ -323,7 +328,10 @@ impl Preprocessor {
         // Check for angle brackets: #include <file.h>
         if rest.starts_with('<') {
             let end = rest.find('>').ok_or_else(|| {
-                format!("Missing closing '>' in include directive at line {}", line_num + 1)
+                format!(
+                    "Missing closing '>' in include directive at line {}",
+                    line_num + 1
+                )
             })?;
             let filename = rest[1..end].to_string();
             return Ok((filename, true));
@@ -332,7 +340,10 @@ impl Preprocessor {
         // Check for quotes: #include "file.h"
         if rest.starts_with('"') {
             let end = rest[1..].find('"').ok_or_else(|| {
-                format!("Missing closing '\"' in include directive at line {}", line_num + 1)
+                format!(
+                    "Missing closing '\"' in include directive at line {}",
+                    line_num + 1
+                )
             })?;
             let filename = rest[1..end + 1].to_string();
             return Ok((filename, false));
@@ -409,7 +420,10 @@ impl Preprocessor {
         let rest = after_define[6..].trim_start(); // Skip "define"
 
         if rest.is_empty() {
-            return Err(format!("Missing macro name in #define at line {}", line_num + 1));
+            return Err(format!(
+                "Missing macro name in #define at line {}",
+                line_num + 1
+            ));
         }
 
         // Check if this is a function-like macro by looking for '(' immediately after name
@@ -417,7 +431,11 @@ impl Preprocessor {
         let (name, macro_def) = if let Some(paren_pos) = rest.find('(') {
             // Check if there's a space before the paren - if so, it's object-like
             let name_part = &rest[..paren_pos];
-            if name_part.chars().last().map_or(false, |c| c.is_whitespace()) {
+            if name_part
+                .chars()
+                .last()
+                .map_or(false, |c| c.is_whitespace())
+            {
                 // Space before paren - this is object-like macro
                 self.parse_object_like_macro(rest, line_num)?
             } else {
@@ -447,7 +465,11 @@ impl Preprocessor {
 
         // Validate macro name
         if !Self::is_valid_identifier(&name) {
-            return Err(format!("Invalid macro name '{}' at line {}", name, line_num + 1));
+            return Err(format!(
+                "Invalid macro name '{}' at line {}",
+                name,
+                line_num + 1
+            ));
         }
 
         let replacement = parts.next().unwrap_or("").trim().to_string();
@@ -462,20 +484,30 @@ impl Preprocessor {
         line_num: usize,
     ) -> Result<(String, MacroDef), String> {
         // Find the macro name (everything before '(')
-        let paren_start = text
-            .find('(')
-            .ok_or_else(|| format!("Expected '(' in function-like macro at line {}", line_num + 1))?;
+        let paren_start = text.find('(').ok_or_else(|| {
+            format!(
+                "Expected '(' in function-like macro at line {}",
+                line_num + 1
+            )
+        })?;
         let name = text[..paren_start].trim().to_string();
 
         // Validate macro name
         if !Self::is_valid_identifier(&name) {
-            return Err(format!("Invalid macro name '{}' at line {}", name, line_num + 1));
+            return Err(format!(
+                "Invalid macro name '{}' at line {}",
+                name,
+                line_num + 1
+            ));
         }
 
         // Find the closing parenthesis
-        let paren_end = text
-            .find(')')
-            .ok_or_else(|| format!("Missing ')' in function-like macro at line {}", line_num + 1))?;
+        let paren_end = text.find(')').ok_or_else(|| {
+            format!(
+                "Missing ')' in function-like macro at line {}",
+                line_num + 1
+            )
+        })?;
 
         // Extract parameter list
         let param_text = &text[paren_start + 1..paren_end];
@@ -490,7 +522,11 @@ impl Preprocessor {
                 } else if param.is_empty() {
                     return Err(format!("Empty parameter in macro at line {}", line_num + 1));
                 } else if !Self::is_valid_identifier(param) {
-                    return Err(format!("Invalid parameter name '{}' at line {}", param, line_num + 1));
+                    return Err(format!(
+                        "Invalid parameter name '{}' at line {}",
+                        param,
+                        line_num + 1
+                    ));
                 } else {
                     params.push(param.to_string());
                 }
@@ -543,14 +579,21 @@ impl Preprocessor {
         let rest = after_undef[5..].trim(); // Skip "undef"
 
         if rest.is_empty() {
-            return Err(format!("Missing macro name in #undef at line {}", line_num + 1));
+            return Err(format!(
+                "Missing macro name in #undef at line {}",
+                line_num + 1
+            ));
         }
 
         // Extract macro name (should be a single identifier)
         let name = rest.split_whitespace().next().unwrap().to_string();
 
         if !Self::is_valid_identifier(&name) {
-            return Err(format!("Invalid macro name '{}' in #undef at line {}", name, line_num + 1));
+            return Err(format!(
+                "Invalid macro name '{}' in #undef at line {}",
+                name,
+                line_num + 1
+            ));
         }
 
         self.macros.remove(&name);
@@ -594,7 +637,9 @@ impl Preprocessor {
         if !Self::is_valid_identifier(macro_name) {
             return Err(format!(
                 "Invalid macro name '{}' in #{} at line {}",
-                macro_name, directive_name, line_num + 1
+                macro_name,
+                directive_name,
+                line_num + 1
             ));
         }
 
@@ -636,12 +681,14 @@ impl Preprocessor {
                     return Ok((current_line + 1, output));
                 } else if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") {
                     // Process the nested conditional - it will handle its own #endif
-                    let (new_line, directive_output) = self.process_directive(lines, current_line)?;
+                    let (new_line, directive_output) =
+                        self.process_directive(lines, current_line)?;
                     current_line = new_line;
                     output.push_str(&directive_output);
                 } else {
                     // Other directive - process normally
-                    let (new_line, directive_output) = self.process_directive(lines, current_line)?;
+                    let (new_line, directive_output) =
+                        self.process_directive(lines, current_line)?;
                     current_line = new_line;
                     output.push_str(&directive_output);
                 }
@@ -677,7 +724,10 @@ impl Preprocessor {
                 let after_hash = trimmed[1..].trim_start();
 
                 // Check for nested conditionals
-                if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") || after_hash.starts_with("if") {
+                if after_hash.starts_with("ifdef")
+                    || after_hash.starts_with("ifndef")
+                    || after_hash.starts_with("if")
+                {
                     nesting_level += 1;
                 } else if after_hash.starts_with("endif") {
                     if nesting_level == 0 {
@@ -699,11 +749,7 @@ impl Preprocessor {
     }
 
     /// Process #if directive
-    fn process_if(
-        &mut self,
-        lines: &[&str],
-        line_num: usize,
-    ) -> Result<(usize, String), String> {
+    fn process_if(&mut self, lines: &[&str], line_num: usize) -> Result<(usize, String), String> {
         let line = lines[line_num];
         let trimmed = line.trim_start();
 
@@ -716,7 +762,10 @@ impl Preprocessor {
 
         let rest = after_hash[2..].trim(); // Skip "if"
         if rest.is_empty() {
-            return Err(format!("Missing expression in #if at line {}", line_num + 1));
+            return Err(format!(
+                "Missing expression in #if at line {}",
+                line_num + 1
+            ));
         }
 
         // Evaluate the preprocessor expression
@@ -763,13 +812,17 @@ impl Preprocessor {
                         // Evaluate the #elif condition
                         let rest = after_hash[4..].trim(); // Skip "elif"
                         if rest.is_empty() {
-                            return Err(format!("Missing expression in #elif at line {}", current_line + 1));
+                            return Err(format!(
+                                "Missing expression in #elif at line {}",
+                                current_line + 1
+                            ));
                         }
 
                         let condition = self.eval_preprocessor_expr(rest)?;
                         if condition != 0 {
                             // This elif branch is true - process it
-                            let (end_line, elif_output) = self.process_if_block(lines, current_line + 1, true)?;
+                            let (end_line, elif_output) =
+                                self.process_if_block(lines, current_line + 1, true)?;
                             output.push_str(&elif_output);
                             return Ok((end_line, output));
                         } else {
@@ -785,14 +838,19 @@ impl Preprocessor {
                         return Ok((end_line, output));
                     } else {
                         // Process the else branch
-                        let (end_line, else_output) = self.process_if_block(lines, current_line + 1, true)?;
+                        let (end_line, else_output) =
+                            self.process_if_block(lines, current_line + 1, true)?;
                         output.push_str(&else_output);
                         return Ok((end_line, output));
                     }
-                } else if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") || after_hash.starts_with("if") {
+                } else if after_hash.starts_with("ifdef")
+                    || after_hash.starts_with("ifndef")
+                    || after_hash.starts_with("if")
+                {
                     // Nested conditional - process it if we're active
                     if is_active {
-                        let (new_line, directive_output) = self.process_directive(lines, current_line)?;
+                        let (new_line, directive_output) =
+                            self.process_directive(lines, current_line)?;
                         current_line = new_line;
                         output.push_str(&directive_output);
                     } else {
@@ -800,7 +858,8 @@ impl Preprocessor {
                     }
                 } else if is_active {
                     // Other directive - process normally if active
-                    let (new_line, directive_output) = self.process_directive(lines, current_line)?;
+                    let (new_line, directive_output) =
+                        self.process_directive(lines, current_line)?;
                     current_line = new_line;
                     output.push_str(&directive_output);
                 } else {
@@ -839,7 +898,10 @@ impl Preprocessor {
             if trimmed.starts_with('#') {
                 let after_hash = trimmed[1..].trim_start();
 
-                if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") || after_hash.starts_with("if") {
+                if after_hash.starts_with("ifdef")
+                    || after_hash.starts_with("ifndef")
+                    || after_hash.starts_with("if")
+                {
                     nesting_level += 1;
                 } else if after_hash.starts_with("endif") {
                     if nesting_level == 0 {
@@ -848,13 +910,18 @@ impl Preprocessor {
                     } else {
                         nesting_level -= 1;
                     }
-                } else if nesting_level == 0 && (after_hash.starts_with("elif") || after_hash.starts_with("else")) {
+                } else if nesting_level == 0
+                    && (after_hash.starts_with("elif") || after_hash.starts_with("else"))
+                {
                     // Found #elif or #else at our level
                     if after_hash.starts_with("elif") {
                         // Evaluate the elif condition
                         let rest = after_hash[4..].trim();
                         if rest.is_empty() {
-                            return Err(format!("Missing expression in #elif at line {}", current_line + 1));
+                            return Err(format!(
+                                "Missing expression in #elif at line {}",
+                                current_line + 1
+                            ));
                         }
 
                         let condition = self.eval_preprocessor_expr(rest)?;
@@ -898,7 +965,10 @@ impl Preprocessor {
             if trimmed.starts_with('#') {
                 let after_hash = trimmed[1..].trim_start();
 
-                if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") || after_hash.starts_with("if") {
+                if after_hash.starts_with("ifdef")
+                    || after_hash.starts_with("ifndef")
+                    || after_hash.starts_with("if")
+                {
                     nesting_level += 1;
                 } else if after_hash.starts_with("endif") {
                     if nesting_level == 0 {
@@ -919,11 +989,7 @@ impl Preprocessor {
     }
 
     /// Skip to #endif, ignoring #elif and #else
-    fn skip_to_endif(
-        &mut self,
-        lines: &[&str],
-        start_line: usize,
-    ) -> Result<usize, String> {
+    fn skip_to_endif(&mut self, lines: &[&str], start_line: usize) -> Result<usize, String> {
         self.skip_remaining_elif_else(lines, start_line)
     }
 
@@ -1015,7 +1081,10 @@ impl Preprocessor {
         let result = self.parse_logical_or(&tokens, &mut pos)?;
 
         if pos < tokens.len() {
-            return Err(format!("Unexpected token after expression: {:?}", tokens[pos]));
+            return Err(format!(
+                "Unexpected token after expression: {:?}",
+                tokens[pos]
+            ));
         }
 
         Ok(result)
@@ -1034,7 +1103,12 @@ impl Preprocessor {
                 '0'..='9' => {
                     let mut num_str = String::new();
                     while let Some(&ch) = chars.peek() {
-                        if ch.is_ascii_digit() || ch == 'x' || ch == 'X' || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
+                        if ch.is_ascii_digit()
+                            || ch == 'x'
+                            || ch == 'X'
+                            || (ch >= 'a' && ch <= 'f')
+                            || (ch >= 'A' && ch <= 'F')
+                        {
                             num_str.push(ch);
                             chars.next();
                         } else {
@@ -1045,7 +1119,8 @@ impl Preprocessor {
                         i64::from_str_radix(&num_str[2..], 16)
                             .map_err(|_| format!("Invalid hex number: {}", num_str))?
                     } else {
-                        num_str.parse::<i64>()
+                        num_str
+                            .parse::<i64>()
                             .map_err(|_| format!("Invalid number: {}", num_str))?
                     };
                     tokens.push(ExprToken::Number(value));
@@ -1166,7 +1241,10 @@ impl Preprocessor {
                     }
                 }
                 _ => {
-                    return Err(format!("Unexpected character in preprocessor expression: '{}'", ch));
+                    return Err(format!(
+                        "Unexpected character in preprocessor expression: '{}'",
+                        ch
+                    ));
                 }
             }
         }
@@ -1494,7 +1572,10 @@ impl Preprocessor {
                 *pos += 1;
                 Ok(val)
             }
-            _ => Err(format!("Unexpected token in expression: {:?}", tokens[*pos])),
+            _ => Err(format!(
+                "Unexpected token in expression: {:?}",
+                tokens[*pos]
+            )),
         }
     }
 
@@ -1529,12 +1610,8 @@ impl Preprocessor {
                                 let (args, rest) = self.parse_macro_arguments(after_trimmed)?;
 
                                 // Expand the macro with arguments
-                                let expanded = self.expand_function_macro(
-                                    params,
-                                    body,
-                                    *is_variadic,
-                                    &args,
-                                )?;
+                                let expanded =
+                                    self.expand_function_macro(params, body, *is_variadic, &args)?;
                                 result.push_str(&expanded);
                                 remaining = rest;
                                 continue;
@@ -1591,10 +1668,7 @@ impl Preprocessor {
 
     /// Parse macro arguments from a function call
     /// Returns (arguments, remaining_text)
-    fn parse_macro_arguments<'a>(
-        &self,
-        text: &'a str,
-    ) -> Result<(Vec<String>, &'a str), String> {
+    fn parse_macro_arguments<'a>(&self, text: &'a str) -> Result<(Vec<String>, &'a str), String> {
         if !text.starts_with('(') {
             return Err("Expected '(' for macro arguments".to_string());
         }
@@ -1720,12 +1794,7 @@ impl Preprocessor {
     }
 
     /// Process token pasting operators (##) in macro body
-    fn process_token_pasting(
-        &self,
-        body: &str,
-        params: &[String],
-        args: &[String],
-    ) -> String {
+    fn process_token_pasting(&self, body: &str, params: &[String], args: &[String]) -> String {
         let mut result = body.to_string();
 
         // Process ## operators
@@ -1749,7 +1818,12 @@ impl Preprocessor {
             // Build the new result
             let before_left = &result[..paste_pos - left_token.len()];
             let after_right = &result[paste_pos + 2 + right_token.len()..];
-            result = format!("{}{}{}", before_left.trim_end(), concatenated, after_right.trim_start());
+            result = format!(
+                "{}{}{}",
+                before_left.trim_end(),
+                concatenated,
+                after_right.trim_start()
+            );
         }
 
         result

@@ -37,10 +37,7 @@ struct Args {
     parse_only: bool,
 }
 
-fn compile_file_to_assembly(
-    input: &PathBuf,
-    args: &Args,
-) -> Result<String, String> {
+fn compile_file_to_assembly(input: &PathBuf, args: &Args) -> Result<String, String> {
     let source = fs::read_to_string(input)
         .map_err(|e| format!("Error reading file '{}': {}", input.display(), e))?;
 
@@ -64,19 +61,23 @@ fn compile_file_to_assembly(
     // Set the current file for resolving relative includes
     preprocessor.set_current_file(input.display().to_string());
 
-    let preprocessed_source = preprocessor.preprocess(&source)
+    let preprocessed_source = preprocessor
+        .preprocess(&source)
         .map_err(|e| format!("Preprocessor error in '{}': {}", input.display(), e))?;
 
     let mut lexer = Lexer::new(&preprocessed_source);
-    let tokens = lexer.tokenize()
+    let tokens = lexer
+        .tokenize()
         .map_err(|e| format!("Lexer error in '{}': {}", input.display(), e))?;
 
     let mut parser = Parser::new(tokens);
-    let ast = parser.parse()
+    let ast = parser
+        .parse()
         .map_err(|e| format!("Parser error in '{}': {}", input.display(), e))?;
 
     let mut codegen = CodeGenerator::new();
-    let assembly = codegen.generate(&ast)
+    let assembly = codegen
+        .generate(&ast)
         .map_err(|e| format!("Code generation error in '{}': {}", input.display(), e))?;
 
     Ok(assembly)
@@ -89,8 +90,13 @@ fn compile_to_object(input: &PathBuf, args: &Args) -> Result<PathBuf, String> {
     // Write assembly to temporary file
     let mut asm_path = input.clone();
     asm_path.set_extension("s");
-    fs::write(&asm_path, assembly)
-        .map_err(|e| format!("Error writing assembly file '{}': {}", asm_path.display(), e))?;
+    fs::write(&asm_path, assembly).map_err(|e| {
+        format!(
+            "Error writing assembly file '{}': {}",
+            asm_path.display(),
+            e
+        )
+    })?;
 
     // Assemble to object file
     let mut obj_path = input.clone();
@@ -119,7 +125,8 @@ fn link_objects(object_files: &[PathBuf], output: &PathBuf) -> Result<(), String
         cmd.arg(obj);
     }
 
-    let status = cmd.status()
+    let status = cmd
+        .status()
         .map_err(|e| format!("Failed to run linker: {}", e))?;
 
     if !status.success() {
@@ -140,7 +147,9 @@ fn main() {
     // Handle single-file modes (preprocess-only, lex-only, parse-only)
     if args.preprocess_only || args.lex_only || args.parse_only {
         if args.inputs.len() > 1 {
-            eprintln!("Error: Only one input file allowed with --preprocess-only, --lex-only, or --parse-only");
+            eprintln!(
+                "Error: Only one input file allowed with --preprocess-only, --lex-only, or --parse-only"
+            );
             process::exit(1);
         }
 
@@ -226,7 +235,11 @@ fn main() {
                 });
 
                 if let Err(e) = fs::write(&output_path, assembly) {
-                    eprintln!("Error writing output file '{}': {}", output_path.display(), e);
+                    eprintln!(
+                        "Error writing output file '{}': {}",
+                        output_path.display(),
+                        e
+                    );
                     process::exit(1);
                 }
 
@@ -262,11 +275,18 @@ fn main() {
     }
 
     // Link object files
-    let output_path = args.output.clone().unwrap_or_else(|| PathBuf::from("a.out"));
+    let output_path = args
+        .output
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("a.out"));
 
     match link_objects(&object_files, &output_path) {
         Ok(()) => {
-            println!("Linked {} files to {}", object_files.len(), output_path.display());
+            println!(
+                "Linked {} files to {}",
+                object_files.len(),
+                output_path.display()
+            );
         }
         Err(e) => {
             eprintln!("{}", e);

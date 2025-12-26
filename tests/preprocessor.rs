@@ -59,7 +59,9 @@ fn run_case(path: &Path) -> datatest_stable::Result<()> {
     let exe_ref = tmp.path().join(format!("{stem}.ref"));
 
     // Get the directory containing the test file (for include paths)
-    let test_dir = path.parent().expect("test file should have parent directory");
+    let test_dir = path
+        .parent()
+        .expect("test file should have parent directory");
 
     // 1) Your compiler: codegen -> .S, then cc -> exe_mine
     let codegen_out = StdCommand::new(cargo_bin!(env!("CARGO_PKG_NAME")))
