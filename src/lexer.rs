@@ -328,9 +328,24 @@ impl Lexer {
             }
             '/' => {
                 self.advance();
-                if !self.is_at_end() && self.current_char() == '=' {
-                    self.advance();
-                    Ok(Token::SlashEquals)
+                if !self.is_at_end() {
+                    match self.current_char() {
+                        '=' => {
+                            self.advance();
+                            Ok(Token::SlashEquals)
+                        }
+                        '/' => {
+                            // C++ style comment - skip to end of line
+                            self.skip_line_comment();
+                            self.next_token()
+                        }
+                        '*' => {
+                            // C style comment - skip to */
+                            self.skip_block_comment()?;
+                            self.next_token()
+                        }
+                        _ => Ok(Token::Slash),
+                    }
                 } else {
                     Ok(Token::Slash)
                 }
@@ -375,6 +390,43 @@ impl Lexer {
         while !self.is_at_end() && self.current_char().is_whitespace() {
             self.advance();
         }
+    }
+
+    fn skip_line_comment(&mut self) {
+        // Skip the second '/' (we already advanced past the first one)
+        self.advance();
+        // Skip until end of line or end of file
+        while !self.is_at_end() && self.current_char() != '\n' {
+            self.advance();
+        }
+        // Don't skip the newline itself - let skip_whitespace handle it
+    }
+
+    fn skip_block_comment(&mut self) -> Result<(), String> {
+        // Skip the '*' (we already advanced past the '/')
+        self.advance();
+
+        // Keep track of where comment started for error reporting
+        let mut found_end = false;
+
+        while !self.is_at_end() {
+            if self.current_char() == '*' {
+                self.advance();
+                if !self.is_at_end() && self.current_char() == '/' {
+                    self.advance();
+                    found_end = true;
+                    break;
+                }
+            } else {
+                self.advance();
+            }
+        }
+
+        if !found_end {
+            return Err("Unterminated block comment".to_string());
+        }
+
+        Ok(())
     }
 
     fn read_number(&mut self) -> Result<Token, String> {
