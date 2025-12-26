@@ -290,38 +290,15 @@ impl CodeGenerator {
                     if var_type.is_array() {
                         match init_expr.as_ref() {
                             AstNode::ArrayInit(values) => {
-                                let elem_type = self.array_element_type_from_type(var_type)?;
-                                let elem_size = self.type_size(&elem_type)?;
-                                let array_len = match var_type {
-                                    Type::Array(_, len) => *len,
-                                    _ => 0,
-                                };
-                                if values.len() > array_len {
-                                    return Err(format!(
-                                        "Array initializer has {} elements, but array length is {}",
-                                        values.len(),
-                                        array_len
-                                    ));
-                                }
-                                for (i, value) in values.iter().enumerate() {
-                                    self.generate_node(value)?;
-                                    let elem_offset = offset + (i as i32) * elem_size;
-                                    if matches!(elem_type, Type::Int | Type::UInt) {
-                                        self.emit(&format!("    movl %eax, {}(%rbp)", elem_offset));
-                                    } else if matches!(elem_type, Type::UShort | Type::Short) {
-                                        self.emit(&format!("    movw %ax, {}(%rbp)", elem_offset));
-                                    } else if matches!(elem_type, Type::Char | Type::UChar) {
-                                        self.emit(&format!("    movb %al, {}(%rbp)", elem_offset));
-                                    } else if matches!(elem_type, Type::Long | Type::ULong) {
-                                        self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
-                                    } else {
-                                        self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
-                                    }
-                                }
+                                self.generate_array_init(var_type, values, offset)?;
+                            }
+                            AstNode::StringLiteral(s) => {
+                                // String literal initialization for char arrays
+                                self.generate_string_array_init(var_type, s, offset)?;
                             }
                             _ => {
                                 return Err(
-                                    "Array initializer must be a brace-enclosed list".to_string()
+                                    "Array initializer must be a brace-enclosed list or string literal".to_string()
                                 );
                             }
                         }
@@ -953,7 +930,11 @@ impl CodeGenerator {
             AstNode::ArrayIndex { array, index } => {
                 let elem_type = self.array_element_type(array)?;
                 self.generate_array_index_address(array, index)?;
-                if matches!(elem_type, Type::Int) {
+
+                // Arrays and structs decay to pointers, so keep the address
+                if elem_type.is_array() || matches!(elem_type, Type::Struct(_) | Type::Union(_)) {
+                    // Address is already in %rax, no need to load
+                } else if matches!(elem_type, Type::Int) {
                     self.emit("    movslq (%rax), %rax");
                 } else if matches!(elem_type, Type::UInt) {
                     self.emit("    movl (%rax), %eax");
@@ -1015,6 +996,11 @@ impl CodeGenerator {
                 self.emit(&format!("    movl ${}, %eax", n));
                 self.emit("    cltq");
                 Ok(())
+            }
+            AstNode::StringLiteral(_) => {
+                // String literals as expressions would need static data section support
+                // For now, they're only supported for array initialization
+                Err("String literals as expressions are not yet supported".to_string())
             }
         }
     }
@@ -1282,19 +1268,9 @@ impl CodeGenerator {
     }
 
     fn array_element_size(&self, array: &AstNode) -> Result<i32, String> {
-        match array {
-            AstNode::Variable(name) => {
-                let symbol = self
-                    .symbol_table
-                    .get_variable(name)
-                    .ok_or_else(|| format!("Undefined variable: {}", name))?;
-                self.element_size_from_type(&symbol.symbol_type)?
-                    .ok_or_else(|| {
-                        "Array indexing requires array or pointer element type".to_string()
-                    })
-            }
-            _ => Err("Array indexing only supports array or pointer variables".to_string()),
-        }
+        let array_type = self.expr_type(array)?;
+        self.element_size_from_type(&array_type)?
+            .ok_or_else(|| "Array indexing requires array or pointer element type".to_string())
     }
 
     fn element_size_from_type(&self, ty: &Type) -> Result<Option<i32>, String> {
@@ -1306,16 +1282,8 @@ impl CodeGenerator {
     }
 
     fn array_element_type(&self, array: &AstNode) -> Result<Type, String> {
-        match array {
-            AstNode::Variable(name) => {
-                let symbol = self
-                    .symbol_table
-                    .get_variable(name)
-                    .ok_or_else(|| format!("Undefined variable: {}", name))?;
-                self.array_element_type_from_type(&symbol.symbol_type)
-            }
-            _ => Err("Array indexing only supports array or pointer variables".to_string()),
-        }
+        let array_type = self.expr_type(array)?;
+        self.array_element_type_from_type(&array_type)
     }
 
     fn array_element_type_from_type(&self, ty: &Type) -> Result<Type, String> {
@@ -1463,6 +1431,141 @@ impl CodeGenerator {
             },
         );
 
+        Ok(())
+    }
+
+    fn generate_array_init(
+        &mut self,
+        array_type: &Type,
+        values: &[AstNode],
+        base_offset: i32,
+    ) -> Result<(), String> {
+        let elem_type = self.array_element_type_from_type(array_type)?;
+        let elem_size = self.type_size(&elem_type)?;
+        let array_len = match array_type {
+            Type::Array(_, len) => *len,
+            _ => return Err("Expected array type".to_string()),
+        };
+
+        if values.len() > array_len {
+            return Err(format!(
+                "Array initializer has {} elements, but array length is {}",
+                values.len(),
+                array_len
+            ));
+        }
+
+        for (i, value) in values.iter().enumerate() {
+            let elem_offset = base_offset + (i as i32) * elem_size;
+
+            // Check if this is a nested array initializer
+            if let AstNode::ArrayInit(nested_values) = value {
+                // Recursively handle nested array initialization
+                if elem_type.is_array() {
+                    self.generate_array_init(&elem_type, nested_values, elem_offset)?;
+                } else {
+                    return Err("Nested initializer for non-array element".to_string());
+                }
+            } else {
+                // Generate code for the value
+                self.generate_node(value)?;
+
+                // Store the value at the appropriate offset
+                if matches!(elem_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                    self.emit(&format!("    movl %eax, {}(%rbp)", elem_offset));
+                } else if matches!(elem_type, Type::UShort | Type::Short) {
+                    self.emit(&format!("    movw %ax, {}(%rbp)", elem_offset));
+                } else if matches!(elem_type, Type::Char | Type::UChar) {
+                    self.emit(&format!("    movb %al, {}(%rbp)", elem_offset));
+                } else if matches!(elem_type, Type::Long | Type::ULong) {
+                    self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
+                } else {
+                    self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
+                }
+            }
+        }
+
+        // Zero-fill remaining elements
+        for i in values.len()..array_len {
+            let elem_offset = base_offset + (i as i32) * elem_size;
+            self.zero_fill_element(&elem_type, elem_offset)?;
+        }
+
+        Ok(())
+    }
+
+    fn generate_string_array_init(
+        &mut self,
+        array_type: &Type,
+        string: &str,
+        base_offset: i32,
+    ) -> Result<(), String> {
+        let elem_type = self.array_element_type_from_type(array_type)?;
+        let array_len = match array_type {
+            Type::Array(_, len) => *len,
+            _ => return Err("Expected array type".to_string()),
+        };
+
+        // Ensure element type is char or uchar
+        if !matches!(elem_type, Type::Char | Type::UChar) {
+            return Err("String literals can only initialize char arrays".to_string());
+        }
+
+        // Initialize each character
+        for (i, ch) in string.chars().enumerate() {
+            if i >= array_len {
+                return Err(format!(
+                    "String literal has {} characters (plus null terminator), but array length is {}",
+                    string.len(),
+                    array_len
+                ));
+            }
+            let char_offset = base_offset + (i as i32);
+            self.emit(&format!("    movb ${}, {}(%rbp)", ch as u8, char_offset));
+        }
+
+        // Add null terminator if there's room
+        if string.len() < array_len {
+            let null_offset = base_offset + (string.len() as i32);
+            self.emit(&format!("    movb $0, {}(%rbp)", null_offset));
+
+            // Zero-fill any remaining elements
+            for i in (string.len() + 1)..array_len {
+                let char_offset = base_offset + (i as i32);
+                self.emit(&format!("    movb $0, {}(%rbp)", char_offset));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn zero_fill_element(&mut self, elem_type: &Type, offset: i32) -> Result<(), String> {
+        if elem_type.is_array() {
+            // For nested arrays, recursively zero-fill
+            let inner_elem_type = self.array_element_type_from_type(elem_type)?;
+            let inner_elem_size = self.type_size(&inner_elem_type)?;
+            let inner_array_len = match elem_type {
+                Type::Array(_, len) => *len,
+                _ => 0,
+            };
+            for i in 0..inner_array_len {
+                let inner_offset = offset + (i as i32) * inner_elem_size;
+                self.zero_fill_element(&inner_elem_type, inner_offset)?;
+            }
+        } else {
+            // Zero-fill a single element
+            if matches!(elem_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                self.emit(&format!("    movl $0, {}(%rbp)", offset));
+            } else if matches!(elem_type, Type::UShort | Type::Short) {
+                self.emit(&format!("    movw $0, {}(%rbp)", offset));
+            } else if matches!(elem_type, Type::Char | Type::UChar) {
+                self.emit(&format!("    movb $0, {}(%rbp)", offset));
+            } else if matches!(elem_type, Type::Long | Type::ULong) {
+                self.emit(&format!("    movq $0, {}(%rbp)", offset));
+            } else {
+                self.emit(&format!("    movq $0, {}(%rbp)", offset));
+            }
+        }
         Ok(())
     }
 
@@ -1746,6 +1849,7 @@ impl CodeGenerator {
             | AstNode::PostfixIncrement(operand)
             | AstNode::PostfixDecrement(operand) => self.expr_type(operand),
             AstNode::FunctionCall { .. } => Ok(Type::Int),
+            AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }

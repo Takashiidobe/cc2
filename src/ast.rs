@@ -90,6 +90,7 @@ pub enum AstNode {
     SizeOfType(Type),
     SizeOfExpr(Box<AstNode>),
     IntLiteral(i64),
+    StringLiteral(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -228,6 +229,7 @@ impl fmt::Display for AstNode {
             AstNode::SizeOfType(_) => write!(f, "SizeOfType"),
             AstNode::SizeOfExpr(_) => write!(f, "SizeOfExpr"),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
+            AstNode::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
         }
     }
 }

@@ -748,6 +748,11 @@ impl Parser {
                 self.advance();
                 AstNode::IntLiteral(val)
             }
+            Token::StringLiteral(s) => {
+                let val = s.clone();
+                self.advance();
+                AstNode::StringLiteral(val)
+            }
             Token::Identifier(name) => {
                 let name = name.clone();
                 self.advance();
@@ -853,7 +858,8 @@ impl Parser {
     }
 
     fn parse_array_type_suffix(&mut self, base: Type) -> Result<Type, String> {
-        let mut ty = base;
+        // Collect all array dimensions first
+        let mut dimensions = Vec::new();
         while self.current_token() == &Token::OpenBracket {
             self.advance();
             let len = match self.current_token() {
@@ -862,6 +868,14 @@ impl Parser {
             };
             self.advance();
             self.expect(Token::CloseBracket)?;
+            dimensions.push(len);
+        }
+
+        // Build array type from innermost to outermost (right to left)
+        // For int x[2][3], dimensions = [2, 3]
+        // We want Array(Array(Int, 3), 2)
+        let mut ty = base;
+        for &len in dimensions.iter().rev() {
             ty = Type::Array(Box::new(ty), len);
         }
         Ok(ty)
@@ -877,7 +891,13 @@ impl Parser {
         }
 
         loop {
-            values.push(self.parse_expression()?);
+            // Check if this is a nested initializer (for multi-dimensional arrays)
+            if self.current_token() == &Token::OpenBrace {
+                values.push(self.parse_array_initializer()?);
+            } else {
+                values.push(self.parse_expression()?);
+            }
+
             if self.current_token() == &Token::Comma {
                 self.advance();
                 if self.current_token() == &Token::CloseBrace {
