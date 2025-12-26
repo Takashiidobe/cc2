@@ -63,6 +63,7 @@ pub enum Token {
     Identifier(String),
     IntLiteral(i64),
     StringLiteral(String),
+    CharLiteral(i64),
 
     // Punctuation
     OpenParen,
@@ -146,6 +147,7 @@ impl fmt::Display for Token {
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
+            Token::CharLiteral(c) => write!(f, "CharLiteral({})", c),
             Token::OpenParen => write!(f, "("),
             Token::CloseParen => write!(f, ")"),
             Token::OpenBrace => write!(f, "{{"),
@@ -446,6 +448,7 @@ impl Lexer {
                 self.advance();
                 Ok(LocatedToken::new(Token::Colon, location))
             }
+            '\'' => self.read_char_literal(location),
             '"' => self.read_string_literal(location),
             _ if ch.is_ascii_digit() => self.read_number(location),
             _ if ch.is_ascii_alphabetic() || ch == '_' => self.read_identifier(location),
@@ -580,6 +583,47 @@ impl Lexer {
 
         self.advance(); // Skip closing quote
         Ok(LocatedToken::new(Token::StringLiteral(value), location))
+    }
+
+    fn read_char_literal(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
+        self.advance(); // Skip opening quote
+
+        if self.is_at_end() {
+            return Err("Unterminated character literal".to_string());
+        }
+
+        let value = if self.current_char() == '\\' {
+            // Handle escape sequences
+            self.advance();
+            if self.is_at_end() {
+                return Err("Unterminated character literal".to_string());
+            }
+            let escaped = match self.current_char() {
+                'n' => '\n',
+                't' => '\t',
+                'r' => '\r',
+                '\\' => '\\',
+                '\'' => '\'',
+                '0' => '\0',
+                _ => self.current_char(), // For unrecognized escapes, use the character
+            };
+            self.advance();
+            escaped
+        } else {
+            let ch = self.current_char();
+            self.advance();
+            ch
+        };
+
+        if self.is_at_end() || self.current_char() != '\'' {
+            return Err("Unterminated character literal".to_string());
+        }
+
+        self.advance(); // Skip closing quote
+        Ok(LocatedToken::new(
+            Token::CharLiteral(value as i64),
+            location,
+        ))
     }
 
     fn current_char(&self) -> char {

@@ -1121,6 +1121,11 @@ impl CodeGenerator {
                 self.emit("    cltq");
                 Ok(())
             }
+            AstNode::CharLiteral(c) => {
+                self.emit(&format!("    movl ${}, %eax", c));
+                self.emit("    cltq");
+                Ok(())
+            }
             AstNode::StringLiteral(s) => {
                 // Get or create a label for this string literal
                 let label = self.add_string_literal(s.clone());
@@ -1880,6 +1885,7 @@ impl CodeGenerator {
     fn expr_type(&self, expr: &AstNode) -> Result<Type, String> {
         match expr {
             AstNode::IntLiteral(_) => Ok(Type::Int),
+            AstNode::CharLiteral(_) => Ok(Type::Char),
             AstNode::Variable(name) => {
                 // Check if it's a global variable first
                 if let Some(global) = self.global_variables.get(name) {
@@ -2094,7 +2100,7 @@ impl CodeGenerator {
 
     fn emit_global_initializer(&mut self, var_type: &Type, init: &AstNode) -> Result<(), String> {
         match init {
-            AstNode::IntLiteral(n) => {
+            AstNode::IntLiteral(n) | AstNode::CharLiteral(n) => {
                 // Emit the appropriate directive based on type size
                 match var_type {
                     Type::Char | Type::UChar => {

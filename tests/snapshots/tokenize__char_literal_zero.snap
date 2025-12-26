@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int at 3:1\nIdentifier(main) at 3:5\n( at 3:9\n) at 3:10\n{ at 3:12\nchar at 4:5\nIdentifier(null_char) at 4:10\n= at 4:20\nCharLiteral(0) at 4:22\n; at 4:26\nchar at 5:5\nIdentifier(a) at 5:10\n= at 5:12\nCharLiteral(65) at 5:14\n; at 5:17\nreturn at 8:5\nIdentifier(null_char) at 8:12\n+ at 8:22\nIdentifier(a) at 8:24\n; at 8:25\n} at 9:1\nEOF at 10:1\n"
+stderr: ""
+status: 0
