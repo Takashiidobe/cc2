@@ -17,6 +17,7 @@ pub struct CodeGenerator {
     struct_layouts: HashMap<String, StructLayout>,
     union_layouts: HashMap<String, StructLayout>,
     enum_constants: HashMap<String, i64>,
+    string_literals: Vec<(String, String)>, // (label, string_content)
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,7 @@ impl CodeGenerator {
             struct_layouts: HashMap::new(),
             union_layouts: HashMap::new(),
             enum_constants: HashMap::new(),
+            string_literals: Vec::new(),
         }
     }
 
@@ -55,10 +57,15 @@ impl CodeGenerator {
         self.struct_layouts.clear();
         self.union_layouts.clear();
         self.enum_constants.clear();
+        self.string_literals.clear();
         self.collect_struct_layouts(ast)?;
         self.collect_union_layouts(ast)?;
         self.collect_enum_constants(ast)?;
         self.generate_node(ast)?;
+
+        // Emit .rodata section with string literals at the end
+        self.emit_string_literals();
+
         Ok(self.output.clone())
     }
 
@@ -1054,10 +1061,12 @@ impl CodeGenerator {
                 self.emit("    cltq");
                 Ok(())
             }
-            AstNode::StringLiteral(_) => {
-                // String literals as expressions would need static data section support
-                // For now, they're only supported for array initialization
-                Err("String literals as expressions are not yet supported".to_string())
+            AstNode::StringLiteral(s) => {
+                // Get or create a label for this string literal
+                let label = self.add_string_literal(s.clone());
+                // Load the address of the string literal into %rax
+                self.emit(&format!("    leaq {}(%rip), %rax", label));
+                Ok(())
             }
         }
     }
@@ -1927,6 +1936,55 @@ impl CodeGenerator {
     fn emit(&mut self, line: &str) {
         self.output.push_str(line);
         self.output.push('\n');
+    }
+
+    fn add_string_literal(&mut self, s: String) -> String {
+        // Check if this exact string already exists
+        for (label, content) in &self.string_literals {
+            if content == &s {
+                return label.clone();
+            }
+        }
+
+        // Create a new label for this string
+        let label = format!(".LC{}", self.string_literals.len());
+        self.string_literals.push((label.clone(), s));
+        label
+    }
+
+    fn emit_string_literals(&mut self) {
+        if self.string_literals.is_empty() {
+            return;
+        }
+
+        // Clone the string literals to avoid borrow checker issues
+        let literals = self.string_literals.clone();
+
+        // Emit .rodata section with all string literals
+        self.emit("    .section .rodata");
+        for (label, content) in &literals {
+            self.emit(&format!("{}:", label));
+            // Emit the string as a .string directive
+            // Escape special characters for assembly
+            let escaped = self.escape_string_for_asm(content);
+            self.emit(&format!("    .string \"{}\"", escaped));
+        }
+    }
+
+    fn escape_string_for_asm(&self, s: &str) -> String {
+        let mut result = String::new();
+        for ch in s.chars() {
+            match ch {
+                '\n' => result.push_str("\\n"),
+                '\t' => result.push_str("\\t"),
+                '\r' => result.push_str("\\r"),
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\0' => result.push_str("\\0"),
+                _ => result.push(ch),
+            }
+        }
+        result
     }
 }
 
