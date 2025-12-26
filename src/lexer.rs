@@ -557,20 +557,8 @@ impl Lexer {
                 if self.is_at_end() {
                     return Err("Unterminated string literal".to_string());
                 }
-                // Handle escape sequences
-                match self.current_char() {
-                    'n' => value.push('\n'),
-                    't' => value.push('\t'),
-                    'r' => value.push('\r'),
-                    '\\' => value.push('\\'),
-                    '"' => value.push('"'),
-                    '0' => value.push('\0'),
-                    _ => {
-                        // For unrecognized escapes, just include the character
-                        value.push(self.current_char());
-                    }
-                }
-                self.advance();
+                let escaped = self.parse_escape_sequence()?;
+                value.push(escaped);
             } else {
                 value.push(self.current_char());
                 self.advance();
@@ -598,17 +586,7 @@ impl Lexer {
             if self.is_at_end() {
                 return Err("Unterminated character literal".to_string());
             }
-            let escaped = match self.current_char() {
-                'n' => '\n',
-                't' => '\t',
-                'r' => '\r',
-                '\\' => '\\',
-                '\'' => '\'',
-                '0' => '\0',
-                _ => self.current_char(), // For unrecognized escapes, use the character
-            };
-            self.advance();
-            escaped
+            self.parse_escape_sequence()?
         } else {
             let ch = self.current_char();
             self.advance();
@@ -624,6 +602,86 @@ impl Lexer {
             Token::CharLiteral(value as i64),
             location,
         ))
+    }
+
+    fn parse_escape_sequence(&mut self) -> Result<char, String> {
+        let ch = self.current_char();
+        match ch {
+            // Basic escape sequences
+            'n' => {
+                self.advance();
+                Ok('\n')
+            }
+            't' => {
+                self.advance();
+                Ok('\t')
+            }
+            'r' => {
+                self.advance();
+                Ok('\r')
+            }
+            '\\' => {
+                self.advance();
+                Ok('\\')
+            }
+            '"' => {
+                self.advance();
+                Ok('"')
+            }
+            '\'' => {
+                self.advance();
+                Ok('\'')
+            }
+            // Hexadecimal escape: \xHH
+            'x' => {
+                self.advance();
+                let mut value = 0u8;
+                let mut count = 0;
+
+                // Read up to 2 hex digits
+                while count < 2 && !self.is_at_end() {
+                    let c = self.current_char();
+                    if let Some(digit) = c.to_digit(16) {
+                        value = value * 16 + digit as u8;
+                        self.advance();
+                        count += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                if count == 0 {
+                    return Err("Invalid hexadecimal escape sequence".to_string());
+                }
+
+                Ok(value as char)
+            }
+            // Octal escape: \ooo (1-3 digits)
+            '0'..='7' => {
+                let mut value = 0u8;
+                let mut count = 0;
+
+                // Read up to 3 octal digits
+                while count < 3 && !self.is_at_end() {
+                    let c = self.current_char();
+                    if c >= '0' && c <= '7' {
+                        value = value * 8 + (c as u8 - b'0');
+                        self.advance();
+                        count += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                Ok(value as char)
+            }
+            // For unrecognized escapes, just use the character
+            _ => {
+                let c = self.current_char();
+                self.advance();
+                Ok(c)
+            }
+        }
     }
 
     fn current_char(&self) -> char {
