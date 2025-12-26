@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "int\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(sum)\n=\nIntLiteral(0)\n;\nfor\n(\nint\nIdentifier(i)\n=\nIntLiteral(1)\n;\nIdentifier(i)\n<=\nIntLiteral(5)\n;\nIdentifier(i)\n=\nIdentifier(i)\n+\nIntLiteral(1)\n)\n{\nIdentifier(sum)\n=\nIdentifier(sum)\n+\nIdentifier(i)\n;\n}\nreturn\nIdentifier(sum)\n;\n}\nEOF\n"
+stdout: "int at 1:1\nIdentifier(main) at 1:5\n( at 1:9\n) at 1:10\n{ at 1:12\nint at 2:5\nIdentifier(sum) at 2:9\n= at 2:13\nIntLiteral(0) at 2:15\n; at 2:16\nfor at 3:5\n( at 3:9\nint at 3:10\nIdentifier(i) at 3:14\n= at 3:16\nIntLiteral(1) at 3:18\n; at 3:19\nIdentifier(i) at 3:21\n<= at 3:23\nIntLiteral(5) at 3:26\n; at 3:27\nIdentifier(i) at 3:29\n= at 3:31\nIdentifier(i) at 3:33\n+ at 3:35\nIntLiteral(1) at 3:37\n) at 3:38\n{ at 3:40\nIdentifier(sum) at 4:9\n= at 4:13\nIdentifier(sum) at 4:15\n+ at 4:19\nIdentifier(i) at 4:21\n; at 4:22\n} at 5:5\nreturn at 6:5\nIdentifier(sum) at 6:12\n; at 6:15\n} at 7:1\nEOF at 8:1\n"
 stderr: ""
 status: 0

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use cc2::{CodeGenerator, Lexer, Parser, Preprocessor};
+use cc2::{format_error, format_simple_error, CodeGenerator, Lexer, Parser, Preprocessor, SourceLocation};
 
 #[derive(ClapParser, Debug)]
 #[command(name = "cc2")]
@@ -37,6 +37,30 @@ struct Args {
     parse_only: bool,
 }
 
+/// Extract location from error message like "... at 3:5"
+fn extract_location(error_msg: &str) -> Option<SourceLocation> {
+    // Look for "at line:column" pattern at the end
+    if let Some(at_pos) = error_msg.rfind(" at ") {
+        let location_str = &error_msg[at_pos + 4..];
+        let parts: Vec<&str> = location_str.split(':').collect();
+        if parts.len() == 2 {
+            if let (Ok(line), Ok(col)) = (parts[0].parse(), parts[1].parse()) {
+                return Some(SourceLocation::new(line, col));
+            }
+        }
+    }
+    None
+}
+
+/// Strip location from error message
+fn strip_location(error_msg: &str) -> &str {
+    if let Some(at_pos) = error_msg.rfind(" at ") {
+        &error_msg[..at_pos]
+    } else {
+        error_msg
+    }
+}
+
 fn compile_file_to_assembly(input: &PathBuf, args: &Args) -> Result<String, String> {
     let source = fs::read_to_string(input)
         .map_err(|e| format!("Error reading file '{}': {}", input.display(), e))?;
@@ -63,22 +87,35 @@ fn compile_file_to_assembly(input: &PathBuf, args: &Args) -> Result<String, Stri
 
     let preprocessed_source = preprocessor
         .preprocess(&source)
-        .map_err(|e| format!("Preprocessor error in '{}': {}", input.display(), e))?;
+        .map_err(|e| format_simple_error(&format!("Preprocessor error in '{}': {}", input.display(), e)))?;
 
     let mut lexer = Lexer::new(&preprocessed_source);
     let tokens = lexer
         .tokenize()
-        .map_err(|e| format!("Lexer error in '{}': {}", input.display(), e))?;
+        .map_err(|e| format_simple_error(&format!("Lexer error in '{}': {}", input.display(), e)))?;
 
     let mut parser = Parser::new(tokens);
     let ast = parser
         .parse()
-        .map_err(|e| format!("Parser error in '{}': {}", input.display(), e))?;
+        .map_err(|e| {
+            // Try to extract location and format with context
+            if let Some(location) = extract_location(&e) {
+                let message = strip_location(&e);
+                format_error(
+                    &input.display().to_string(),
+                    &preprocessed_source,
+                    location,
+                    message,
+                )
+            } else {
+                format_simple_error(&format!("Parser error in '{}': {}", input.display(), e))
+            }
+        })?;
 
     let mut codegen = CodeGenerator::new();
     let assembly = codegen
         .generate(&ast)
-        .map_err(|e| format!("Code generation error in '{}': {}", input.display(), e))?;
+        .map_err(|e| format_simple_error(&format!("Code generation error in '{}': {}", input.display(), e)))?;
 
     Ok(assembly)
 }

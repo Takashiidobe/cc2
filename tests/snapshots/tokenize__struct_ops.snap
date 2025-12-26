@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "struct\nIdentifier(Pair)\n{\nint\nIdentifier(a)\n;\nint\nIdentifier(b)\n;\n}\n;\nint\nIdentifier(main)\n(\n)\n{\nstruct\nIdentifier(Pair)\nIdentifier(p)\n=\n{\nIntLiteral(3)\n,\nIntLiteral(4)\n}\n;\nstruct\nIdentifier(Pair)\n*\nIdentifier(ptr)\n=\n&\nIdentifier(p)\n;\nreturn\nIdentifier(p)\n.\nIdentifier(a)\n*\nIntLiteral(2)\n+\nIdentifier(ptr)\n->\nIdentifier(b)\n;\n}\nEOF\n"
+stdout: "struct at 1:1\nIdentifier(Pair) at 1:8\n{ at 1:13\nint at 2:5\nIdentifier(a) at 2:9\n; at 2:10\nint at 3:5\nIdentifier(b) at 3:9\n; at 3:10\n} at 4:1\n; at 4:2\nint at 6:1\nIdentifier(main) at 6:5\n( at 6:9\n) at 6:10\n{ at 6:12\nstruct at 7:5\nIdentifier(Pair) at 7:12\nIdentifier(p) at 7:17\n= at 7:19\n{ at 7:21\nIntLiteral(3) at 7:22\n, at 7:23\nIntLiteral(4) at 7:25\n} at 7:26\n; at 7:27\nstruct at 8:5\nIdentifier(Pair) at 8:12\n* at 8:16\nIdentifier(ptr) at 8:18\n= at 8:22\n& at 8:24\nIdentifier(p) at 8:25\n; at 8:26\nreturn at 9:5\nIdentifier(p) at 9:12\n. at 9:13\nIdentifier(a) at 9:14\n* at 9:16\nIntLiteral(2) at 9:18\n+ at 9:20\nIdentifier(ptr) at 9:22\n-> at 9:25\nIdentifier(b) at 9:27\n; at 9:28\n} at 10:1\nEOF at 11:1\n"
 stderr: ""
 status: 0

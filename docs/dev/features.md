@@ -18,16 +18,16 @@ This document provides detailed documentation for all implemented features in cc
 
 cc2 supports all standard C integer types:
 
-| Type | Size | Range (Signed) | Range (Unsigned) |
-|------|------|----------------|------------------|
-| `char` | 1 byte | -128 to 127 | - |
-| `unsigned char` | 1 byte | - | 0 to 255 |
-| `short` | 2 bytes | -32,768 to 32,767 | - |
-| `unsigned short` | 2 bytes | - | 0 to 65,535 |
-| `int` | 4 bytes | -2³¹ to 2³¹-1 | - |
-| `unsigned int` | 4 bytes | - | 0 to 2³²-1 |
-| `long` | 8 bytes | -2⁶³ to 2⁶³-1 | - |
-| `unsigned long` | 8 bytes | - | 0 to 2⁶⁴-1 |
+ | Type             | Size    | Range (Signed)    | Range (Unsigned) |
+ |------------------|---------|-------------------|------------------|
+ | `char`           | 1 byte  | -128 to 127       | -                |
+ | `unsigned char`  | 1 byte  | -                 | 0 to 255         |
+ | `short`          | 2 bytes | -32,768 to 32,767 | -                |
+ | `unsigned short` | 2 bytes | -                 | 0 to 65,535      |
+ | `int`            | 4 bytes | -2³¹ to 2³¹-1     | -                |
+ | `unsigned int`   | 4 bytes | -                 | 0 to 2³²-1       |
+ | `long`           | 8 bytes | -2⁶³ to 2⁶³-1     | -                |
+ | `unsigned long`  | 8 bytes | -                 | 0 to 2⁶⁴-1       |
 
 **Examples:**
 ```c
@@ -476,8 +476,6 @@ v.i = 0x12345678;
 ### Current Limitations
 
 - **No string literals** (only integer constants)
-- **No preprocessor** (`#include`, `#define`, etc.)
-- **No multi-file compilation**
 - **No standard library** (can't call `printf`, `malloc`, etc. yet)
 - **No floating point** (only integers)
 - **No variadic functions** (`printf`-style)

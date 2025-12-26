@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "struct\nIdentifier(Mix)\n{\nint\nIdentifier(x)\n;\nint\n*\nIdentifier(p)\n;\n}\n;\nint\nIdentifier(main)\n(\n)\n{\nint\nIdentifier(nums)\n[\nIntLiteral(3)\n]\n=\n{\nIntLiteral(1)\n,\nIntLiteral(2)\n,\nIntLiteral(3)\n}\n;\nint\n*\nIdentifier(ptr)\n=\nIdentifier(nums)\n;\nreturn\nsizeof\n(\nint\n)\n+\nsizeof\n(\nint\n*\n)\n+\nsizeof\n(\nIdentifier(nums)\n)\n+\nsizeof\n(\nstruct\nIdentifier(Mix)\n)\n+\nsizeof\n(\n*\nIdentifier(ptr)\n)\n;\n}\nEOF\n"
+stdout: "struct at 1:1\nIdentifier(Mix) at 1:8\n{ at 1:12\nint at 2:5\nIdentifier(x) at 2:9\n; at 2:10\nint at 3:5\n* at 3:8\nIdentifier(p) at 3:10\n; at 3:11\n} at 4:1\n; at 4:2\nint at 6:1\nIdentifier(main) at 6:5\n( at 6:9\n) at 6:10\n{ at 6:12\nint at 7:5\nIdentifier(nums) at 7:9\n[ at 7:13\nIntLiteral(3) at 7:14\n] at 7:15\n= at 7:17\n{ at 7:19\nIntLiteral(1) at 7:20\n, at 7:21\nIntLiteral(2) at 7:23\n, at 7:24\nIntLiteral(3) at 7:26\n} at 7:27\n; at 7:28\nint at 8:5\n* at 8:8\nIdentifier(ptr) at 8:10\n= at 8:14\nIdentifier(nums) at 8:16\n; at 8:20\nreturn at 9:5\nsizeof at 9:12\n( at 9:18\nint at 9:19\n) at 9:22\n+ at 10:9\nsizeof at 10:11\n( at 10:17\nint at 10:18\n* at 10:21\n) at 10:22\n+ at 11:9\nsizeof at 11:11\n( at 11:17\nIdentifier(nums) at 11:18\n) at 11:22\n+ at 12:9\nsizeof at 12:11\n( at 12:17\nstruct at 12:18\nIdentifier(Mix) at 12:25\n) at 12:28\n+ at 13:9\nsizeof at 13:11\n( at 13:17\n* at 13:18\nIdentifier(ptr) at 13:19\n) at 13:22\n; at 13:23\n} at 14:1\nEOF at 15:1\n"
 stderr: ""
 status: 0
