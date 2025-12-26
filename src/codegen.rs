@@ -2,11 +2,18 @@ use crate::ast::*;
 use crate::symbol_table::SymbolTable;
 use std::collections::HashMap;
 
+#[derive(Debug, Clone)]
+struct LoopContext {
+    break_label: String,
+    continue_label: String,
+}
+
 pub struct CodeGenerator {
     output: String,
     symbol_table: SymbolTable,
     label_counter: usize,
     current_function_end_label: Option<String>,
+    loop_stack: Vec<LoopContext>,
     struct_layouts: HashMap<String, StructLayout>,
     union_layouts: HashMap<String, StructLayout>,
     enum_constants: HashMap<String, i64>,
@@ -32,6 +39,7 @@ impl CodeGenerator {
             symbol_table: SymbolTable::new(),
             label_counter: 0,
             current_function_end_label: None,
+            loop_stack: Vec::new(),
             struct_layouts: HashMap::new(),
             union_layouts: HashMap::new(),
             enum_constants: HashMap::new(),
@@ -43,6 +51,7 @@ impl CodeGenerator {
         self.symbol_table = SymbolTable::new();
         self.label_counter = 0;
         self.current_function_end_label = None;
+        self.loop_stack.clear();
         self.struct_layouts.clear();
         self.union_layouts.clear();
         self.enum_constants.clear();
@@ -183,6 +192,22 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
+            AstNode::Break => {
+                if let Some(ctx) = self.loop_stack.last() {
+                    self.emit(&format!("    jmp {}", ctx.break_label));
+                    Ok(())
+                } else {
+                    Err("break statement not within a loop".to_string())
+                }
+            }
+            AstNode::Continue => {
+                if let Some(ctx) = self.loop_stack.last() {
+                    self.emit(&format!("    jmp {}", ctx.continue_label));
+                    Ok(())
+                } else {
+                    Err("continue statement not within a loop".to_string())
+                }
+            }
             AstNode::IfStatement {
                 condition,
                 then_branch,
@@ -216,6 +241,12 @@ impl CodeGenerator {
                 let start_label = self.next_label();
                 let end_label = self.next_label();
 
+                // Push loop context for break/continue
+                self.loop_stack.push(LoopContext {
+                    break_label: end_label.clone(),
+                    continue_label: start_label.clone(),
+                });
+
                 self.emit(&format!("{}:", start_label));
                 self.generate_node(condition)?;
                 self.emit("    cmpq $0, %rax");
@@ -225,20 +256,34 @@ impl CodeGenerator {
                 self.emit(&format!("    jmp {}", start_label));
 
                 self.emit(&format!("{}:", end_label));
+
+                // Pop loop context
+                self.loop_stack.pop();
                 Ok(())
             }
             AstNode::DoWhileLoop { body, condition } => {
                 let start_label = self.next_label();
                 let end_label = self.next_label();
+                let continue_label = self.next_label();
+
+                // Push loop context for break/continue
+                self.loop_stack.push(LoopContext {
+                    break_label: end_label.clone(),
+                    continue_label: continue_label.clone(),
+                });
 
                 self.emit(&format!("{}:", start_label));
                 self.generate_node(body)?;
 
+                self.emit(&format!("{}:", continue_label));
                 self.generate_node(condition)?;
                 self.emit("    cmpq $0, %rax");
                 self.emit(&format!("    jne {}", start_label));
 
                 self.emit(&format!("{}:", end_label));
+
+                // Pop loop context
+                self.loop_stack.pop();
                 Ok(())
             }
             AstNode::ForLoop {
@@ -249,6 +294,7 @@ impl CodeGenerator {
             } => {
                 let start_label = self.next_label();
                 let end_label = self.next_label();
+                let continue_label = self.next_label();
 
                 if let Some(init_node) = init {
                     self.generate_node(init_node)?;
@@ -262,14 +308,25 @@ impl CodeGenerator {
                     self.emit(&format!("    je {}", end_label));
                 }
 
+                // Push loop context for break/continue
+                // Continue jumps to increment part (or start if no increment)
+                self.loop_stack.push(LoopContext {
+                    break_label: end_label.clone(),
+                    continue_label: continue_label.clone(),
+                });
+
                 self.generate_node(body)?;
 
+                self.emit(&format!("{}:", continue_label));
                 if let Some(inc) = increment {
                     self.generate_node(inc)?;
                 }
 
                 self.emit(&format!("    jmp {}", start_label));
                 self.emit(&format!("{}:", end_label));
+
+                // Pop loop context
+                self.loop_stack.pop();
                 Ok(())
             }
             AstNode::VarDecl {

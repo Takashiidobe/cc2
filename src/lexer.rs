@@ -56,6 +56,8 @@ pub enum Token {
     Unsigned,
     Short,
     Long,
+    Break,
+    Continue,
 
     // Identifiers and literals
     Identifier(String),
@@ -139,6 +141,8 @@ impl fmt::Display for Token {
             Token::Unsigned => write!(f, "unsigned"),
             Token::Short => write!(f, "short"),
             Token::Long => write!(f, "long"),
+            Token::Break => write!(f, "break"),
+            Token::Continue => write!(f, "continue"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
@@ -532,6 +536,8 @@ impl Lexer {
             "unsigned" => Token::Unsigned,
             "short" => Token::Short,
             "long" => Token::Long,
+            "break" => Token::Break,
+            "continue" => Token::Continue,
             _ => Token::Identifier(ident),
         };
 

@@ -216,6 +216,8 @@ impl Parser {
             Token::While => self.parse_while_loop(),
             Token::Do => self.parse_do_while_loop(),
             Token::For => self.parse_for_loop(),
+            Token::Break => self.parse_break(),
+            Token::Continue => self.parse_continue(),
             Token::Unsigned
             | Token::Int
             | Token::Char
@@ -390,6 +392,18 @@ impl Parser {
 
         self.expect(Token::Semicolon)?;
         Ok(AstNode::Return(expr))
+    }
+
+    fn parse_break(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Break)?;
+        self.expect(Token::Semicolon)?;
+        Ok(AstNode::Break)
+    }
+
+    fn parse_continue(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Continue)?;
+        self.expect(Token::Semicolon)?;
+        Ok(AstNode::Continue)
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {
