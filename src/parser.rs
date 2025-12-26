@@ -25,24 +25,57 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<AstNode, String> {
-        let mut functions = Vec::new();
+        let mut items = Vec::new();
 
         while !self.is_at_end() {
             if self.current_token() == &Token::Eof {
                 break;
             }
             if self.is_struct_definition() {
-                functions.push(self.parse_struct_definition()?);
+                items.push(self.parse_struct_definition()?);
             } else if self.is_union_definition() {
-                functions.push(self.parse_union_definition()?);
+                items.push(self.parse_union_definition()?);
             } else if self.is_enum_definition() {
-                functions.push(self.parse_enum_definition()?);
+                items.push(self.parse_enum_definition()?);
             } else {
-                functions.push(self.parse_function()?);
+                // Could be a function or global variable
+                items.push(self.parse_declaration()?);
             }
         }
 
-        Ok(AstNode::Program(functions))
+        Ok(AstNode::Program(items))
+    }
+
+    fn parse_declaration(&mut self) -> Result<AstNode, String> {
+        let var_type = self.parse_type()?;
+
+        let name = match self.current_token() {
+            Token::Identifier(s) => s.clone(),
+            _ => {
+                return Err(format!(
+                    "Expected identifier, got {:?} at {}",
+                    self.current_token(),
+                    self.current_location()
+                ))
+            }
+        };
+        self.advance();
+
+        // Check what follows to determine if it's a function or variable
+        match self.current_token() {
+            Token::OpenParen => {
+                // It's a function
+                self.parse_function_rest(var_type, name)
+            }
+            Token::Semicolon | Token::Equals | Token::OpenBracket => {
+                // It's a global variable
+                self.parse_global_variable(var_type, name)
+            }
+            _ => Err(format!(
+                "Expected '(', ';', '=', or '[' after identifier, got {:?}",
+                self.current_token()
+            )),
+        }
     }
 
     fn parse_function(&mut self) -> Result<AstNode, String> {
@@ -60,6 +93,14 @@ impl Parser {
         };
         self.advance();
 
+        self.parse_function_rest(return_type, name)
+    }
+
+    fn parse_function_rest(
+        &mut self,
+        return_type: Type,
+        name: String,
+    ) -> Result<AstNode, String> {
         self.expect(Token::OpenParen)?;
         let params = self.parse_parameters()?;
         self.expect(Token::CloseParen)?;
@@ -79,6 +120,39 @@ impl Parser {
             return_type,
             params,
             body,
+        })
+    }
+
+    fn parse_global_variable(
+        &mut self,
+        mut var_type: Type,
+        name: String,
+    ) -> Result<AstNode, String> {
+        // Handle array type suffix if present
+        var_type = self.parse_array_type_suffix(var_type)?;
+
+        // Parse initializer if present
+        let init = if self.current_token() == &Token::Equals {
+            self.advance();
+            if self.current_token() == &Token::OpenBrace {
+                if matches!(var_type, Type::Struct(_)) {
+                    Some(Box::new(self.parse_struct_initializer()?))
+                } else {
+                    Some(Box::new(self.parse_array_initializer()?))
+                }
+            } else {
+                Some(Box::new(self.parse_expression()?))
+            }
+        } else {
+            None
+        };
+
+        self.expect(Token::Semicolon)?;
+
+        Ok(AstNode::VarDecl {
+            name,
+            var_type,
+            init,
         })
     }
 

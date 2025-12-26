@@ -8,6 +8,12 @@ struct LoopContext {
     continue_label: String,
 }
 
+#[derive(Debug, Clone)]
+struct GlobalVariable {
+    var_type: Type,
+    init: Option<AstNode>,
+}
+
 pub struct CodeGenerator {
     output: String,
     symbol_table: SymbolTable,
@@ -18,6 +24,7 @@ pub struct CodeGenerator {
     union_layouts: HashMap<String, StructLayout>,
     enum_constants: HashMap<String, i64>,
     string_literals: Vec<(String, String)>, // (label, string_content)
+    global_variables: HashMap<String, GlobalVariable>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +52,7 @@ impl CodeGenerator {
             union_layouts: HashMap::new(),
             enum_constants: HashMap::new(),
             string_literals: Vec::new(),
+            global_variables: HashMap::new(),
         }
     }
 
@@ -58,9 +66,21 @@ impl CodeGenerator {
         self.union_layouts.clear();
         self.enum_constants.clear();
         self.string_literals.clear();
+        self.global_variables.clear();
         self.collect_struct_layouts(ast)?;
         self.collect_union_layouts(ast)?;
         self.collect_enum_constants(ast)?;
+        self.collect_global_variables(ast)?;
+
+        // Emit global variables first
+        self.emit_global_variables()?;
+
+        // Switch to .text section for functions
+        if !self.global_variables.is_empty() {
+            self.emit("    .text");
+        }
+
+        // Then generate code for functions
         self.generate_node(ast)?;
 
         // Emit .rodata section with string literals at the end
@@ -77,9 +97,12 @@ impl CodeGenerator {
 
     fn generate_node(&mut self, node: &AstNode) -> Result<(), String> {
         match node {
-            AstNode::Program(functions) => {
-                for func in functions {
-                    self.generate_node(func)?;
+            AstNode::Program(items) => {
+                for item in items {
+                    // Skip global variables (already emitted) and type definitions
+                    if !matches!(item, AstNode::VarDecl { .. }) {
+                        self.generate_node(item)?;
+                    }
                 }
                 Ok(())
             }
@@ -422,6 +445,43 @@ impl CodeGenerator {
                 // Check if this is an enum constant first
                 if let Some(&value) = self.enum_constants.get(name) {
                     self.emit(&format!("    movq ${}, %rax", value));
+                    return Ok(());
+                }
+
+                // Check if this is a global variable
+                if let Some(global) = self.global_variables.get(name) {
+                    let var_type = &global.var_type;
+
+                    // For arrays and structs, load the address instead of the value
+                    if var_type.is_array() || matches!(var_type, Type::Struct(_) | Type::Union(_)) {
+                        self.emit(&format!("    leaq {}(%rip), %rax", name));
+                        return Ok(());
+                    }
+
+                    // Load from global variable using label
+                    match var_type {
+                        Type::Char | Type::UChar => {
+                            self.emit(&format!("    movzbl {}(%rip), %eax", name));
+                            self.emit("    cltq");
+                        }
+                        Type::Short | Type::UShort => {
+                            self.emit(&format!("    movzwl {}(%rip), %eax", name));
+                            self.emit("    cltq");
+                        }
+                        Type::Int | Type::UInt | Type::Enum(_) => {
+                            self.emit(&format!("    movl {}(%rip), %eax", name));
+                            self.emit("    cltq");
+                        }
+                        Type::Long | Type::ULong => {
+                            self.emit(&format!("    movq {}(%rip), %rax", name));
+                        }
+                        Type::Pointer(_) => {
+                            self.emit(&format!("    movq {}(%rip), %rax", name));
+                        }
+                        _ => {
+                            self.emit(&format!("    movq {}(%rip), %rax", name));
+                        }
+                    }
                     return Ok(());
                 }
 
@@ -1074,6 +1134,13 @@ impl CodeGenerator {
     fn generate_lvalue(&mut self, node: &AstNode) -> Result<(), String> {
         match node {
             AstNode::Variable(name) => {
+                // Check if this is a global variable
+                if self.global_variables.contains_key(name) {
+                    // Load address of global variable using label
+                    self.emit(&format!("    leaq {}(%rip), %rax", name));
+                    return Ok(());
+                }
+
                 let offset = self
                     .symbol_table
                     .get_variable(name)
@@ -1239,6 +1306,11 @@ impl CodeGenerator {
     fn pointer_elem_size(&self, node: &AstNode) -> Result<Option<i32>, String> {
         match node {
             AstNode::Variable(name) => {
+                // Check if it's a global variable first
+                if let Some(global) = self.global_variables.get(name) {
+                    return self.element_size_from_type(&global.var_type);
+                }
+
                 let symbol = self
                     .symbol_table
                     .get_variable(name)
@@ -1705,6 +1777,23 @@ impl CodeGenerator {
         Ok(())
     }
 
+    fn collect_global_variables(&mut self, node: &AstNode) -> Result<(), String> {
+        if let AstNode::Program(nodes) = node {
+            for item in nodes {
+                if let AstNode::VarDecl { name, var_type, init } = item {
+                    self.global_variables.insert(
+                        name.clone(),
+                        GlobalVariable {
+                            var_type: var_type.clone(),
+                            init: init.as_ref().map(|n| (**n).clone()),
+                        },
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn collect_enum_constants(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
@@ -1727,12 +1816,16 @@ impl CodeGenerator {
     ) -> Result<(String, bool), String> {
         match base {
             AstNode::Variable(name) => {
-                let symbol_type = self
-                    .symbol_table
-                    .get_variable(name)
-                    .ok_or_else(|| format!("Undefined variable: {}", name))?
-                    .symbol_type
-                    .clone();
+                // Check if it's a global variable first
+                let symbol_type = if let Some(global) = self.global_variables.get(name) {
+                    global.var_type.clone()
+                } else {
+                    self.symbol_table
+                        .get_variable(name)
+                        .ok_or_else(|| format!("Undefined variable: {}", name))?
+                        .symbol_type
+                        .clone()
+                };
                 match (symbol_type, through_pointer) {
                     (Type::Struct(name), false) | (Type::Union(name), false) => {
                         self.generate_lvalue(base)?;
@@ -1788,6 +1881,11 @@ impl CodeGenerator {
         match expr {
             AstNode::IntLiteral(_) => Ok(Type::Int),
             AstNode::Variable(name) => {
+                // Check if it's a global variable first
+                if let Some(global) = self.global_variables.get(name) {
+                    return Ok(global.var_type.clone());
+                }
+
                 let symbol = self
                     .symbol_table
                     .get_variable(name)
@@ -1936,6 +2034,109 @@ impl CodeGenerator {
     fn emit(&mut self, line: &str) {
         self.output.push_str(line);
         self.output.push('\n');
+    }
+
+    fn emit_global_variables(&mut self) -> Result<(), String> {
+        if self.global_variables.is_empty() {
+            return Ok(());
+        }
+
+        // Clone global variables to avoid borrow checker issues
+        let globals: Vec<(String, GlobalVariable)> = self
+            .global_variables
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        // Separate globals into initialized and uninitialized
+        let mut initialized = Vec::new();
+        let mut uninitialized = Vec::new();
+
+        for (name, global) in &globals {
+            if global.init.is_some() {
+                initialized.push((name.clone(), global.clone()));
+            } else {
+                uninitialized.push((name.clone(), global.clone()));
+            }
+        }
+
+        // Emit .bss section for uninitialized globals
+        if !uninitialized.is_empty() {
+            self.emit("    .bss");
+            for (name, global) in &uninitialized {
+                let size = self.type_size(&global.var_type)?;
+                let align = self.type_alignment(&global.var_type)?;
+                self.emit(&format!("    .align {}", align));
+                self.emit(&format!("    .globl {}", name));
+                self.emit(&format!("{}:", name));
+                self.emit(&format!("    .zero {}", size));
+            }
+        }
+
+        // Emit .data section for initialized globals
+        if !initialized.is_empty() {
+            self.emit("    .data");
+            for (name, global) in &initialized {
+                let align = self.type_alignment(&global.var_type)?;
+                self.emit(&format!("    .align {}", align));
+                self.emit(&format!("    .globl {}", name));
+                self.emit(&format!("{}:", name));
+
+                // Emit the initialization value
+                if let Some(init) = &global.init {
+                    self.emit_global_initializer(&global.var_type, init)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn emit_global_initializer(&mut self, var_type: &Type, init: &AstNode) -> Result<(), String> {
+        match init {
+            AstNode::IntLiteral(n) => {
+                // Emit the appropriate directive based on type size
+                match var_type {
+                    Type::Char | Type::UChar => {
+                        self.emit(&format!("    .byte {}", n));
+                    }
+                    Type::Short | Type::UShort => {
+                        self.emit(&format!("    .short {}", n));
+                    }
+                    Type::Int | Type::UInt | Type::Enum(_) => {
+                        self.emit(&format!("    .long {}", n));
+                    }
+                    Type::Long | Type::ULong => {
+                        self.emit(&format!("    .quad {}", n));
+                    }
+                    _ => {
+                        self.emit(&format!("    .long {}", n));
+                    }
+                }
+                Ok(())
+            }
+            AstNode::StringLiteral(s) => {
+                // For string literals, emit the label reference
+                let label = self.add_string_literal(s.clone());
+                self.emit(&format!("    .quad {}", label));
+                Ok(())
+            }
+            AstNode::ArrayInit(values) => {
+                // Emit array initializer
+                if let Type::Array(elem_type, _) = var_type {
+                    for value in values {
+                        self.emit_global_initializer(elem_type, value)?;
+                    }
+                    Ok(())
+                } else {
+                    Err("Array initializer for non-array type".to_string())
+                }
+            }
+            _ => Err(format!(
+                "Unsupported global initializer: {:?}",
+                init
+            )),
+        }
     }
 
     fn add_string_literal(&mut self, s: String) -> String {
