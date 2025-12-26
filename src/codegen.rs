@@ -460,17 +460,27 @@ impl CodeGenerator {
 
                     // Load from global variable using label
                     match var_type {
-                        Type::Char | Type::UChar => {
+                        Type::Char => {
+                            self.emit(&format!("    movsbl {}(%rip), %eax", name));
+                            self.emit("    cltq");
+                        }
+                        Type::UChar => {
                             self.emit(&format!("    movzbl {}(%rip), %eax", name));
                             self.emit("    cltq");
                         }
-                        Type::Short | Type::UShort => {
+                        Type::Short => {
+                            self.emit(&format!("    movswl {}(%rip), %eax", name));
+                            self.emit("    cltq");
+                        }
+                        Type::UShort => {
                             self.emit(&format!("    movzwl {}(%rip), %eax", name));
                             self.emit("    cltq");
                         }
-                        Type::Int | Type::UInt | Type::Enum(_) => {
+                        Type::Int | Type::Enum(_) => {
+                            self.emit(&format!("    movslq {}(%rip), %rax", name));
+                        }
+                        Type::UInt => {
                             self.emit(&format!("    movl {}(%rip), %eax", name));
-                            self.emit("    cltq");
                         }
                         Type::Long | Type::ULong => {
                             self.emit(&format!("    movq {}(%rip), %rax", name));
