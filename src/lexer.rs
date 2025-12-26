@@ -1,5 +1,43 @@
 use std::fmt;
 
+/// Represents a location in the source code
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceLocation {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl SourceLocation {
+    pub fn new(line: usize, column: usize) -> Self {
+        SourceLocation { line, column }
+    }
+}
+
+impl fmt::Display for SourceLocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.line, self.column)
+    }
+}
+
+/// A token with its location in the source code
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedToken {
+    pub token: Token,
+    pub location: SourceLocation,
+}
+
+impl LocatedToken {
+    pub fn new(token: Token, location: SourceLocation) -> Self {
+        LocatedToken { token, location }
+    }
+}
+
+impl fmt::Display for LocatedToken {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} at {}", self.token, self.location)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Keywords
@@ -149,6 +187,8 @@ impl fmt::Display for Token {
 pub struct Lexer {
     input: Vec<char>,
     position: usize,
+    line: usize,
+    column: usize,
 }
 
 impl Lexer {
@@ -156,174 +196,182 @@ impl Lexer {
         Lexer {
             input: input.chars().collect(),
             position: 0,
+            line: 1,
+            column: 1,
         }
     }
 
-    pub fn tokenize(&mut self) -> Result<Vec<Token>, String> {
+    /// Get the current location in the source
+    fn current_location(&self) -> SourceLocation {
+        SourceLocation::new(self.line, self.column)
+    }
+
+    pub fn tokenize(&mut self) -> Result<Vec<LocatedToken>, String> {
         let mut tokens = Vec::new();
 
         loop {
-            let token = self.next_token()?;
-            if token == Token::Eof {
-                tokens.push(token);
+            let located_token = self.next_token()?;
+            let is_eof = located_token.token == Token::Eof;
+            tokens.push(located_token);
+            if is_eof {
                 break;
             }
-            tokens.push(token);
         }
 
         Ok(tokens)
     }
 
-    fn next_token(&mut self) -> Result<Token, String> {
+    fn next_token(&mut self) -> Result<LocatedToken, String> {
         self.skip_whitespace();
 
         if self.is_at_end() {
-            return Ok(Token::Eof);
+            return Ok(LocatedToken::new(Token::Eof, self.current_location()));
         }
 
+        let location = self.current_location();
         let ch = self.current_char();
 
         match ch {
             '(' => {
                 self.advance();
-                Ok(Token::OpenParen)
+                Ok(LocatedToken::new(Token::OpenParen, location))
             }
             ')' => {
                 self.advance();
-                Ok(Token::CloseParen)
+                Ok(LocatedToken::new(Token::CloseParen, location))
             }
             '{' => {
                 self.advance();
-                Ok(Token::OpenBrace)
+                Ok(LocatedToken::new(Token::OpenBrace, location))
             }
             '}' => {
                 self.advance();
-                Ok(Token::CloseBrace)
+                Ok(LocatedToken::new(Token::CloseBrace, location))
             }
             ';' => {
                 self.advance();
-                Ok(Token::Semicolon)
+                Ok(LocatedToken::new(Token::Semicolon, location))
             }
             ',' => {
                 self.advance();
-                Ok(Token::Comma)
+                Ok(LocatedToken::new(Token::Comma, location))
             }
             '.' => {
                 self.advance();
-                Ok(Token::Dot)
+                Ok(LocatedToken::new(Token::Dot, location))
             }
             '[' => {
                 self.advance();
-                Ok(Token::OpenBracket)
+                Ok(LocatedToken::new(Token::OpenBracket, location))
             }
             ']' => {
                 self.advance();
-                Ok(Token::CloseBracket)
+                Ok(LocatedToken::new(Token::CloseBracket, location))
             }
             '=' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::EqualEqual)
+                    Ok(LocatedToken::new(Token::EqualEqual, location))
                 } else {
-                    Ok(Token::Equals)
+                    Ok(LocatedToken::new(Token::Equals, location))
                 }
             }
             '<' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::LessEqual)
+                    Ok(LocatedToken::new(Token::LessEqual, location))
                 } else if !self.is_at_end() && self.current_char() == '<' {
                     self.advance();
                     if !self.is_at_end() && self.current_char() == '=' {
                         self.advance();
-                        Ok(Token::LessLessEquals)
+                        Ok(LocatedToken::new(Token::LessLessEquals, location))
                     } else {
-                        Ok(Token::LessLess)
+                        Ok(LocatedToken::new(Token::LessLess, location))
                     }
                 } else {
-                    Ok(Token::Less)
+                    Ok(LocatedToken::new(Token::Less, location))
                 }
             }
             '>' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::GreaterEqual)
+                    Ok(LocatedToken::new(Token::GreaterEqual, location))
                 } else if !self.is_at_end() && self.current_char() == '>' {
                     self.advance();
                     if !self.is_at_end() && self.current_char() == '=' {
                         self.advance();
-                        Ok(Token::GreaterGreaterEquals)
+                        Ok(LocatedToken::new(Token::GreaterGreaterEquals, location))
                     } else {
-                        Ok(Token::GreaterGreater)
+                        Ok(LocatedToken::new(Token::GreaterGreater, location))
                     }
                 } else {
-                    Ok(Token::Greater)
+                    Ok(LocatedToken::new(Token::Greater, location))
                 }
             }
             '!' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::NotEqual)
+                    Ok(LocatedToken::new(Token::NotEqual, location))
                 } else {
-                    Ok(Token::LogicalNot)
+                    Ok(LocatedToken::new(Token::LogicalNot, location))
                 }
             }
             '&' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '&' {
                     self.advance();
-                    Ok(Token::LogicalAnd)
+                    Ok(LocatedToken::new(Token::LogicalAnd, location))
                 } else if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::AmpersandEquals)
+                    Ok(LocatedToken::new(Token::AmpersandEquals, location))
                 } else {
-                    Ok(Token::Ampersand)
+                    Ok(LocatedToken::new(Token::Ampersand, location))
                 }
             }
             '|' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '|' {
                     self.advance();
-                    Ok(Token::LogicalOr)
+                    Ok(LocatedToken::new(Token::LogicalOr, location))
                 } else if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::PipeEquals)
+                    Ok(LocatedToken::new(Token::PipeEquals, location))
                 } else {
-                    Ok(Token::Pipe)
+                    Ok(LocatedToken::new(Token::Pipe, location))
                 }
             }
             '+' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::PlusEquals)
+                    Ok(LocatedToken::new(Token::PlusEquals, location))
                 } else {
-                    Ok(Token::Plus)
+                    Ok(LocatedToken::new(Token::Plus, location))
                 }
             }
             '-' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '>' {
                     self.advance();
-                    Ok(Token::Arrow)
+                    Ok(LocatedToken::new(Token::Arrow, location))
                 } else if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::MinusEquals)
+                    Ok(LocatedToken::new(Token::MinusEquals, location))
                 } else {
-                    Ok(Token::Minus)
+                    Ok(LocatedToken::new(Token::Minus, location))
                 }
             }
             '*' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::StarEquals)
+                    Ok(LocatedToken::new(Token::StarEquals, location))
                 } else {
-                    Ok(Token::Star)
+                    Ok(LocatedToken::new(Token::Star, location))
                 }
             }
             '/' => {
@@ -332,7 +380,7 @@ impl Lexer {
                     match self.current_char() {
                         '=' => {
                             self.advance();
-                            Ok(Token::SlashEquals)
+                            Ok(LocatedToken::new(Token::SlashEquals, location))
                         }
                         '/' => {
                             // C++ style comment - skip to end of line
@@ -344,44 +392,44 @@ impl Lexer {
                             self.skip_block_comment()?;
                             self.next_token()
                         }
-                        _ => Ok(Token::Slash),
+                        _ => Ok(LocatedToken::new(Token::Slash, location)),
                     }
                 } else {
-                    Ok(Token::Slash)
+                    Ok(LocatedToken::new(Token::Slash, location))
                 }
             }
             '%' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::PercentEquals)
+                    Ok(LocatedToken::new(Token::PercentEquals, location))
                 } else {
-                    Ok(Token::Percent)
+                    Ok(LocatedToken::new(Token::Percent, location))
                 }
             }
             '^' => {
                 self.advance();
                 if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
-                    Ok(Token::CaretEquals)
+                    Ok(LocatedToken::new(Token::CaretEquals, location))
                 } else {
-                    Ok(Token::Caret)
+                    Ok(LocatedToken::new(Token::Caret, location))
                 }
             }
             '~' => {
                 self.advance();
-                Ok(Token::Tilde)
+                Ok(LocatedToken::new(Token::Tilde, location))
             }
             '?' => {
                 self.advance();
-                Ok(Token::Question)
+                Ok(LocatedToken::new(Token::Question, location))
             }
             ':' => {
                 self.advance();
-                Ok(Token::Colon)
+                Ok(LocatedToken::new(Token::Colon, location))
             }
-            _ if ch.is_ascii_digit() => self.read_number(),
-            _ if ch.is_ascii_alphabetic() || ch == '_' => self.read_identifier(),
+            _ if ch.is_ascii_digit() => self.read_number(location),
+            _ if ch.is_ascii_alphabetic() || ch == '_' => self.read_identifier(location),
             _ => Err(format!("Unexpected character: '{}'", ch)),
         }
     }
@@ -429,7 +477,7 @@ impl Lexer {
         Ok(())
     }
 
-    fn read_number(&mut self) -> Result<Token, String> {
+    fn read_number(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
         let start = self.position;
         while !self.is_at_end() && self.current_char().is_ascii_digit() {
             self.advance();
@@ -438,10 +486,10 @@ impl Lexer {
         let num = num_str
             .parse::<i64>()
             .map_err(|_| format!("Invalid number: {}", num_str))?;
-        Ok(Token::IntLiteral(num))
+        Ok(LocatedToken::new(Token::IntLiteral(num), location))
     }
 
-    fn read_identifier(&mut self) -> Result<Token, String> {
+    fn read_identifier(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
         let start = self.position;
         while !self.is_at_end() {
             let ch = self.current_char();
@@ -471,7 +519,7 @@ impl Lexer {
             _ => Token::Identifier(ident),
         };
 
-        Ok(token)
+        Ok(LocatedToken::new(token, location))
     }
 
     fn current_char(&self) -> char {
@@ -479,6 +527,12 @@ impl Lexer {
     }
 
     fn advance(&mut self) {
+        if !self.is_at_end() && self.current_char() == '\n' {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
         self.position += 1;
     }
 

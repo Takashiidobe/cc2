@@ -7,16 +7,16 @@ mod lexer_tests {
         let mut lexer = Lexer::new("int main ( ) { return 42 ; }");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Int);
-        assert_eq!(tokens[1], Token::Identifier("main".to_string()));
-        assert_eq!(tokens[2], Token::OpenParen);
-        assert_eq!(tokens[3], Token::CloseParen);
-        assert_eq!(tokens[4], Token::OpenBrace);
-        assert_eq!(tokens[5], Token::Return);
-        assert_eq!(tokens[6], Token::IntLiteral(42));
-        assert_eq!(tokens[7], Token::Semicolon);
-        assert_eq!(tokens[8], Token::CloseBrace);
-        assert_eq!(tokens[9], Token::Eof);
+        assert_eq!(tokens[0].token, Token::Int);
+        assert_eq!(tokens[1].token, Token::Identifier("main".to_string()));
+        assert_eq!(tokens[2].token, Token::OpenParen);
+        assert_eq!(tokens[3].token, Token::CloseParen);
+        assert_eq!(tokens[4].token, Token::OpenBrace);
+        assert_eq!(tokens[5].token, Token::Return);
+        assert_eq!(tokens[6].token, Token::IntLiteral(42));
+        assert_eq!(tokens[7].token, Token::Semicolon);
+        assert_eq!(tokens[8].token, Token::CloseBrace);
+        assert_eq!(tokens[9].token, Token::Eof);
     }
 
     #[test]
@@ -24,10 +24,10 @@ mod lexer_tests {
         let mut lexer = Lexer::new("+ - * /");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Plus);
-        assert_eq!(tokens[1], Token::Minus);
-        assert_eq!(tokens[2], Token::Star);
-        assert_eq!(tokens[3], Token::Slash);
+        assert_eq!(tokens[0].token, Token::Plus);
+        assert_eq!(tokens[1].token, Token::Minus);
+        assert_eq!(tokens[2].token, Token::Star);
+        assert_eq!(tokens[3].token, Token::Slash);
     }
 
     #[test]
@@ -35,10 +35,10 @@ mod lexer_tests {
         let mut lexer = Lexer::new("& * [ ]");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Ampersand);
-        assert_eq!(tokens[1], Token::Star);
-        assert_eq!(tokens[2], Token::OpenBracket);
-        assert_eq!(tokens[3], Token::CloseBracket);
+        assert_eq!(tokens[0].token, Token::Ampersand);
+        assert_eq!(tokens[1].token, Token::Star);
+        assert_eq!(tokens[2].token, Token::OpenBracket);
+        assert_eq!(tokens[3].token, Token::CloseBracket);
     }
 
     #[test]
@@ -46,10 +46,10 @@ mod lexer_tests {
         let mut lexer = Lexer::new("struct enum . ->");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Struct);
-        assert_eq!(tokens[1], Token::Enum);
-        assert_eq!(tokens[2], Token::Dot);
-        assert_eq!(tokens[3], Token::Arrow);
+        assert_eq!(tokens[0].token, Token::Struct);
+        assert_eq!(tokens[1].token, Token::Enum);
+        assert_eq!(tokens[2].token, Token::Dot);
+        assert_eq!(tokens[3].token, Token::Arrow);
     }
 
     #[test]
@@ -57,7 +57,7 @@ mod lexer_tests {
         let mut lexer = Lexer::new("sizeof");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Sizeof);
+        assert_eq!(tokens[0].token, Token::Sizeof);
     }
 
     #[test]
@@ -65,7 +65,7 @@ mod lexer_tests {
         let mut lexer = Lexer::new("char");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Char);
+        assert_eq!(tokens[0].token, Token::Char);
     }
 
     #[test]
@@ -73,7 +73,7 @@ mod lexer_tests {
         let mut lexer = Lexer::new("unsigned");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Unsigned);
+        assert_eq!(tokens[0].token, Token::Unsigned);
     }
 
     #[test]
@@ -81,8 +81,8 @@ mod lexer_tests {
         let mut lexer = Lexer::new("short long");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Short);
-        assert_eq!(tokens[1], Token::Long);
+        assert_eq!(tokens[0].token, Token::Short);
+        assert_eq!(tokens[1].token, Token::Long);
     }
 
     #[test]
@@ -90,16 +90,16 @@ mod lexer_tests {
         let mut lexer = Lexer::new("+= -= *= /= %= <<= >>= &= |= ^=");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::PlusEquals);
-        assert_eq!(tokens[1], Token::MinusEquals);
-        assert_eq!(tokens[2], Token::StarEquals);
-        assert_eq!(tokens[3], Token::SlashEquals);
-        assert_eq!(tokens[4], Token::PercentEquals);
-        assert_eq!(tokens[5], Token::LessLessEquals);
-        assert_eq!(tokens[6], Token::GreaterGreaterEquals);
-        assert_eq!(tokens[7], Token::AmpersandEquals);
-        assert_eq!(tokens[8], Token::PipeEquals);
-        assert_eq!(tokens[9], Token::CaretEquals);
+        assert_eq!(tokens[0].token, Token::PlusEquals);
+        assert_eq!(tokens[1].token, Token::MinusEquals);
+        assert_eq!(tokens[2].token, Token::StarEquals);
+        assert_eq!(tokens[3].token, Token::SlashEquals);
+        assert_eq!(tokens[4].token, Token::PercentEquals);
+        assert_eq!(tokens[5].token, Token::LessLessEquals);
+        assert_eq!(tokens[6].token, Token::GreaterGreaterEquals);
+        assert_eq!(tokens[7].token, Token::AmpersandEquals);
+        assert_eq!(tokens[8].token, Token::PipeEquals);
+        assert_eq!(tokens[9].token, Token::CaretEquals);
     }
 
     #[test]
@@ -107,12 +107,12 @@ mod lexer_tests {
         let mut lexer = Lexer::new("& | ^ ~ << >> %");
         let tokens = lexer.tokenize().unwrap();
 
-        assert_eq!(tokens[0], Token::Ampersand);
-        assert_eq!(tokens[1], Token::Pipe);
-        assert_eq!(tokens[2], Token::Caret);
-        assert_eq!(tokens[3], Token::Tilde);
-        assert_eq!(tokens[4], Token::LessLess);
-        assert_eq!(tokens[5], Token::GreaterGreater);
-        assert_eq!(tokens[6], Token::Percent);
+        assert_eq!(tokens[0].token, Token::Ampersand);
+        assert_eq!(tokens[1].token, Token::Pipe);
+        assert_eq!(tokens[2].token, Token::Caret);
+        assert_eq!(tokens[3].token, Token::Tilde);
+        assert_eq!(tokens[4].token, Token::LessLess);
+        assert_eq!(tokens[5].token, Token::GreaterGreater);
+        assert_eq!(tokens[6].token, Token::Percent);
     }
 }
