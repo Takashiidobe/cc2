@@ -214,6 +214,7 @@ impl Parser {
             Token::Return => self.parse_return(),
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
+            Token::Do => self.parse_do_while_loop(),
             Token::For => self.parse_for_loop(),
             Token::Unsigned
             | Token::Int
@@ -311,6 +312,27 @@ impl Parser {
         Ok(AstNode::WhileLoop {
             condition: Box::new(condition),
             body: Box::new(body),
+        })
+    }
+
+    fn parse_do_while_loop(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Do)?;
+
+        let body = if self.current_token() == &Token::OpenBrace {
+            self.parse_block()?
+        } else {
+            self.parse_statement()?
+        };
+
+        self.expect(Token::While)?;
+        self.expect(Token::OpenParen)?;
+        let condition = self.parse_expression()?;
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(AstNode::DoWhileLoop {
+            body: Box::new(body),
+            condition: Box::new(condition),
         })
     }
 

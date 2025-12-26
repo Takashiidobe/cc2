@@ -38,3 +38,51 @@ bd sync               # Sync with git
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+## Testing Protocol
+
+### Integration Tests Are Primary
+**ALWAYS add integration tests instead of manually running compiled binaries.**
+
+When implementing new features:
+
+1. **Create test files in `tests/files/`**
+   - Add `.c` test files for the new feature
+   - Examples: `do_while_basic.c`, `forward_declaration.c`, `mutual_recursion.c`
+
+2. **Run the test suite**
+   ```bash
+   cargo test
+   ```
+
+3. **Accept new snapshots**
+   ```bash
+   cargo insta accept
+   ```
+
+4. **Verify all tests pass**
+   ```bash
+   cargo test
+   ```
+
+### What NOT to do:
+❌ **DO NOT** manually compile and run test files like:
+```bash
+./target/debug/cc2 tests/files/test.c -o /tmp/test && /tmp/test
+```
+
+### Why?
+- The test harness automatically compiles, runs, and verifies all `.c` files in `tests/files/`
+- Snapshots are automatically generated and compared for:
+  - Tokenization (`tests/tokenize.rs`)
+  - Parsing/AST (`tests/parse.rs`)
+  - Code generation (`tests/codegen.rs`)
+- This ensures consistent, repeatable testing
+- Manual testing doesn't verify against expected output
+
+### Test Coverage
+Each feature should have tests for:
+- Basic functionality
+- Edge cases
+- Integration with existing features
+- Error conditions (if applicable)
+

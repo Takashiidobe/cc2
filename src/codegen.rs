@@ -227,6 +227,20 @@ impl CodeGenerator {
                 self.emit(&format!("{}:", end_label));
                 Ok(())
             }
+            AstNode::DoWhileLoop { body, condition } => {
+                let start_label = self.next_label();
+                let end_label = self.next_label();
+
+                self.emit(&format!("{}:", start_label));
+                self.generate_node(body)?;
+
+                self.generate_node(condition)?;
+                self.emit("    cmpq $0, %rax");
+                self.emit(&format!("    jne {}", start_label));
+
+                self.emit(&format!("{}:", end_label));
+                Ok(())
+            }
             AstNode::ForLoop {
                 init,
                 condition,

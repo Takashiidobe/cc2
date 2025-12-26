@@ -20,6 +20,10 @@ pub enum AstNode {
         condition: Box<AstNode>,
         body: Box<AstNode>,
     },
+    DoWhileLoop {
+        body: Box<AstNode>,
+        condition: Box<AstNode>,
+    },
     ForLoop {
         init: Option<Box<AstNode>>,
         condition: Option<Box<AstNode>>,
@@ -195,6 +199,7 @@ impl fmt::Display for AstNode {
             AstNode::Return(_) => write!(f, "Return"),
             AstNode::IfStatement { .. } => write!(f, "IfStatement"),
             AstNode::WhileLoop { .. } => write!(f, "WhileLoop"),
+            AstNode::DoWhileLoop { .. } => write!(f, "DoWhileLoop"),
             AstNode::ForLoop { .. } => write!(f, "ForLoop"),
             AstNode::StructDef { name, .. } => write!(f, "StructDef({})", name),
             AstNode::UnionDef { name, .. } => write!(f, "UnionDef({})", name),
