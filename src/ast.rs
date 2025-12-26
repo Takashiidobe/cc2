@@ -57,6 +57,11 @@ pub enum AstNode {
         left: Box<AstNode>,
         right: Box<AstNode>,
     },
+    TernaryOp {
+        condition: Box<AstNode>,
+        true_expr: Box<AstNode>,
+        false_expr: Box<AstNode>,
+    },
     UnaryOp {
         op: UnaryOp,
         operand: Box<AstNode>,
@@ -199,6 +204,7 @@ impl fmt::Display for AstNode {
             AstNode::Variable(name) => write!(f, "Variable({})", name),
             AstNode::FunctionCall { name, .. } => write!(f, "FunctionCall({})", name),
             AstNode::BinaryOp { op, .. } => write!(f, "BinaryOp({:?})", op),
+            AstNode::TernaryOp { .. } => write!(f, "TernaryOp"),
             AstNode::UnaryOp { op, .. } => write!(f, "UnaryOp({:?})", op),
             AstNode::AddressOf(_) => write!(f, "AddressOf"),
             AstNode::Dereference(_) => write!(f, "Dereference"),

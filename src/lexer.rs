@@ -71,6 +71,10 @@ pub enum Token {
     Ampersand,
     Arrow,
 
+    // Ternary operator
+    Question,
+    Colon,
+
     // Special
     Eof,
 }
@@ -135,6 +139,8 @@ impl fmt::Display for Token {
             Token::LogicalNot => write!(f, "!"),
             Token::Ampersand => write!(f, "&"),
             Token::Arrow => write!(f, "->"),
+            Token::Question => write!(f, "?"),
+            Token::Colon => write!(f, ":"),
             Token::Eof => write!(f, "EOF"),
         }
     }
@@ -350,6 +356,14 @@ impl Lexer {
             '~' => {
                 self.advance();
                 Ok(Token::Tilde)
+            }
+            '?' => {
+                self.advance();
+                Ok(Token::Question)
+            }
+            ':' => {
+                self.advance();
+                Ok(Token::Colon)
             }
             _ if ch.is_ascii_digit() => self.read_number(),
             _ if ch.is_ascii_alphabetic() || ch == '_' => self.read_identifier(),

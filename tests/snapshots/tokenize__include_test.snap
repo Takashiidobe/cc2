@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(add)\n(\nint\nIdentifier(a)\n,\nint\nIdentifier(b)\n)\n{\nreturn\nIdentifier(a)\n+\nIdentifier(b)\n;\n}\nint\nIdentifier(multiply)\n(\nint\nIdentifier(a)\n,\nint\nIdentifier(b)\n)\n{\nreturn\nIdentifier(a)\n*\nIdentifier(b)\n;\n}\nint\nIdentifier(main)\n(\n)\n{\nreturn\nIdentifier(add)\n(\nIntLiteral(10)\n,\nIntLiteral(20)\n)\n+\nIdentifier(multiply)\n(\nIntLiteral(3)\n,\nIntLiteral(4)\n)\n;\n}\nEOF\n"
+stderr: ""
+status: 0

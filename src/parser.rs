@@ -346,7 +346,7 @@ impl Parser {
     }
 
     fn parse_assignment(&mut self) -> Result<AstNode, String> {
-        let left = self.parse_logical_or()?;
+        let left = self.parse_ternary()?;
 
         match self.current() {
             Token::Equals
@@ -429,6 +429,25 @@ impl Parser {
         }
     }
 
+    fn parse_ternary(&mut self) -> Result<AstNode, String> {
+        let condition = self.parse_logical_or()?;
+
+        if self.current() == &Token::Question {
+            self.advance();
+            let true_expr = self.parse_expression()?;
+            self.expect(Token::Colon)?;
+            let false_expr = self.parse_ternary()?;
+
+            Ok(AstNode::TernaryOp {
+                condition: Box::new(condition),
+                true_expr: Box::new(true_expr),
+                false_expr: Box::new(false_expr),
+            })
+        } else {
+            Ok(condition)
+        }
+    }
+
     fn parse_logical_or(&mut self) -> Result<AstNode, String> {
         let mut left = self.parse_logical_and()?;
 
@@ -450,7 +469,7 @@ impl Parser {
 
         while self.current() == &Token::LogicalAnd {
             self.advance();
-            let right = self.parse_equality()?;
+            let right = self.parse_bitwise_or()?;
             left = AstNode::BinaryOp {
                 op: BinOp::LogicalAnd,
                 left: Box::new(left),

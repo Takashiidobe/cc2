@@ -673,6 +673,31 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
+            AstNode::TernaryOp {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                let false_label = self.next_label();
+                let end_label = self.next_label();
+
+                // Evaluate condition
+                self.generate_node(condition)?;
+                self.emit("    cmpq $0, %rax");
+                self.emit(&format!("    je {}", false_label));
+
+                // True branch
+                self.generate_node(true_expr)?;
+                self.emit(&format!("    jmp {}", end_label));
+
+                // False branch
+                self.emit(&format!("{}:", false_label));
+                self.generate_node(false_expr)?;
+
+                // End
+                self.emit(&format!("{}:", end_label));
+                Ok(())
+            }
             AstNode::UnaryOp { op, operand } => {
                 self.generate_node(operand)?;
                 match op {
@@ -1492,6 +1517,22 @@ impl CodeGenerator {
                     | BinOp::NotEqual
                     | BinOp::LogicalAnd
                     | BinOp::LogicalOr => Ok(Type::Int),
+                }
+            }
+            AstNode::TernaryOp {
+                true_expr,
+                false_expr,
+                ..
+            } => {
+                let true_type = self.expr_type(true_expr)?;
+                let false_type = self.expr_type(false_expr)?;
+
+                if true_type == false_type {
+                    Ok(true_type)
+                } else if self.is_integer_type(&true_type) && self.is_integer_type(&false_type) {
+                    self.binary_integer_type(&true_type, &false_type)
+                } else {
+                    Ok(Type::Int)
                 }
             }
             AstNode::Assignment { target, .. } => {

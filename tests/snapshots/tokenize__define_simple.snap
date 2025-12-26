@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int\nIdentifier(main)\n(\n)\n{\nreturn\nIntLiteral(3)\n+\nIntLiteral(100)\n;\n}\nEOF\n"
+stderr: ""
+status: 0
