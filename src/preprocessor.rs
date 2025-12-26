@@ -109,6 +109,11 @@ impl Preprocessor {
         self.system_include_paths.push(path);
     }
 
+    /// Set the current file being processed (for resolving relative includes)
+    pub fn set_current_file(&mut self, path: String) {
+        self.current_file = path;
+    }
+
     /// Define a macro
     pub fn define_macro(&mut self, name: String, definition: MacroDef) {
         self.macros.insert(name, definition);
@@ -124,11 +129,59 @@ impl Preprocessor {
         self.macros.contains_key(name)
     }
 
+    /// Remove C and C++ comments from source text
+    fn remove_comments(source: &str) -> String {
+        let mut result = String::new();
+        let chars: Vec<char> = source.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            // Check for C++ style comment //
+            if i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '/' {
+                // Skip until end of line
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+                // Keep the newline
+                if i < chars.len() {
+                    result.push(chars[i]);
+                    i += 1;
+                }
+            }
+            // Check for C style comment /*
+            else if i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '*' {
+                // Replace comment with a space
+                result.push(' ');
+                i += 2;
+                // Skip until we find */
+                while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                    // Preserve newlines in comments
+                    if chars[i] == '\n' {
+                        result.push('\n');
+                    }
+                    i += 1;
+                }
+                // Skip the closing */
+                if i + 1 < chars.len() {
+                    i += 2;
+                }
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        }
+
+        result
+    }
+
     /// Preprocess source text
     ///
     /// This is the main entry point for preprocessing. It processes all
     /// preprocessor directives and returns the preprocessed source text.
     pub fn preprocess(&mut self, source: &str) -> Result<String, String> {
+        // First, remove all comments
+        let source = Self::remove_comments(source);
+
         let mut output = String::new();
         let lines: Vec<&str> = source.lines().collect();
         let mut line_num = 0;
@@ -882,8 +935,82 @@ impl Preprocessor {
     /// - Comparison: ==, !=, <, >, <=, >=
     /// - Bitwise: &, |, ^, ~, <<, >>
     /// - Special: defined(NAME) or defined NAME
+    /// Expand macros in preprocessor expression while preserving defined() syntax
+    fn expand_macros_in_expr(&self, expr: &str) -> Result<String, String> {
+        let mut result = String::new();
+        let mut remaining = expr;
+
+        while !remaining.is_empty() {
+            // Try to find the next identifier
+            if let Some((before, ident, after)) = self.find_next_identifier(remaining) {
+                result.push_str(before);
+
+                // Check if this identifier is "defined"
+                if ident == "defined" {
+                    // This is the defined operator - preserve it and its argument
+                    result.push_str("defined");
+
+                    let after_trimmed = after.trim_start();
+                    if after_trimmed.starts_with('(') {
+                        // Find the closing paren
+                        let mut depth = 0;
+                        let mut end = 0;
+                        for (i, ch) in after_trimmed.char_indices() {
+                            if ch == '(' {
+                                depth += 1;
+                            } else if ch == ')' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    end = i + 1;
+                                    break;
+                                }
+                            }
+                        }
+                        // Copy the defined(...) part without expansion
+                        result.push_str(&after_trimmed[..end]);
+                        remaining = &after_trimmed[end..];
+                    } else {
+                        // defined NAME (without parens)
+                        // Find the next identifier after "defined"
+                        if let Some((ws, name, rest)) = self.find_next_identifier(after) {
+                            result.push_str(ws);
+                            result.push_str(name);
+                            remaining = rest;
+                        } else {
+                            remaining = after;
+                        }
+                    }
+                } else if let Some(macro_def) = self.macros.get(ident) {
+                    // This is a regular macro - expand it
+                    match macro_def {
+                        MacroDef::Object(replacement) => {
+                            result.push_str(replacement);
+                        }
+                        MacroDef::Function { .. } => {
+                            // Don't expand function macros in expressions for now
+                            result.push_str(ident);
+                        }
+                    }
+                    remaining = after;
+                } else {
+                    // Not a macro - keep as-is
+                    result.push_str(ident);
+                    remaining = after;
+                }
+            } else {
+                // No more identifiers
+                result.push_str(remaining);
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+
     fn eval_preprocessor_expr(&self, expr: &str) -> Result<i64, String> {
-        let tokens = self.tokenize_expr(expr)?;
+        // First expand macros in the expression (but preserve defined())
+        let expanded_expr = self.expand_macros_in_expr(expr)?;
+        let tokens = self.tokenize_expr(&expanded_expr)?;
         let mut pos = 0;
         let result = self.parse_logical_or(&tokens, &mut pos)?;
 

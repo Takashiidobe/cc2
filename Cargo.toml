@@ -25,3 +25,7 @@ harness = false
 [[test]]
 name = "parse"
 harness = false
+
+[[test]]
+name = "preprocessor"
+harness = false

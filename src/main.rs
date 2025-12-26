@@ -61,6 +61,9 @@ fn compile_file_to_assembly(
         preprocessor.add_system_include_path(path.clone());
     }
 
+    // Set the current file for resolving relative includes
+    preprocessor.set_current_file(input.display().to_string());
+
     let preprocessed_source = preprocessor.preprocess(&source)
         .map_err(|e| format!("Preprocessor error in '{}': {}", input.display(), e))?;
 
@@ -163,6 +166,9 @@ fn main() {
         for path in &args.system_include_paths {
             preprocessor.add_system_include_path(path.clone());
         }
+
+        // Set the current file for resolving relative includes
+        preprocessor.set_current_file(input.display().to_string());
 
         let preprocessed_source = match preprocessor.preprocess(&source) {
             Ok(processed) => processed,
