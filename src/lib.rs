@@ -18,3 +18,5 @@ mod codegen_test;
 mod lexer_test;
 #[cfg(test)]
 mod parser_test;
+#[cfg(test)]
+mod preprocessor_test;

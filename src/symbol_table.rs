@@ -8,7 +8,7 @@ pub struct Symbol {
     pub stack_offset: i32,
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct SymbolTable {
     symbols: HashMap<String, Symbol>,
     next_offset: i32,
@@ -16,10 +16,7 @@ pub struct SymbolTable {
 
 impl SymbolTable {
     pub fn new() -> Self {
-        SymbolTable {
-            symbols: HashMap::new(),
-            next_offset: 0,
-        }
+        SymbolTable::default()
     }
 
     pub fn add_variable(&mut self, name: String, var_type: Type) -> Result<i32, String> {
@@ -77,11 +74,5 @@ fn align_for_size(size: i32) -> i32 {
         2
     } else {
         1
-    }
-}
-
-impl Default for SymbolTable {
-    fn default() -> Self {
-        Self::new()
     }
 }
