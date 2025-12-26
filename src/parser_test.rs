@@ -36,7 +36,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => match &stmts[0] {
                         AstNode::Return(Some(expr)) => match expr.as_ref() {
                             AstNode::BinaryOp { op, .. } => {
@@ -64,7 +64,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => match &stmts[0] {
                         AstNode::Return(Some(expr)) => match expr.as_ref() {
                             AstNode::BinaryOp {
@@ -106,7 +106,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => match &stmts[0] {
                         AstNode::Return(Some(expr)) => match expr.as_ref() {
                             AstNode::BinaryOp {
@@ -145,7 +145,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => {
                         assert_eq!(stmts.len(), 2);
                         match &stmts[0] {
@@ -173,7 +173,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => match &stmts[0] {
                         AstNode::Return(Some(expr)) => match expr.as_ref() {
                             AstNode::FunctionCall { name, args } => {
@@ -224,7 +224,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => {
                         match &stmts[1] {
                             AstNode::VarDecl {
@@ -274,7 +274,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => {
                         match &stmts[0] {
                             AstNode::VarDecl {
@@ -340,7 +340,7 @@ mod parser_tests {
                     _ => panic!("Expected struct definition"),
                 }
                 match &nodes[1] {
-                    AstNode::Function { body, .. } => match body.as_ref() {
+                    AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                         AstNode::Block(stmts) => {
                             match &stmts[0] {
                                 AstNode::VarDecl {
@@ -393,7 +393,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => match &stmts[0] {
                         AstNode::Return(Some(expr)) => match expr.as_ref() {
                             AstNode::SizeOfType(ty) => assert_eq!(ty, &Type::Int),
@@ -419,7 +419,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => match &stmts[0] {
                         AstNode::VarDecl { name, var_type, .. } => {
                             assert_eq!(name, "c");
@@ -445,7 +445,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => match &stmts[0] {
                         AstNode::VarDecl { name, var_type, .. } => {
                             assert_eq!(name, "u");
@@ -473,7 +473,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => {
                         match &stmts[0] {
                             AstNode::VarDecl { var_type, .. } => {
@@ -512,7 +512,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => {
                         match &stmts[0] {
                             AstNode::VarDecl { var_type, .. } => {
@@ -545,7 +545,7 @@ mod parser_tests {
 
         match ast {
             AstNode::Program(funcs) => match &funcs[0] {
-                AstNode::Function { body, .. } => match body.as_ref() {
+                AstNode::Function { body, .. } => match body.as_ref().unwrap().as_ref() {
                     AstNode::Block(stmts) => {
                         match &stmts[1] {
                             AstNode::Assignment { target, value } => {

@@ -73,6 +73,12 @@ impl CodeGenerator {
             AstNode::Function {
                 name, body, params, ..
             } => {
+                // Skip forward declarations (no body)
+                let body = match body {
+                    Some(b) => b,
+                    None => return Ok(()), // Forward declaration, nothing to generate
+                };
+
                 self.symbol_table = SymbolTable::new();
 
                 let param_regs_64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];

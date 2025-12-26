@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int at 1:1\nIdentifier(is_even) at 1:5\n( at 1:12\nint at 1:13\nIdentifier(n) at 1:17\n) at 1:18\n; at 1:19\nint at 2:1\nIdentifier(is_odd) at 2:5\n( at 2:11\nint at 2:12\nIdentifier(n) at 2:16\n) at 2:17\n; at 2:18\nint at 4:1\nIdentifier(main) at 4:5\n( at 4:9\n) at 4:10\n{ at 4:12\nreturn at 5:5\nIdentifier(is_even) at 5:12\n( at 5:19\nIntLiteral(4) at 5:20\n) at 5:21\n; at 5:22\n} at 6:1\nint at 8:1\nIdentifier(is_even) at 8:5\n( at 8:12\nint at 8:13\nIdentifier(n) at 8:17\n) at 8:18\n{ at 8:20\nif at 9:5\n( at 9:8\nIdentifier(n) at 9:9\n== at 9:11\nIntLiteral(0) at 9:14\n) at 9:15\n{ at 9:17\nreturn at 10:9\nIntLiteral(1) at 10:16\n; at 10:17\n} at 11:5\nreturn at 12:5\nIdentifier(is_odd) at 12:12\n( at 12:18\nIdentifier(n) at 12:19\n- at 12:21\nIntLiteral(1) at 12:23\n) at 12:24\n; at 12:25\n} at 13:1\nint at 15:1\nIdentifier(is_odd) at 15:5\n( at 15:11\nint at 15:12\nIdentifier(n) at 15:16\n) at 15:17\n{ at 15:19\nif at 16:5\n( at 16:8\nIdentifier(n) at 16:9\n== at 16:11\nIntLiteral(0) at 16:14\n) at 16:15\n{ at 16:17\nreturn at 17:9\nIntLiteral(0) at 17:16\n; at 17:17\n} at 18:5\nreturn at 19:5\nIdentifier(is_even) at 19:12\n( at 19:19\nIdentifier(n) at 19:20\n- at 19:22\nIntLiteral(1) at 19:24\n) at 19:25\n; at 19:26\n} at 20:1\nEOF at 21:1\n"
+stderr: ""
+status: 0

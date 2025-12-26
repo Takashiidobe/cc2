@@ -9,9 +9,9 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
-                AstNode::IntLiteral(42),
-            )))])),
+            body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                Box::new(AstNode::IntLiteral(42)),
+            ))]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -29,13 +29,13 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
-                AstNode::BinaryOp {
+            body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                Box::new(AstNode::BinaryOp {
                     op: BinOp::Add,
                     left: Box::new(AstNode::IntLiteral(2)),
                     right: Box::new(AstNode::IntLiteral(3)),
-                },
-            )))])),
+                }),
+            ))]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -50,13 +50,13 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
-                AstNode::BinaryOp {
+            body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                Box::new(AstNode::BinaryOp {
                     op: BinOp::Multiply,
                     left: Box::new(AstNode::IntLiteral(3)),
                     right: Box::new(AstNode::IntLiteral(4)),
-                },
-            )))])),
+                }),
+            ))]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -71,7 +71,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "x".to_string(),
                     var_type: Type::Int,
@@ -87,7 +87,7 @@ mod codegen_tests {
                 AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
                     AstNode::Variable("p".to_string()),
                 ))))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -103,7 +103,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "a".to_string(),
                     var_type: Type::Array(Box::new(Type::Int), 3),
@@ -117,7 +117,7 @@ mod codegen_tests {
                     array: Box::new(AstNode::Variable("a".to_string())),
                     index: Box::new(AstNode::IntLiteral(1)),
                 }))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -133,7 +133,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "x".to_string(),
                     var_type: Type::Int,
@@ -153,7 +153,7 @@ mod codegen_tests {
                         right: Box::new(AstNode::IntLiteral(2)),
                     },
                 ))))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -183,9 +183,9 @@ mod codegen_tests {
                 name: "main".to_string(),
                 return_type: Type::Int,
                 params: vec![],
-                body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
-                    AstNode::SizeOfType(Type::Struct("Point".to_string())),
-                )))])),
+                body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                    Box::new(AstNode::SizeOfType(Type::Struct("Point".to_string()))),
+                ))]))),
             },
         ]);
 
@@ -215,9 +215,9 @@ mod codegen_tests {
                 name: "main".to_string(),
                 return_type: Type::Int,
                 params: vec![],
-                body: Box::new(AstNode::Block(vec![AstNode::Return(Some(Box::new(
-                    AstNode::SizeOfType(Type::Struct("Mix".to_string())),
-                )))])),
+                body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                    Box::new(AstNode::SizeOfType(Type::Struct("Mix".to_string()))),
+                ))]))),
             },
         ]);
 
@@ -233,14 +233,14 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "c".to_string(),
                     var_type: Type::Char,
                     init: Some(Box::new(AstNode::IntLiteral(1))),
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("c".to_string())))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -256,14 +256,14 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "u".to_string(),
                     var_type: Type::UInt,
                     init: Some(Box::new(AstNode::IntLiteral(1))),
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("u".to_string())))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -280,14 +280,14 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "s".to_string(),
                     var_type: Type::UShort,
                     init: Some(Box::new(AstNode::IntLiteral(2))),
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("s".to_string())))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -303,14 +303,14 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "l".to_string(),
                     var_type: Type::ULong,
                     init: Some(Box::new(AstNode::IntLiteral(3))),
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("l".to_string())))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();
@@ -326,7 +326,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
-            body: Box::new(AstNode::Block(vec![
+            body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "s".to_string(),
                     var_type: Type::Short,
@@ -342,7 +342,7 @@ mod codegen_tests {
                     left: Box::new(AstNode::Variable("s".to_string())),
                     right: Box::new(AstNode::Variable("l".to_string())),
                 }))),
-            ])),
+            ]))),
         }]);
 
         let mut codegen = CodeGenerator::new();

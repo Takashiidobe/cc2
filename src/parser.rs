@@ -64,13 +64,21 @@ impl Parser {
         let params = self.parse_parameters()?;
         self.expect(Token::CloseParen)?;
 
-        let body = self.parse_block()?;
+        // Check if this is a forward declaration (semicolon) or definition (body)
+        let body = if self.current_token() == &Token::Semicolon {
+            // Forward declaration
+            self.advance();
+            None
+        } else {
+            // Function definition
+            Some(Box::new(self.parse_block()?))
+        };
 
         Ok(AstNode::Function {
             name,
             return_type,
             params,
-            body: Box::new(body),
+            body,
         })
     }
 

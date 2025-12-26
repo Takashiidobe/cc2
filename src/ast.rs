@@ -7,7 +7,7 @@ pub enum AstNode {
         name: String,
         return_type: Type,
         params: Vec<Parameter>,
-        body: Box<AstNode>,
+        body: Option<Box<AstNode>>, // None for forward declarations
     },
     Block(Vec<AstNode>),
     Return(Option<Box<AstNode>>),

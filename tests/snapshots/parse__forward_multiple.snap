@@ -1,0 +1,7 @@
+---
+source: tests/parse.rs
+expression: "&result"
+---
+stdout: "Program\n  Function(add)\n  Function(multiply)\n  Function(subtract)\n  Function(main)\n  Function(add)\n  Function(multiply)\n  Function(subtract)\n\n"
+stderr: ""
+status: 0
