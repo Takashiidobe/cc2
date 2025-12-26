@@ -692,6 +692,16 @@ impl Parser {
 
     fn parse_unary(&mut self) -> Result<AstNode, String> {
         match self.current_token() {
+            Token::PlusPlus => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::PrefixIncrement(Box::new(operand)))
+            }
+            Token::MinusMinus => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::PrefixDecrement(Box::new(operand)))
+            }
             Token::LogicalNot => {
                 self.advance();
                 let operand = self.parse_unary()?;
@@ -786,6 +796,14 @@ impl Parser {
                         member,
                         through_pointer,
                     };
+                }
+                Token::PlusPlus => {
+                    self.advance();
+                    expr = AstNode::PostfixIncrement(Box::new(expr));
+                }
+                Token::MinusMinus => {
+                    self.advance();
+                    expr = AstNode::PostfixDecrement(Box::new(expr));
                 }
                 _ => break,
             }

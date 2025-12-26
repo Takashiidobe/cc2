@@ -748,6 +748,178 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
+            AstNode::PrefixIncrement(operand) => {
+                // Get address of operand
+                self.generate_lvalue(operand)?;
+                self.emit("    movq %rax, %rcx"); // %rcx = address
+
+                // Determine type and load, increment, store
+                let operand_type = self.expr_type(operand)?;
+                if matches!(operand_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                    self.emit("    movl (%rcx), %eax");
+                    self.emit("    addl $1, %eax");
+                    self.emit("    movl %eax, (%rcx)");
+                } else if matches!(operand_type, Type::UShort | Type::Short) {
+                    self.emit("    movw (%rcx), %ax");
+                    self.emit("    addw $1, %ax");
+                    self.emit("    movw %ax, (%rcx)");
+                } else if matches!(operand_type, Type::Char | Type::UChar) {
+                    self.emit("    movb (%rcx), %al");
+                    self.emit("    addb $1, %al");
+                    self.emit("    movb %al, (%rcx)");
+                } else if matches!(operand_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    addq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                } else if matches!(operand_type, Type::Pointer(_)) {
+                    let pointee_size = operand_type.element_size().unwrap_or(1);
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit(&format!("    addq ${}, %rax", pointee_size));
+                    self.emit("    movq %rax, (%rcx)");
+                } else {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    addq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                }
+                // Result is in %rax (the new value)
+                self.coerce_rax_to_type(&operand_type);
+                Ok(())
+            }
+            AstNode::PrefixDecrement(operand) => {
+                // Get address of operand
+                self.generate_lvalue(operand)?;
+                self.emit("    movq %rax, %rcx"); // %rcx = address
+
+                // Determine type and load, decrement, store
+                let operand_type = self.expr_type(operand)?;
+                if matches!(operand_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                    self.emit("    movl (%rcx), %eax");
+                    self.emit("    subl $1, %eax");
+                    self.emit("    movl %eax, (%rcx)");
+                } else if matches!(operand_type, Type::UShort | Type::Short) {
+                    self.emit("    movw (%rcx), %ax");
+                    self.emit("    subw $1, %ax");
+                    self.emit("    movw %ax, (%rcx)");
+                } else if matches!(operand_type, Type::Char | Type::UChar) {
+                    self.emit("    movb (%rcx), %al");
+                    self.emit("    subb $1, %al");
+                    self.emit("    movb %al, (%rcx)");
+                } else if matches!(operand_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    subq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                } else if matches!(operand_type, Type::Pointer(_)) {
+                    let pointee_size = operand_type.element_size().unwrap_or(1);
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit(&format!("    subq ${}, %rax", pointee_size));
+                    self.emit("    movq %rax, (%rcx)");
+                } else {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    subq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                }
+                // Result is in %rax (the new value)
+                self.coerce_rax_to_type(&operand_type);
+                Ok(())
+            }
+            AstNode::PostfixIncrement(operand) => {
+                // Get address of operand
+                self.generate_lvalue(operand)?;
+                self.emit("    movq %rax, %rcx"); // %rcx = address
+
+                // Determine type and load, save old value, increment, store
+                let operand_type = self.expr_type(operand)?;
+                if matches!(operand_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                    self.emit("    movl (%rcx), %eax");
+                    self.emit("    movl %eax, %edx"); // Save old value in %edx
+                    self.emit("    addl $1, %eax");
+                    self.emit("    movl %eax, (%rcx)");
+                    self.emit("    movl %edx, %eax"); // Return old value
+                } else if matches!(operand_type, Type::UShort | Type::Short) {
+                    self.emit("    movw (%rcx), %ax");
+                    self.emit("    movw %ax, %dx"); // Save old value in %dx
+                    self.emit("    addw $1, %ax");
+                    self.emit("    movw %ax, (%rcx)");
+                    self.emit("    movw %dx, %ax"); // Return old value
+                } else if matches!(operand_type, Type::Char | Type::UChar) {
+                    self.emit("    movb (%rcx), %al");
+                    self.emit("    movb %al, %dl"); // Save old value in %dl
+                    self.emit("    addb $1, %al");
+                    self.emit("    movb %al, (%rcx)");
+                    self.emit("    movb %dl, %al"); // Return old value
+                } else if matches!(operand_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    movq %rax, %rdx"); // Save old value in %rdx
+                    self.emit("    addq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                    self.emit("    movq %rdx, %rax"); // Return old value
+                } else if matches!(operand_type, Type::Pointer(_)) {
+                    let pointee_size = operand_type.element_size().unwrap_or(1);
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    movq %rax, %rdx"); // Save old value in %rdx
+                    self.emit(&format!("    addq ${}, %rax", pointee_size));
+                    self.emit("    movq %rax, (%rcx)");
+                    self.emit("    movq %rdx, %rax"); // Return old value
+                } else {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    movq %rax, %rdx"); // Save old value in %rdx
+                    self.emit("    addq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                    self.emit("    movq %rdx, %rax"); // Return old value
+                }
+                // Result is in %rax (the old value)
+                self.coerce_rax_to_type(&operand_type);
+                Ok(())
+            }
+            AstNode::PostfixDecrement(operand) => {
+                // Get address of operand
+                self.generate_lvalue(operand)?;
+                self.emit("    movq %rax, %rcx"); // %rcx = address
+
+                // Determine type and load, save old value, decrement, store
+                let operand_type = self.expr_type(operand)?;
+                if matches!(operand_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                    self.emit("    movl (%rcx), %eax");
+                    self.emit("    movl %eax, %edx"); // Save old value in %edx
+                    self.emit("    subl $1, %eax");
+                    self.emit("    movl %eax, (%rcx)");
+                    self.emit("    movl %edx, %eax"); // Return old value
+                } else if matches!(operand_type, Type::UShort | Type::Short) {
+                    self.emit("    movw (%rcx), %ax");
+                    self.emit("    movw %ax, %dx"); // Save old value in %dx
+                    self.emit("    subw $1, %ax");
+                    self.emit("    movw %ax, (%rcx)");
+                    self.emit("    movw %dx, %ax"); // Return old value
+                } else if matches!(operand_type, Type::Char | Type::UChar) {
+                    self.emit("    movb (%rcx), %al");
+                    self.emit("    movb %al, %dl"); // Save old value in %dl
+                    self.emit("    subb $1, %al");
+                    self.emit("    movb %al, (%rcx)");
+                    self.emit("    movb %dl, %al"); // Return old value
+                } else if matches!(operand_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    movq %rax, %rdx"); // Save old value in %rdx
+                    self.emit("    subq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                    self.emit("    movq %rdx, %rax"); // Return old value
+                } else if matches!(operand_type, Type::Pointer(_)) {
+                    let pointee_size = operand_type.element_size().unwrap_or(1);
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    movq %rax, %rdx"); // Save old value in %rdx
+                    self.emit(&format!("    subq ${}, %rax", pointee_size));
+                    self.emit("    movq %rax, (%rcx)");
+                    self.emit("    movq %rdx, %rax"); // Return old value
+                } else {
+                    self.emit("    movq (%rcx), %rax");
+                    self.emit("    movq %rax, %rdx"); // Save old value in %rdx
+                    self.emit("    subq $1, %rax");
+                    self.emit("    movq %rax, (%rcx)");
+                    self.emit("    movq %rdx, %rax"); // Return old value
+                }
+                // Result is in %rax (the old value)
+                self.coerce_rax_to_type(&operand_type);
+                Ok(())
+            }
             AstNode::AddressOf(expr) => {
                 self.generate_lvalue(expr)?;
                 Ok(())
@@ -1569,6 +1741,10 @@ impl CodeGenerator {
                     Ok(self.promote_integer_type(&operand_type))
                 }
             },
+            AstNode::PrefixIncrement(operand)
+            | AstNode::PrefixDecrement(operand)
+            | AstNode::PostfixIncrement(operand)
+            | AstNode::PostfixDecrement(operand) => self.expr_type(operand),
             AstNode::FunctionCall { .. } => Ok(Type::Int),
             _ => Err("Unsupported expression in sizeof".to_string()),
         }

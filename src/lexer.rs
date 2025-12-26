@@ -79,6 +79,8 @@ pub enum Token {
     Slash,
     Percent,
     Equals,
+    PlusPlus,
+    MinusMinus,
     PlusEquals,
     MinusEquals,
     StarEquals,
@@ -153,6 +155,8 @@ impl fmt::Display for Token {
             Token::Slash => write!(f, "/"),
             Token::Percent => write!(f, "%"),
             Token::Equals => write!(f, "="),
+            Token::PlusPlus => write!(f, "++"),
+            Token::MinusMinus => write!(f, "--"),
             Token::PlusEquals => write!(f, "+="),
             Token::MinusEquals => write!(f, "-="),
             Token::StarEquals => write!(f, "*="),
@@ -348,7 +352,10 @@ impl Lexer {
             }
             '+' => {
                 self.advance();
-                if !self.is_at_end() && self.current_char() == '=' {
+                if !self.is_at_end() && self.current_char() == '+' {
+                    self.advance();
+                    Ok(LocatedToken::new(Token::PlusPlus, location))
+                } else if !self.is_at_end() && self.current_char() == '=' {
                     self.advance();
                     Ok(LocatedToken::new(Token::PlusEquals, location))
                 } else {
@@ -357,7 +364,10 @@ impl Lexer {
             }
             '-' => {
                 self.advance();
-                if !self.is_at_end() && self.current_char() == '>' {
+                if !self.is_at_end() && self.current_char() == '-' {
+                    self.advance();
+                    Ok(LocatedToken::new(Token::MinusMinus, location))
+                } else if !self.is_at_end() && self.current_char() == '>' {
                     self.advance();
                     Ok(LocatedToken::new(Token::Arrow, location))
                 } else if !self.is_at_end() && self.current_char() == '=' {
