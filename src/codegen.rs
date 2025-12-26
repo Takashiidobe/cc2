@@ -394,6 +394,9 @@ impl CodeGenerator {
                             (Type::Struct(struct_name), AstNode::StructInit(values)) => {
                                 self.emit_struct_init(struct_name, values, offset)?;
                             }
+                            (Type::Union(union_name), AstNode::StructInit(values)) => {
+                                self.emit_union_init(union_name, values, offset)?;
+                            }
                             _ => {
                                 self.generate_node(init_expr)?;
                                 if matches!(var_type, Type::Int | Type::UInt | Type::Enum(_)) {
@@ -1725,45 +1728,144 @@ impl CodeGenerator {
     fn emit_struct_init(
         &mut self,
         struct_name: &str,
-        values: &[AstNode],
+        init_fields: &[StructInitField],
         base_offset: i32,
     ) -> Result<(), String> {
         let layout = self
             .struct_layouts
             .get(struct_name)
-            .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?;
-        let field_count = layout.fields.len();
-        if values.len() > field_count {
-            return Err(format!(
-                "Struct initializer has {} fields, but struct has {}",
-                values.len(),
-                field_count
-            ));
-        }
+            .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?
+            .clone(); // Clone to avoid borrow issues
 
+        // Build ordered field list for positional initialization
         let mut ordered_fields: Vec<StructFieldInfo> = layout.fields.values().cloned().collect();
         ordered_fields.sort_by_key(|info| info.offset);
 
-        for (i, value) in values.iter().enumerate() {
-            self.generate_node(value)?;
-            let field = &ordered_fields[i];
-            let dest_offset = base_offset + field.offset;
-            match field.field_type {
-                Type::Char | Type::UChar => {
-                    self.emit(&format!("    movb %al, {}(%rbp)", dest_offset));
+        let mut positional_index = 0;
+
+        for init_field in init_fields {
+            // Determine which field to initialize
+            let field_info = if let Some(ref field_name) = init_field.field_name {
+                // Designated initializer: look up by name
+                layout.fields.get(field_name).ok_or_else(|| {
+                    format!("Unknown field '{}' in struct '{}'", field_name, struct_name)
+                })?
+            } else {
+                // Positional initializer: use next field in order
+                if positional_index >= ordered_fields.len() {
+                    return Err(format!(
+                        "Too many initializers for struct '{}' (expected {} fields)",
+                        struct_name,
+                        ordered_fields.len()
+                    ));
                 }
-                Type::UShort | Type::Short => {
-                    self.emit(&format!("    movw %ax, {}(%rbp)", dest_offset));
+                let field = &ordered_fields[positional_index];
+                positional_index += 1;
+                field
+            };
+
+            let dest_offset = base_offset + field_info.offset;
+
+            // Handle nested struct/union initialization
+            match (&field_info.field_type, &init_field.value) {
+                (Type::Struct(nested_name), AstNode::StructInit(nested_fields)) => {
+                    self.emit_struct_init(nested_name, nested_fields, dest_offset)?;
                 }
-                Type::Int | Type::UInt => {
-                    self.emit(&format!("    movl %eax, {}(%rbp)", dest_offset));
-                }
-                Type::Long | Type::ULong => {
-                    self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+                (Type::Union(nested_name), AstNode::StructInit(nested_fields)) => {
+                    self.emit_union_init(nested_name, nested_fields, dest_offset)?;
                 }
                 _ => {
-                    self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+                    // Generate code for the value
+                    self.generate_node(&init_field.value)?;
+
+                    // Store based on field type
+                    match field_info.field_type {
+                        Type::Char | Type::UChar => {
+                            self.emit(&format!("    movb %al, {}(%rbp)", dest_offset));
+                        }
+                        Type::UShort | Type::Short => {
+                            self.emit(&format!("    movw %ax, {}(%rbp)", dest_offset));
+                        }
+                        Type::Int | Type::UInt | Type::Enum(_) => {
+                            self.emit(&format!("    movl %eax, {}(%rbp)", dest_offset));
+                        }
+                        Type::Long | Type::ULong => {
+                            self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+                        }
+                        Type::Pointer(_) => {
+                            self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+                        }
+                        _ => {
+                            self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+                        }
+                    }
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn emit_union_init(
+        &mut self,
+        union_name: &str,
+        init_fields: &[StructInitField],
+        base_offset: i32,
+    ) -> Result<(), String> {
+        let layout = self
+            .union_layouts
+            .get(union_name)
+            .ok_or_else(|| format!("Unknown union type: {}", union_name))?
+            .clone(); // Clone to avoid borrow issues
+
+        // For unions, we only initialize one field (typically the first one specified)
+        // In C, initializers for unions initialize the first member unless designated
+        if init_fields.is_empty() {
+            return Ok(());
+        }
+
+        let init_field = &init_fields[0];
+
+        // Determine which field to initialize
+        let field_info = if let Some(ref field_name) = init_field.field_name {
+            // Designated initializer: look up by name
+            layout.fields.get(field_name).ok_or_else(|| {
+                format!("Unknown field '{}' in union '{}'", field_name, union_name)
+            })?
+        } else {
+            // Positional initializer: use first field in declaration order
+            let mut ordered_fields: Vec<(&String, &StructFieldInfo)> =
+                layout.fields.iter().collect();
+            ordered_fields.sort_by_key(|(_, info)| info.offset);
+            if ordered_fields.is_empty() {
+                return Err(format!("Union '{}' has no fields", union_name));
+            }
+            ordered_fields[0].1
+        };
+
+        // Generate code for the value
+        self.generate_node(&init_field.value)?;
+        let dest_offset = base_offset; // All union fields start at offset 0
+
+        // Store based on field type
+        match field_info.field_type {
+            Type::Char | Type::UChar => {
+                self.emit(&format!("    movb %al, {}(%rbp)", dest_offset));
+            }
+            Type::UShort | Type::Short => {
+                self.emit(&format!("    movw %ax, {}(%rbp)", dest_offset));
+            }
+            Type::Int | Type::UInt | Type::Enum(_) => {
+                self.emit(&format!("    movl %eax, {}(%rbp)", dest_offset));
+            }
+            Type::Long | Type::ULong => {
+                self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+            }
+            Type::Pointer(_) => {
+                self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
+            }
+            _ => {
+                self.emit(&format!("    movq %rax, {}(%rbp)", dest_offset));
             }
         }
 

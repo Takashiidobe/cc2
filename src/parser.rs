@@ -135,7 +135,7 @@ impl Parser {
         let init = if self.current_token() == &Token::Equals {
             self.advance();
             if self.current_token() == &Token::OpenBrace {
-                if matches!(var_type, Type::Struct(_)) {
+                if matches!(var_type, Type::Struct(_) | Type::Union(_)) {
                     Some(Box::new(self.parse_struct_initializer()?))
                 } else {
                     Some(Box::new(self.parse_array_initializer()?))
@@ -322,7 +322,7 @@ impl Parser {
         let init = if self.current_token() == &Token::Equals {
             self.advance();
             if self.current_token() == &Token::OpenBrace {
-                if matches!(var_type, Type::Struct(_)) {
+                if matches!(var_type, Type::Struct(_) | Type::Union(_)) {
                     Some(Box::new(self.parse_struct_initializer()?))
                 } else {
                     Some(Box::new(self.parse_array_initializer()?))
@@ -1038,15 +1038,39 @@ impl Parser {
 
     fn parse_struct_initializer(&mut self) -> Result<AstNode, String> {
         self.expect(Token::OpenBrace)?;
-        let mut values = Vec::new();
+        let mut fields = Vec::new();
 
         if self.current_token() == &Token::CloseBrace {
             self.advance();
-            return Ok(AstNode::StructInit(values));
+            return Ok(AstNode::StructInit(fields));
         }
 
         loop {
-            values.push(self.parse_expression()?);
+            // Check if this is a designated initializer (.field = value)
+            let field_name = if self.current_token() == &Token::Dot {
+                self.advance(); // consume '.'
+                match self.current_token() {
+                    Token::Identifier(name) => {
+                        let field = name.clone();
+                        self.advance(); // consume field name
+                        self.expect(Token::Equals)?;
+                        Some(field)
+                    }
+                    _ => return Err(format!("Expected field name after '.', got {:?}", self.current_token())),
+                }
+            } else {
+                None // Positional initializer
+            };
+
+            // Parse the value - check if it's a nested struct/union initializer
+            let value = if self.current_token() == &Token::OpenBrace {
+                // Nested struct/union initialization
+                self.parse_struct_initializer()?
+            } else {
+                self.parse_expression()?
+            };
+            fields.push(StructInitField { field_name, value });
+
             if self.current_token() == &Token::Comma {
                 self.advance();
                 if self.current_token() == &Token::CloseBrace {
@@ -1058,7 +1082,7 @@ impl Parser {
         }
 
         self.expect(Token::CloseBrace)?;
-        Ok(AstNode::StructInit(values))
+        Ok(AstNode::StructInit(fields))
     }
 
     fn parse_union_definition(&mut self) -> Result<AstNode, String> {

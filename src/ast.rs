@@ -81,7 +81,7 @@ pub enum AstNode {
         index: Box<AstNode>,
     },
     ArrayInit(Vec<AstNode>),
-    StructInit(Vec<AstNode>),
+    StructInit(Vec<StructInitField>),
     MemberAccess {
         base: Box<AstNode>,
         member: String,
@@ -135,6 +135,12 @@ pub struct Parameter {
 pub struct StructField {
     pub name: String,
     pub field_type: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructInitField {
+    pub field_name: Option<String>, // None for positional, Some for designated
+    pub value: AstNode,
 }
 
 #[derive(Debug, Clone, PartialEq)]
