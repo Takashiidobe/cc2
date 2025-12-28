@@ -59,6 +59,7 @@ pub enum Token {
     Break,
     Continue,
     Void,
+    Extern,
 
     // Identifiers and literals
     Identifier(String),
@@ -146,6 +147,7 @@ impl fmt::Display for Token {
             Token::Break => write!(f, "break"),
             Token::Continue => write!(f, "continue"),
             Token::Void => write!(f, "void"),
+            Token::Extern => write!(f, "extern"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
@@ -544,6 +546,7 @@ impl Lexer {
             "break" => Token::Break,
             "continue" => Token::Continue,
             "void" => Token::Void,
+            "extern" => Token::Extern,
             _ => Token::Identifier(ident),
         };
 

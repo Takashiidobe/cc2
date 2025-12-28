@@ -12,6 +12,7 @@ struct LoopContext {
 struct GlobalVariable {
     var_type: Type,
     init: Option<AstNode>,
+    is_extern: bool,
 }
 
 pub struct CodeGenerator {
@@ -363,6 +364,7 @@ impl CodeGenerator {
                 name,
                 var_type,
                 init,
+                is_extern,
             } => {
                 let var_size = self.type_size(var_type)?;
                 let var_align = self.type_alignment(var_type)?;
@@ -2020,12 +2022,19 @@ impl CodeGenerator {
     fn collect_global_variables(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
-                if let AstNode::VarDecl { name, var_type, init } = item {
+                if let AstNode::VarDecl { name, var_type, init, is_extern } = item {
+                    // If variable already exists and new declaration is extern, skip it
+                    // (the existing definition takes precedence)
+                    if *is_extern && self.global_variables.contains_key(name) {
+                        continue;
+                    }
+
                     self.global_variables.insert(
                         name.clone(),
                         GlobalVariable {
                             var_type: var_type.clone(),
                             init: init.as_ref().map(|n| (**n).clone()),
+                            is_extern: *is_extern,
                         },
                     );
                 }
@@ -2295,6 +2304,11 @@ impl CodeGenerator {
         let mut uninitialized = Vec::new();
 
         for (name, global) in &globals {
+            // Skip extern variables - they're declared elsewhere
+            if global.is_extern {
+                continue;
+            }
+
             if global.init.is_some() {
                 initialized.push((name.clone(), global.clone()));
             } else {

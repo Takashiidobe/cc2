@@ -231,6 +231,7 @@ mod parser_tests {
                                 name,
                                 var_type,
                                 init,
+                                ..
                             } => {
                                 assert_eq!(name, "p");
                                 assert_eq!(var_type, &Type::Pointer(Box::new(Type::Int)));
@@ -281,6 +282,7 @@ mod parser_tests {
                                 name,
                                 var_type,
                                 init,
+                                ..
                             } => {
                                 assert_eq!(name, "a");
                                 assert_eq!(var_type, &Type::Array(Box::new(Type::Int), 3));
@@ -347,6 +349,7 @@ mod parser_tests {
                                     name,
                                     var_type,
                                     init,
+                                    ..
                                 } => {
                                     assert_eq!(name, "p");
                                     assert_eq!(var_type, &Type::Struct("Point".to_string()));

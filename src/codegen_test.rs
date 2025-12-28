@@ -76,6 +76,7 @@ mod codegen_tests {
                     name: "x".to_string(),
                     var_type: Type::Int,
                     init: Some(Box::new(AstNode::IntLiteral(5))),
+                    is_extern: false,
                 },
                 AstNode::VarDecl {
                     name: "p".to_string(),
@@ -83,6 +84,7 @@ mod codegen_tests {
                     init: Some(Box::new(AstNode::AddressOf(Box::new(AstNode::Variable(
                         "x".to_string(),
                     ))))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
                     AstNode::Variable("p".to_string()),
@@ -112,6 +114,7 @@ mod codegen_tests {
                         AstNode::IntLiteral(2),
                         AstNode::IntLiteral(3),
                     ]))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::ArrayIndex {
                     array: Box::new(AstNode::Variable("a".to_string())),
@@ -138,6 +141,7 @@ mod codegen_tests {
                     name: "x".to_string(),
                     var_type: Type::Int,
                     init: Some(Box::new(AstNode::IntLiteral(0))),
+                    is_extern: false,
                 },
                 AstNode::VarDecl {
                     name: "p".to_string(),
@@ -145,6 +149,7 @@ mod codegen_tests {
                     init: Some(Box::new(AstNode::AddressOf(Box::new(AstNode::Variable(
                         "x".to_string(),
                     ))))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
                     AstNode::BinaryOp {
@@ -238,6 +243,7 @@ mod codegen_tests {
                     name: "c".to_string(),
                     var_type: Type::Char,
                     init: Some(Box::new(AstNode::IntLiteral(1))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("c".to_string())))),
             ]))),
@@ -261,6 +267,7 @@ mod codegen_tests {
                     name: "u".to_string(),
                     var_type: Type::UInt,
                     init: Some(Box::new(AstNode::IntLiteral(1))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("u".to_string())))),
             ]))),
@@ -285,6 +292,7 @@ mod codegen_tests {
                     name: "s".to_string(),
                     var_type: Type::UShort,
                     init: Some(Box::new(AstNode::IntLiteral(2))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("s".to_string())))),
             ]))),
@@ -308,6 +316,7 @@ mod codegen_tests {
                     name: "l".to_string(),
                     var_type: Type::ULong,
                     init: Some(Box::new(AstNode::IntLiteral(3))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("l".to_string())))),
             ]))),
@@ -331,11 +340,13 @@ mod codegen_tests {
                     name: "s".to_string(),
                     var_type: Type::Short,
                     init: Some(Box::new(AstNode::IntLiteral(1))),
+                    is_extern: false,
                 },
                 AstNode::VarDecl {
                     name: "l".to_string(),
                     var_type: Type::Long,
                     init: Some(Box::new(AstNode::IntLiteral(2))),
+                    is_extern: false,
                 },
                 AstNode::Return(Some(Box::new(AstNode::BinaryOp {
                     op: BinOp::Add,

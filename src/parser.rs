@@ -47,6 +47,14 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Result<AstNode, String> {
+        // Check for extern keyword
+        let is_extern = if self.current_token() == &Token::Extern {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
         let var_type = self.parse_type()?;
 
         let name = match self.current_token() {
@@ -64,12 +72,12 @@ impl Parser {
         // Check what follows to determine if it's a function or variable
         match self.current_token() {
             Token::OpenParen => {
-                // It's a function
+                // It's a function (extern doesn't affect function declarations in our simple compiler)
                 self.parse_function_rest(var_type, name)
             }
             Token::Semicolon | Token::Equals | Token::OpenBracket => {
                 // It's a global variable
-                self.parse_global_variable(var_type, name)
+                self.parse_global_variable_with_extern(var_type, name, is_extern)
             }
             _ => Err(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
@@ -128,6 +136,15 @@ impl Parser {
         mut var_type: Type,
         name: String,
     ) -> Result<AstNode, String> {
+        self.parse_global_variable_with_extern(var_type, name, false)
+    }
+
+    fn parse_global_variable_with_extern(
+        &mut self,
+        mut var_type: Type,
+        name: String,
+        is_extern: bool,
+    ) -> Result<AstNode, String> {
         // Handle array type suffix if present
         var_type = self.parse_array_type_suffix(var_type)?;
 
@@ -153,6 +170,7 @@ impl Parser {
             name,
             var_type,
             init,
+            is_extern,
         })
     }
 
@@ -345,6 +363,7 @@ impl Parser {
             name,
             var_type,
             init,
+            is_extern: false,
         })
     }
 
