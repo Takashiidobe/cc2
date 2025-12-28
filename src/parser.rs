@@ -830,6 +830,21 @@ impl Parser {
                 Ok(AstNode::AddressOf(Box::new(operand)))
             }
             Token::Sizeof => self.parse_sizeof(),
+            Token::OpenParen => {
+                // Check if this is a cast expression: (type)expr
+                if self.is_type_start(self.peek(1)) {
+                    self.advance(); // consume (
+                    let target_type = self.parse_type()?;
+                    self.expect(Token::CloseParen)?;
+                    let expr = self.parse_unary()?;
+                    Ok(AstNode::Cast {
+                        target_type,
+                        expr: Box::new(expr),
+                    })
+                } else {
+                    self.parse_primary()
+                }
+            }
             _ => self.parse_primary(),
         }
     }

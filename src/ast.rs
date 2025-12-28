@@ -89,6 +89,10 @@ pub enum AstNode {
     },
     SizeOfType(Type),
     SizeOfExpr(Box<AstNode>),
+    Cast {
+        target_type: Type,
+        expr: Box<AstNode>,
+    },
     IntLiteral(i64),
     StringLiteral(String),
     CharLiteral(i64),
@@ -237,6 +241,7 @@ impl fmt::Display for AstNode {
             AstNode::MemberAccess { member, .. } => write!(f, "MemberAccess({})", member),
             AstNode::SizeOfType(_) => write!(f, "SizeOfType"),
             AstNode::SizeOfExpr(_) => write!(f, "SizeOfExpr"),
+            AstNode::Cast { target_type, .. } => write!(f, "Cast({:?})", target_type),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             AstNode::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
             AstNode::CharLiteral(c) => write!(f, "CharLiteral({})", c),

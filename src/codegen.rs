@@ -1129,6 +1129,17 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", size));
                 Ok(())
             }
+            AstNode::Cast { target_type, expr } => {
+                // Generate code for the expression
+                self.generate_node(expr)?;
+
+                // Get the source type
+                let source_type = self.expr_type(expr)?;
+
+                // Perform type conversion
+                self.convert_type(&source_type, target_type)?;
+                Ok(())
+            }
             AstNode::IntLiteral(n) => {
                 self.emit(&format!("    movl ${}, %eax", n));
                 self.emit("    cltq");
@@ -1509,6 +1520,118 @@ impl CodeGenerator {
                 Ok(layout.alignment)
             }
             Type::Enum(_) => Ok(4),
+        }
+    }
+
+    fn convert_type(&mut self, from: &Type, to: &Type) -> Result<(), String> {
+        // If types are the same, no conversion needed
+        if from == to {
+            return Ok(());
+        }
+
+        // Helper to determine if a type is signed
+        let is_signed = |ty: &Type| matches!(ty, Type::Char | Type::Short | Type::Int | Type::Long);
+
+        match (from, to) {
+            // Pointer to pointer - no conversion needed
+            (Type::Pointer(_), Type::Pointer(_)) => Ok(()),
+
+            // Integer to pointer or pointer to integer - just treat as 64-bit value
+            (Type::Pointer(_), Type::Long | Type::ULong) => Ok(()),
+            (Type::Long | Type::ULong, Type::Pointer(_)) => Ok(()),
+            (Type::Pointer(_), Type::Int | Type::UInt) => {
+                // Truncate to 32 bits
+                self.emit("    movl %eax, %eax");
+                Ok(())
+            }
+            (Type::Int | Type::UInt, Type::Pointer(_)) => {
+                // Sign/zero extend to 64 bits
+                if is_signed(from) {
+                    self.emit("    movslq %eax, %rax");
+                } else {
+                    self.emit("    movl %eax, %eax");
+                }
+                Ok(())
+            }
+
+            // Integer conversions
+            _ => {
+                let from_size = self.type_size(from)?;
+                let to_size = self.type_size(to)?;
+
+                match (from_size, to_size) {
+                    // Same size - no conversion needed
+                    (a, b) if a == b => Ok(()),
+
+                    // Widening conversions
+                    (1, 2) => {
+                        if is_signed(from) {
+                            self.emit("    movsbw %al, %ax");
+                        } else {
+                            self.emit("    movzbw %al, %ax");
+                        }
+                        Ok(())
+                    }
+                    (1, 4) => {
+                        if is_signed(from) {
+                            self.emit("    movsbl %al, %eax");
+                        } else {
+                            self.emit("    movzbl %al, %eax");
+                        }
+                        Ok(())
+                    }
+                    (1, 8) => {
+                        if is_signed(from) {
+                            self.emit("    movsbq %al, %rax");
+                        } else {
+                            self.emit("    movzbq %al, %rax");
+                        }
+                        Ok(())
+                    }
+                    (2, 4) => {
+                        if is_signed(from) {
+                            self.emit("    movswl %ax, %eax");
+                        } else {
+                            self.emit("    movzwl %ax, %eax");
+                        }
+                        Ok(())
+                    }
+                    (2, 8) => {
+                        if is_signed(from) {
+                            self.emit("    movswq %ax, %rax");
+                        } else {
+                            self.emit("    movzwq %ax, %rax");
+                        }
+                        Ok(())
+                    }
+                    (4, 8) => {
+                        if is_signed(from) {
+                            self.emit("    movslq %eax, %rax");
+                        } else {
+                            self.emit("    movl %eax, %eax");
+                        }
+                        Ok(())
+                    }
+
+                    // Narrowing conversions - just truncate, no instruction needed
+                    (_, 1) => {
+                        // Value is already in %al (lower 8 bits of %rax)
+                        Ok(())
+                    }
+                    (_, 2) => {
+                        // Value is already in %ax (lower 16 bits of %rax)
+                        Ok(())
+                    }
+                    (_, 4) => {
+                        // Value is already in %eax (lower 32 bits of %rax)
+                        // But we need to zero the upper 32 bits
+                        self.emit("    movl %eax, %eax");
+                        Ok(())
+                    }
+
+                    _ => Err(format!("Unsupported type conversion from {:?} to {:?}", from, to)),
+                }
+            }
         }
     }
 
@@ -2132,6 +2255,7 @@ impl CodeGenerator {
             | AstNode::PostfixDecrement(operand) => self.expr_type(operand),
             AstNode::FunctionCall { .. } => Ok(Type::Int),
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
+            AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }
