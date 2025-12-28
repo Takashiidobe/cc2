@@ -205,6 +205,10 @@ impl Parser {
                 self.advance();
                 Type::Char
             }
+            Token::Void => {
+                self.advance();
+                Type::Void
+            }
             Token::Struct => {
                 self.advance();
                 let name = match self.current_token() {
@@ -299,7 +303,8 @@ impl Parser {
             | Token::Long
             | Token::Struct
             | Token::Union
-            | Token::Enum => self.parse_var_decl(),
+            | Token::Enum
+            | Token::Void => self.parse_var_decl(),
             _ => {
                 let expr = self.parse_expression()?;
                 self.expect(Token::Semicolon)?;
@@ -1233,6 +1238,7 @@ impl Parser {
                 | Some(Token::Enum)
                 | Some(Token::Short)
                 | Some(Token::Long)
+                | Some(Token::Void)
         )
     }
 
