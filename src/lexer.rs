@@ -60,6 +60,7 @@ pub enum Token {
     Continue,
     Void,
     Extern,
+    Static,
 
     // Identifiers and literals
     Identifier(String),
@@ -148,6 +149,7 @@ impl fmt::Display for Token {
             Token::Continue => write!(f, "continue"),
             Token::Void => write!(f, "void"),
             Token::Extern => write!(f, "extern"),
+            Token::Static => write!(f, "static"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
@@ -547,6 +549,7 @@ impl Lexer {
             "continue" => Token::Continue,
             "void" => Token::Void,
             "extern" => Token::Extern,
+            "static" => Token::Static,
             _ => Token::Identifier(ident),
         };
 

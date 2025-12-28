@@ -47,13 +47,17 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Result<AstNode, String> {
-        // Check for extern keyword
-        let is_extern = if self.current_token() == &Token::Extern {
+        // Check for extern or static keywords
+        let mut is_extern = false;
+        let mut is_static = false;
+
+        if self.current_token() == &Token::Extern {
             self.advance();
-            true
-        } else {
-            false
-        };
+            is_extern = true;
+        } else if self.current_token() == &Token::Static {
+            self.advance();
+            is_static = true;
+        }
 
         let var_type = self.parse_type()?;
 
@@ -72,12 +76,12 @@ impl Parser {
         // Check what follows to determine if it's a function or variable
         match self.current_token() {
             Token::OpenParen => {
-                // It's a function (extern doesn't affect function declarations in our simple compiler)
+                // It's a function (extern/static don't affect function declarations in our simple compiler)
                 self.parse_function_rest(var_type, name)
             }
             Token::Semicolon | Token::Equals | Token::OpenBracket => {
                 // It's a global variable
-                self.parse_global_variable_with_extern(var_type, name, is_extern)
+                self.parse_global_variable_with_storage(var_type, name, is_extern, is_static)
             }
             _ => Err(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
@@ -136,14 +140,15 @@ impl Parser {
         mut var_type: Type,
         name: String,
     ) -> Result<AstNode, String> {
-        self.parse_global_variable_with_extern(var_type, name, false)
+        self.parse_global_variable_with_storage(var_type, name, false, false)
     }
 
-    fn parse_global_variable_with_extern(
+    fn parse_global_variable_with_storage(
         &mut self,
         mut var_type: Type,
         name: String,
         is_extern: bool,
+        is_static: bool,
     ) -> Result<AstNode, String> {
         // Handle array type suffix if present
         var_type = self.parse_array_type_suffix(var_type)?;
@@ -171,6 +176,7 @@ impl Parser {
             var_type,
             init,
             is_extern,
+            is_static,
         })
     }
 
@@ -322,7 +328,8 @@ impl Parser {
             | Token::Struct
             | Token::Union
             | Token::Enum
-            | Token::Void => self.parse_var_decl(),
+            | Token::Void
+            | Token::Static => self.parse_var_decl(),
             _ => {
                 let expr = self.parse_expression()?;
                 self.expect(Token::Semicolon)?;
@@ -332,6 +339,14 @@ impl Parser {
     }
 
     fn parse_var_decl(&mut self) -> Result<AstNode, String> {
+        // Check for static keyword (for local static variables)
+        let is_static = if self.current_token() == &Token::Static {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
         let var_type = self.parse_type()?;
 
         let name = match self.current_token() {
@@ -364,6 +379,7 @@ impl Parser {
             var_type,
             init,
             is_extern: false,
+            is_static,
         })
     }
 

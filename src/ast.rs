@@ -47,6 +47,7 @@ pub enum AstNode {
         var_type: Type,
         init: Option<Box<AstNode>>,
         is_extern: bool,
+        is_static: bool,
     },
     Assignment {
         target: Box<AstNode>,

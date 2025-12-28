@@ -13,6 +13,7 @@ struct GlobalVariable {
     var_type: Type,
     init: Option<AstNode>,
     is_extern: bool,
+    is_static: bool,
 }
 
 pub struct CodeGenerator {
@@ -72,6 +73,7 @@ impl CodeGenerator {
         self.collect_union_layouts(ast)?;
         self.collect_enum_constants(ast)?;
         self.collect_global_variables(ast)?;
+        self.collect_static_locals(ast)?;
 
         // Emit global variables first
         self.emit_global_variables()?;
@@ -365,7 +367,25 @@ impl CodeGenerator {
                 var_type,
                 init,
                 is_extern,
+                is_static,
             } => {
+                // Handle static local variables differently - allocate in .data/.bss, not on stack
+                if *is_static {
+                    // Simply register as a global variable with static linkage
+                    // It will be emitted in the .data/.bss section
+                    self.global_variables.insert(
+                        name.clone(),
+                        GlobalVariable {
+                            var_type: var_type.clone(),
+                            init: init.clone().map(|n| (*n).clone()),
+                            is_extern: false,
+                            is_static: true,
+                        },
+                    );
+
+                    return Ok(());
+                }
+
                 let var_size = self.type_size(var_type)?;
                 let var_align = self.type_alignment(var_type)?;
                 let offset = self.symbol_table.add_variable_with_layout(
@@ -2022,7 +2042,7 @@ impl CodeGenerator {
     fn collect_global_variables(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
-                if let AstNode::VarDecl { name, var_type, init, is_extern } = item {
+                if let AstNode::VarDecl { name, var_type, init, is_extern, is_static } = item {
                     // If variable already exists and new declaration is extern, skip it
                     // (the existing definition takes precedence)
                     if *is_extern && self.global_variables.contains_key(name) {
@@ -2035,10 +2055,67 @@ impl CodeGenerator {
                             var_type: var_type.clone(),
                             init: init.as_ref().map(|n| (**n).clone()),
                             is_extern: *is_extern,
+                            is_static: *is_static,
                         },
                     );
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn collect_static_locals(&mut self, node: &AstNode) -> Result<(), String> {
+        if let AstNode::Program(nodes) = node {
+            for item in nodes {
+                if let AstNode::Function { body, .. } = item {
+                    if let Some(body_node) = body {
+                        self.collect_static_locals_from_block(body_node)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_static_locals_from_block(&mut self, node: &AstNode) -> Result<(), String> {
+        match node {
+            AstNode::Block(stmts) => {
+                for stmt in stmts {
+                    self.collect_static_locals_from_block(stmt)?;
+                }
+            }
+            AstNode::VarDecl { name, var_type, init, is_extern: _, is_static } => {
+                if *is_static {
+                    self.global_variables.insert(
+                        name.clone(),
+                        GlobalVariable {
+                            var_type: var_type.clone(),
+                            init: init.as_ref().map(|n| (**n).clone()),
+                            is_extern: false,
+                            is_static: true,
+                        },
+                    );
+                }
+            }
+            AstNode::IfStatement { then_branch, else_branch, .. } => {
+                self.collect_static_locals_from_block(then_branch)?;
+                if let Some(else_b) = else_branch {
+                    self.collect_static_locals_from_block(else_b)?;
+                }
+            }
+            AstNode::WhileLoop { body, .. } => {
+                self.collect_static_locals_from_block(body)?;
+            }
+            AstNode::DoWhileLoop { body, .. } => {
+                self.collect_static_locals_from_block(body)?;
+            }
+            AstNode::ForLoop { init, body, .. } => {
+                if let Some(init_stmt) = init {
+                    self.collect_static_locals_from_block(init_stmt)?;
+                }
+                self.collect_static_locals_from_block(body)?;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -2323,7 +2400,10 @@ impl CodeGenerator {
                 let size = self.type_size(&global.var_type)?;
                 let align = self.type_alignment(&global.var_type)?;
                 self.emit(&format!("    .align {}", align));
-                self.emit(&format!("    .globl {}", name));
+                // Only emit .globl for non-static variables (static has internal linkage)
+                if !global.is_static {
+                    self.emit(&format!("    .globl {}", name));
+                }
                 self.emit(&format!("{}:", name));
                 self.emit(&format!("    .zero {}", size));
             }
@@ -2335,7 +2415,10 @@ impl CodeGenerator {
             for (name, global) in &initialized {
                 let align = self.type_alignment(&global.var_type)?;
                 self.emit(&format!("    .align {}", align));
-                self.emit(&format!("    .globl {}", name));
+                // Only emit .globl for non-static variables (static has internal linkage)
+                if !global.is_static {
+                    self.emit(&format!("    .globl {}", name));
+                }
                 self.emit(&format!("{}:", name));
 
                 // Emit the initialization value
