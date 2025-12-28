@@ -47,16 +47,33 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Result<AstNode, String> {
-        // Check for extern or static keywords
+        // Check for storage class specifiers and type qualifiers
         let mut is_extern = false;
         let mut is_static = false;
+        let mut is_const = false;
+        let mut is_volatile = false;
 
-        if self.current_token() == &Token::Extern {
-            self.advance();
-            is_extern = true;
-        } else if self.current_token() == &Token::Static {
-            self.advance();
-            is_static = true;
+        // Parse storage class and qualifiers (can appear in any order)
+        loop {
+            match self.current_token() {
+                Token::Extern if !is_extern => {
+                    self.advance();
+                    is_extern = true;
+                }
+                Token::Static if !is_static => {
+                    self.advance();
+                    is_static = true;
+                }
+                Token::Const if !is_const => {
+                    self.advance();
+                    is_const = true;
+                }
+                Token::Volatile if !is_volatile => {
+                    self.advance();
+                    is_volatile = true;
+                }
+                _ => break,
+            }
         }
 
         let var_type = self.parse_type()?;
@@ -81,7 +98,7 @@ impl Parser {
             }
             Token::Semicolon | Token::Equals | Token::OpenBracket => {
                 // It's a global variable
-                self.parse_global_variable_with_storage(var_type, name, is_extern, is_static)
+                self.parse_global_variable_with_storage(var_type, name, is_extern, is_static, is_const, is_volatile)
             }
             _ => Err(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
@@ -140,7 +157,7 @@ impl Parser {
         mut var_type: Type,
         name: String,
     ) -> Result<AstNode, String> {
-        self.parse_global_variable_with_storage(var_type, name, false, false)
+        self.parse_global_variable_with_storage(var_type, name, false, false, false, false)
     }
 
     fn parse_global_variable_with_storage(
@@ -149,6 +166,8 @@ impl Parser {
         name: String,
         is_extern: bool,
         is_static: bool,
+        is_const: bool,
+        is_volatile: bool,
     ) -> Result<AstNode, String> {
         // Handle array type suffix if present
         var_type = self.parse_array_type_suffix(var_type)?;
@@ -177,6 +196,8 @@ impl Parser {
             init,
             is_extern,
             is_static,
+            is_const,
+            is_volatile,
         })
     }
 
@@ -329,7 +350,9 @@ impl Parser {
             | Token::Union
             | Token::Enum
             | Token::Void
-            | Token::Static => self.parse_var_decl(),
+            | Token::Static
+            | Token::Const
+            | Token::Volatile => self.parse_var_decl(),
             _ => {
                 let expr = self.parse_expression()?;
                 self.expect(Token::Semicolon)?;
@@ -339,13 +362,29 @@ impl Parser {
     }
 
     fn parse_var_decl(&mut self) -> Result<AstNode, String> {
-        // Check for static keyword (for local static variables)
-        let is_static = if self.current_token() == &Token::Static {
-            self.advance();
-            true
-        } else {
-            false
-        };
+        // Check for storage class and qualifiers
+        let mut is_static = false;
+        let mut is_const = false;
+        let mut is_volatile = false;
+
+        // Parse storage class and qualifiers (can appear in any order)
+        loop {
+            match self.current_token() {
+                Token::Static if !is_static => {
+                    self.advance();
+                    is_static = true;
+                }
+                Token::Const if !is_const => {
+                    self.advance();
+                    is_const = true;
+                }
+                Token::Volatile if !is_volatile => {
+                    self.advance();
+                    is_volatile = true;
+                }
+                _ => break,
+            }
+        }
 
         let var_type = self.parse_type()?;
 
@@ -380,6 +419,8 @@ impl Parser {
             init,
             is_extern: false,
             is_static,
+            is_const,
+            is_volatile,
         })
     }
 

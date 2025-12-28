@@ -61,6 +61,8 @@ pub enum Token {
     Void,
     Extern,
     Static,
+    Const,
+    Volatile,
 
     // Identifiers and literals
     Identifier(String),
@@ -150,6 +152,8 @@ impl fmt::Display for Token {
             Token::Void => write!(f, "void"),
             Token::Extern => write!(f, "extern"),
             Token::Static => write!(f, "static"),
+            Token::Const => write!(f, "const"),
+            Token::Volatile => write!(f, "volatile"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
@@ -550,6 +554,8 @@ impl Lexer {
             "void" => Token::Void,
             "extern" => Token::Extern,
             "static" => Token::Static,
+            "const" => Token::Const,
+            "volatile" => Token::Volatile,
             _ => Token::Identifier(ident),
         };
 

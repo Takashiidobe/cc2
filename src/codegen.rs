@@ -14,6 +14,8 @@ struct GlobalVariable {
     init: Option<AstNode>,
     is_extern: bool,
     is_static: bool,
+    is_const: bool,
+    is_volatile: bool,
 }
 
 pub struct CodeGenerator {
@@ -368,6 +370,8 @@ impl CodeGenerator {
                 init,
                 is_extern,
                 is_static,
+                is_const,
+                is_volatile,
             } => {
                 // Handle static local variables differently - allocate in .data/.bss, not on stack
                 if *is_static {
@@ -380,6 +384,8 @@ impl CodeGenerator {
                             init: init.clone().map(|n| (*n).clone()),
                             is_extern: false,
                             is_static: true,
+                            is_const: *is_const,
+                            is_volatile: *is_volatile,
                         },
                     );
 
@@ -2042,7 +2048,7 @@ impl CodeGenerator {
     fn collect_global_variables(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
-                if let AstNode::VarDecl { name, var_type, init, is_extern, is_static } = item {
+                if let AstNode::VarDecl { name, var_type, init, is_extern, is_static, is_const, is_volatile } = item {
                     // If variable already exists and new declaration is extern, skip it
                     // (the existing definition takes precedence)
                     if *is_extern && self.global_variables.contains_key(name) {
@@ -2056,6 +2062,8 @@ impl CodeGenerator {
                             init: init.as_ref().map(|n| (**n).clone()),
                             is_extern: *is_extern,
                             is_static: *is_static,
+                            is_const: *is_const,
+                            is_volatile: *is_volatile,
                         },
                     );
                 }
@@ -2084,7 +2092,7 @@ impl CodeGenerator {
                     self.collect_static_locals_from_block(stmt)?;
                 }
             }
-            AstNode::VarDecl { name, var_type, init, is_extern: _, is_static } => {
+            AstNode::VarDecl { name, var_type, init, is_extern: _, is_static, is_const, is_volatile } => {
                 if *is_static {
                     self.global_variables.insert(
                         name.clone(),
@@ -2093,6 +2101,8 @@ impl CodeGenerator {
                             init: init.as_ref().map(|n| (**n).clone()),
                             is_extern: false,
                             is_static: true,
+                            is_const: *is_const,
+                            is_volatile: *is_volatile,
                         },
                     );
                 }
