@@ -287,6 +287,14 @@ impl Parser {
                 self.advance();
                 Type::Void
             }
+            Token::Float => {
+                self.advance();
+                Type::Float
+            }
+            Token::Double => {
+                self.advance();
+                Type::Double
+            }
             Token::Struct => {
                 self.advance();
                 let name = match self.current_token() {
@@ -393,6 +401,8 @@ impl Parser {
             | Token::Char
             | Token::Short
             | Token::Long
+            | Token::Float
+            | Token::Double
             | Token::Struct
             | Token::Union
             | Token::Enum
@@ -1475,6 +1485,8 @@ impl Parser {
                 | Some(Token::Enum)
                 | Some(Token::Short)
                 | Some(Token::Long)
+                | Some(Token::Float)
+                | Some(Token::Double)
                 | Some(Token::Void)
         )
     }
