@@ -1253,6 +1253,30 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", size));
                 Ok(())
             }
+            AstNode::OffsetOf { struct_type, member } => {
+                // Get the struct/union layout
+                let layout = match struct_type {
+                    Type::Struct(name) => {
+                        self.struct_layouts.get(name).ok_or_else(|| {
+                            format!("Unknown struct: {}", name)
+                        })?
+                    }
+                    Type::Union(name) => {
+                        self.union_layouts.get(name).ok_or_else(|| {
+                            format!("Unknown union: {}", name)
+                        })?
+                    }
+                    _ => return Err(format!("offsetof requires struct or union type, got {:?}", struct_type)),
+                };
+
+                // Find the member and get its offset
+                let field_info = layout.fields.get(member).ok_or_else(|| {
+                    format!("Unknown member '{}' in struct/union", member)
+                })?;
+
+                self.emit(&format!("    movq ${}, %rax", field_info.offset));
+                Ok(())
+            }
             AstNode::Cast { target_type, expr } => {
                 // Generate code for the expression
                 self.generate_node(expr)?;
@@ -2453,6 +2477,7 @@ impl CodeGenerator {
             AstNode::FunctionCall { .. } => Ok(Type::Int),
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
+            AstNode::OffsetOf { .. } => Ok(Type::ULong),  // offsetof returns size_t (unsigned long)
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }

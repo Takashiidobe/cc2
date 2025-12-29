@@ -1010,6 +1010,7 @@ impl Parser {
                 Ok(AstNode::AddressOf(Box::new(operand)))
             }
             Token::Sizeof => self.parse_sizeof(),
+            Token::Offsetof => self.parse_offsetof(),
             Token::OpenParen => {
                 // Check if this is a cast expression: (type)expr
                 if self.is_type_start(self.peek(1)) {
@@ -1398,6 +1399,30 @@ impl Parser {
             let expr = self.parse_unary()?;
             Ok(AstNode::SizeOfExpr(Box::new(expr)))
         }
+    }
+
+    fn parse_offsetof(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Offsetof)?;
+        self.expect(Token::OpenParen)?;
+
+        // Parse the struct/union type
+        let struct_type = self.parse_type()?;
+
+        self.expect(Token::Comma)?;
+
+        // Parse the member name
+        let member = match self.current_token() {
+            Token::Identifier(s) => s.clone(),
+            _ => return Err(format!("Expected member name in offsetof, got {:?}", self.current_token())),
+        };
+        self.advance();
+
+        self.expect(Token::CloseParen)?;
+
+        Ok(AstNode::OffsetOf {
+            struct_type,
+            member,
+        })
     }
 
     fn is_at_end(&self) -> bool {

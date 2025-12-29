@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "union at 4:1\nIdentifier(Value) at 4:7\n{ at 4:13\nint at 5:5\nIdentifier(i) at 5:9\n; at 5:10\nlong at 6:5\nIdentifier(l) at 6:10\n; at 6:11\n} at 7:1\n; at 7:2\nint at 9:1\nIdentifier(main) at 9:5\n( at 9:9\n) at 9:10\n{ at 9:12\nreturn at 10:5\noffsetof at 10:12\n( at 10:20\nunion at 10:21\nIdentifier(Value) at 10:27\n, at 10:32\nIdentifier(i) at 10:34\n) at 10:35\n+ at 10:37\noffsetof at 10:39\n( at 10:47\nunion at 10:48\nIdentifier(Value) at 10:54\n, at 10:59\nIdentifier(l) at 10:61\n) at 10:62\n; at 10:63\n} at 11:1\nEOF at 12:1\n"
+stderr: ""
+status: 0

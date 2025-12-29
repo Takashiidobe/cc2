@@ -97,6 +97,10 @@ pub enum AstNode {
     },
     SizeOfType(Type),
     SizeOfExpr(Box<AstNode>),
+    OffsetOf {
+        struct_type: Type,
+        member: String,
+    },
     Cast {
         target_type: Type,
         expr: Box<AstNode>,
@@ -258,6 +262,7 @@ impl fmt::Display for AstNode {
             AstNode::MemberAccess { member, .. } => write!(f, "MemberAccess({})", member),
             AstNode::SizeOfType(_) => write!(f, "SizeOfType"),
             AstNode::SizeOfExpr(_) => write!(f, "SizeOfExpr"),
+            AstNode::OffsetOf { member, .. } => write!(f, "OffsetOf({})", member),
             AstNode::Cast { target_type, .. } => write!(f, "Cast({:?})", target_type),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             AstNode::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
