@@ -9,6 +9,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
                 Box::new(AstNode::IntLiteral(42)),
             ))]))),
@@ -29,6 +30,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
                 Box::new(AstNode::BinaryOp {
                     op: BinOp::Add,
@@ -50,6 +52,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
                 Box::new(AstNode::BinaryOp {
                     op: BinOp::Multiply,
@@ -71,6 +74,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "x".to_string(),
@@ -111,6 +115,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "a".to_string(),
@@ -145,6 +150,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "x".to_string(),
@@ -203,7 +209,8 @@ mod codegen_tests {
                 name: "main".to_string(),
                 return_type: Type::Int,
                 params: vec![],
-                body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                is_variadic: false,
+            body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
                     Box::new(AstNode::SizeOfType(Type::Struct("Point".to_string()))),
                 ))]))),
             },
@@ -235,7 +242,8 @@ mod codegen_tests {
                 name: "main".to_string(),
                 return_type: Type::Int,
                 params: vec![],
-                body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                is_variadic: false,
+            body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
                     Box::new(AstNode::SizeOfType(Type::Struct("Mix".to_string()))),
                 ))]))),
             },
@@ -253,6 +261,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "c".to_string(),
@@ -280,6 +289,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "u".to_string(),
@@ -308,6 +318,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "s".to_string(),
@@ -335,6 +346,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "l".to_string(),
@@ -362,6 +374,7 @@ mod codegen_tests {
             name: "main".to_string(),
             return_type: Type::Int,
             params: vec![],
+            is_variadic: false,
             body: Some(Box::new(AstNode::Block(vec![
                 AstNode::VarDecl {
                     name: "s".to_string(),

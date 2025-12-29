@@ -141,7 +141,7 @@ impl Parser {
 
     fn parse_function_rest(&mut self, return_type: Type, name: String) -> Result<AstNode, String> {
         self.expect(Token::OpenParen)?;
-        let params = self.parse_parameters()?;
+        let (params, is_variadic) = self.parse_parameters()?;
         self.expect(Token::CloseParen)?;
 
         // Check if this is a forward declaration (semicolon) or definition (body)
@@ -159,6 +159,7 @@ impl Parser {
             return_type,
             params,
             body,
+            is_variadic,
         })
     }
 
@@ -362,14 +363,22 @@ impl Parser {
         Ok(ty)
     }
 
-    fn parse_parameters(&mut self) -> Result<Vec<Parameter>, String> {
+    fn parse_parameters(&mut self) -> Result<(Vec<Parameter>, bool), String> {
         let mut params = Vec::new();
+        let mut is_variadic = false;
 
         if self.current_token() == &Token::CloseParen {
-            return Ok(params);
+            return Ok((params, false));
         }
 
         loop {
+            // Check for ellipsis (...)
+            if self.current_token() == &Token::Ellipsis {
+                self.advance();
+                is_variadic = true;
+                break;
+            }
+
             let param_type = self.parse_type()?;
 
             let name = match self.current_token() {
@@ -392,7 +401,7 @@ impl Parser {
             }
         }
 
-        Ok(params)
+        Ok((params, is_variadic))
     }
 
     fn parse_block(&mut self) -> Result<AstNode, String> {

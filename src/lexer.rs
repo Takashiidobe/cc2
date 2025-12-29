@@ -90,6 +90,7 @@ pub enum Token {
     OpenBracket,
     CloseBracket,
     Dot,
+    Ellipsis, // ...
 
     // Operators
     Plus,
@@ -187,6 +188,7 @@ impl fmt::Display for Token {
             Token::OpenBracket => write!(f, "["),
             Token::CloseBracket => write!(f, "]"),
             Token::Dot => write!(f, "."),
+            Token::Ellipsis => write!(f, "..."),
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
@@ -302,6 +304,16 @@ impl Lexer {
             }
             '.' => {
                 self.advance();
+                // Check for ellipsis (...)
+                if self.position < self.input.len() && self.input[self.position] == '.' {
+                    self.advance();
+                    if self.position < self.input.len() && self.input[self.position] == '.' {
+                        self.advance();
+                        return Ok(LocatedToken::new(Token::Ellipsis, location));
+                    } else {
+                        return Err("Unexpected '..' - did you mean '...'?".to_string());
+                    }
+                }
                 Ok(LocatedToken::new(Token::Dot, location))
             }
             '[' => {

@@ -8,6 +8,7 @@ pub enum AstNode {
         return_type: Type,
         params: Vec<Parameter>,
         body: Option<Box<AstNode>>, // None for forward declarations
+        is_variadic: bool,
     },
     Block(Vec<AstNode>),
     Return(Option<Box<AstNode>>),
