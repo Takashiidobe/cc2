@@ -318,20 +318,21 @@ impl Preprocessor {
             let line = lines[line_num];
             let trimmed = line.trim_start();
 
-            // Update current line for __LINE__ macro (1-indexed)
-            self.current_line = line_num + 1;
-
             if trimmed.starts_with('#') {
                 // This is a preprocessor directive
                 let (new_line_num, directive_output) = self.process_directive(&lines, line_num)?;
                 line_num = new_line_num;
                 output.push_str(&directive_output);
+                // Increment line number (may be overridden by #line directive)
+                self.current_line += 1;
             } else {
                 // Regular line - perform macro expansion
                 let expanded = self.expand_macros(line)?;
                 output.push_str(&expanded);
                 output.push('\n');
                 line_num += 1;
+                // Increment line number (may be overridden by #line directive)
+                self.current_line += 1;
             }
         }
 
@@ -373,6 +374,7 @@ impl Preprocessor {
             "error" => self.process_error(after_hash, line_num),
             "warning" => self.process_warning(after_hash, line_num),
             "pragma" => self.process_pragma(after_hash, line_num),
+            "line" => self.process_line(after_hash, line_num),
             "" => {
                 // Empty directive (just #) - ignore
                 Ok((line_num + 1, String::new()))
@@ -795,6 +797,58 @@ impl Preprocessor {
             }
         }
         // Ignore other pragma directives
+
+        Ok((line_num + 1, String::new()))
+    }
+
+    /// Process #line directive
+    ///
+    /// Syntax: #line <line_number> [<filename>]
+    /// Updates current_line and optionally current_file for __LINE__ and __FILE__ macros
+    fn process_line(
+        &mut self,
+        directive: &str,
+        line_num: usize,
+    ) -> Result<(usize, String), String> {
+        // directive is like "line 100" or "line 100 \"file.c\""
+        let after_line = directive.trim_start();
+        if !after_line.starts_with("line") {
+            return Err(format!("Invalid line directive at line {}", line_num + 1));
+        }
+
+        let rest = after_line[4..].trim(); // Skip "line"
+
+        // Parse line number and optional filename
+        let parts: Vec<&str> = rest.splitn(2, char::is_whitespace).collect();
+
+        if parts.is_empty() || parts[0].is_empty() {
+            return Err(format!("Missing line number in #line directive at line {}", line_num + 1));
+        }
+
+        // Parse the line number
+        let new_line: usize = parts[0].parse().map_err(|_| {
+            format!("Invalid line number '{}' in #line directive at line {}", parts[0], line_num + 1)
+        })?;
+
+        // Update current line
+        // The next source line will report this line number via __LINE__
+        // We decrement by 1 because the main loop already incremented current_line
+        // when processing this #line directive, and will increment again for the next line
+        self.current_line = new_line.saturating_sub(1);
+
+        // Check if there's a filename
+        if parts.len() > 1 {
+            let filename_part = parts[1].trim();
+            if !filename_part.is_empty() {
+                // Remove quotes if present
+                let filename = if filename_part.starts_with('"') && filename_part.ends_with('"') {
+                    &filename_part[1..filename_part.len()-1]
+                } else {
+                    filename_part
+                };
+                self.current_file = filename.to_string();
+            }
+        }
 
         Ok((line_num + 1, String::new()))
     }
