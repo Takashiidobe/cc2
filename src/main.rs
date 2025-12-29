@@ -29,7 +29,12 @@ struct Args {
     #[arg(long = "nostdinc", help = "Do not search standard system directories")]
     no_std_includes: bool,
 
-    #[arg(short = 'D', long = "define", value_name = "MACRO", help = "Define a macro (e.g., -D NAME or -D NAME=value)")]
+    #[arg(
+        short = 'D',
+        long = "define",
+        value_name = "MACRO",
+        help = "Define a macro (e.g., -D NAME or -D NAME=value)"
+    )]
     defines: Vec<String>,
 
     #[arg(long, help = "Print preprocessed source")]
@@ -49,9 +54,10 @@ fn extract_location(error_msg: &str) -> Option<SourceLocation> {
         let location_str = &error_msg[at_pos + 4..];
         let parts: Vec<&str> = location_str.split(':').collect();
         if parts.len() == 2
-            && let (Ok(line), Ok(col)) = (parts[0].parse(), parts[1].parse()) {
-                return Some(SourceLocation::new(line, col));
-            }
+            && let (Ok(line), Ok(col)) = (parts[0].parse(), parts[1].parse())
+        {
+            return Some(SourceLocation::new(line, col));
+        }
     }
     None
 }

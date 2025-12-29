@@ -24,8 +24,8 @@ pub struct CodeGenerator {
     label_counter: usize,
     current_function_end_label: Option<String>,
     current_reg_save_area_offset: Option<i32>, // Offset of register save area for variadic functions
-    current_gp_params: usize,                   // Number of GP parameters for current function
-    current_fp_params: usize,                   // Number of FP parameters for current function
+    current_gp_params: usize,                  // Number of GP parameters for current function
+    current_fp_params: usize,                  // Number of FP parameters for current function
     loop_stack: Vec<LoopContext>,
     struct_layouts: HashMap<String, StructLayout>,
     union_layouts: HashMap<String, StructLayout>,
@@ -33,6 +33,7 @@ pub struct CodeGenerator {
     string_literals: Vec<(String, String)>, // (label, string_content)
     float_literals: Vec<(String, f64)>,     // (label, value)
     global_variables: HashMap<String, GlobalVariable>,
+    function_return_types: HashMap<String, Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +66,7 @@ impl CodeGenerator {
             string_literals: Vec::new(),
             float_literals: Vec::new(),
             global_variables: HashMap::new(),
+            function_return_types: HashMap::new(),
         }
     }
 
@@ -80,11 +82,13 @@ impl CodeGenerator {
         self.string_literals.clear();
         self.float_literals.clear();
         self.global_variables.clear();
+        self.function_return_types.clear();
         self.collect_struct_layouts(ast)?;
         self.collect_union_layouts(ast)?;
         self.collect_enum_constants(ast)?;
         self.collect_global_variables(ast)?;
         self.collect_static_locals(ast)?;
+        self.collect_function_signatures(ast);
 
         // Emit global variables first
         self.emit_global_variables()?;
@@ -202,19 +206,41 @@ impl CodeGenerator {
                 let mut float_idx = 0;
                 let mut stack_param_offset = 16; // Parameters 7+ start at 16(%rbp)
                 for param in params.iter() {
-                    let local_offset = self.symbol_table.get_variable(&param.name).unwrap().stack_offset;
+                    let local_offset = self
+                        .symbol_table
+                        .get_variable(&param.name)
+                        .unwrap()
+                        .stack_offset;
 
                     if self.is_float_type(&param.param_type) {
                         // Float parameter - use xmm registers or stack
                         if float_idx < param_regs_xmm.len() {
-                            self.emit(&format!(
-                                "    movsd {}, {}(%rbp)",
-                                param_regs_xmm[float_idx], local_offset
-                            ));
+                            if matches!(param.param_type, Type::Float) {
+                                self.emit(&format!(
+                                    "    movss {}, {}(%rbp)",
+                                    param_regs_xmm[float_idx], local_offset
+                                ));
+                            } else {
+                                self.emit(&format!(
+                                    "    movsd {}, {}(%rbp)",
+                                    param_regs_xmm[float_idx], local_offset
+                                ));
+                            }
                         } else {
                             // Parameter is on stack - copy from incoming position to local slot
-                            self.emit(&format!("    movsd {}(%rbp), %xmm0", stack_param_offset));
-                            self.emit(&format!("    movsd %xmm0, {}(%rbp)", local_offset));
+                            if matches!(param.param_type, Type::Float) {
+                                self.emit(&format!(
+                                    "    movss {}(%rbp), %xmm0",
+                                    stack_param_offset
+                                ));
+                                self.emit(&format!("    movss %xmm0, {}(%rbp)", local_offset));
+                            } else {
+                                self.emit(&format!(
+                                    "    movsd {}(%rbp), %xmm0",
+                                    stack_param_offset
+                                ));
+                                self.emit(&format!("    movsd %xmm0, {}(%rbp)", local_offset));
+                            }
                             stack_param_offset += 8;
                         }
                         float_idx += 1;
@@ -267,7 +293,9 @@ impl CodeGenerator {
                         self.emit(&format!("    movq {}, {}(%rbp)", reg, reg_offset));
                     }
                     // Save 8 XMM argument registers (as doubles, 8 bytes each)
-                    let xmm_regs = ["%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"];
+                    let xmm_regs = [
+                        "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
+                    ];
                     for (i, reg) in xmm_regs.iter().enumerate() {
                         let reg_offset = offset + 48 + (i as i32 * 16); // XMM regs are 16 bytes apart in the save area
                         self.emit(&format!("    movsd {}, {}(%rbp)", reg, reg_offset));
@@ -638,8 +666,16 @@ impl CodeGenerator {
                                 self.emit_union_init(union_name, values, offset)?;
                             }
                             _ => {
+                                let init_type = self.expr_type(init_expr)?;
                                 self.generate_node(init_expr)?;
-                                if matches!(var_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                                self.convert_type(&init_type, var_type)?;
+                                if matches!(var_type, Type::Float) {
+                                    self.emit("    cvtsd2ss %xmm0, %xmm0");
+                                    self.emit(&format!("    movss %xmm0, {}(%rbp)", offset));
+                                } else if matches!(var_type, Type::Double) {
+                                    self.emit(&format!("    movsd %xmm0, {}(%rbp)", offset));
+                                } else if matches!(var_type, Type::Int | Type::UInt | Type::Enum(_))
+                                {
                                     self.emit(&format!("    movl %eax, {}(%rbp)", offset));
                                 } else if matches!(var_type, Type::UShort | Type::Short) {
                                     self.emit(&format!("    movw %ax, {}(%rbp)", offset));
@@ -657,20 +693,38 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::Assignment { target, value } => {
-                // Generate the value first
+                let target_type = self.expr_type(target)?;
+                let value_type = self.expr_type(value)?;
+
+                // Generate the value first, then convert to the target type.
                 self.generate_node(value)?;
-                self.emit("    pushq %rax");
+                self.convert_type(&value_type, &target_type)?;
+
+                if self.is_float_type(&target_type) {
+                    self.emit("    subq $8, %rsp");
+                    self.emit("    movsd %xmm0, (%rsp)");
+                } else {
+                    self.emit("    pushq %rax");
+                }
 
                 // Generate lvalue address
                 self.generate_lvalue(target)?;
                 self.emit("    movq %rax, %rcx"); // %rcx = address
-                self.emit("    popq %rax"); // %rax = value
 
-                // Determine the type to store
-                let target_type = self.expr_type(target)?;
+                if self.is_float_type(&target_type) {
+                    self.emit("    movsd (%rsp), %xmm0");
+                    self.emit("    addq $8, %rsp");
+                } else {
+                    self.emit("    popq %rax");
+                }
 
                 // Store value at address in %rcx
-                if matches!(target_type, Type::Int | Type::UInt | Type::Enum(_)) {
+                if matches!(target_type, Type::Float) {
+                    self.emit("    cvtsd2ss %xmm0, %xmm0");
+                    self.emit("    movss %xmm0, (%rcx)");
+                } else if matches!(target_type, Type::Double) {
+                    self.emit("    movsd %xmm0, (%rcx)");
+                } else if matches!(target_type, Type::Int | Type::UInt | Type::Enum(_)) {
                     self.emit("    movl %eax, (%rcx)");
                 } else if matches!(target_type, Type::UShort | Type::Short) {
                     self.emit("    movw %ax, (%rcx)");
@@ -681,7 +735,9 @@ impl CodeGenerator {
                 } else {
                     self.emit("    movq %rax, (%rcx)");
                 }
-                self.coerce_rax_to_type(&target_type);
+                if !self.is_float_type(&target_type) {
+                    self.coerce_rax_to_type(&target_type);
+                }
                 Ok(())
             }
             AstNode::Variable(name) => {
@@ -728,6 +784,13 @@ impl CodeGenerator {
                         Type::Long | Type::ULong => {
                             self.emit(&format!("    movq {}(%rip), %rax", name));
                         }
+                        Type::Float => {
+                            self.emit(&format!("    movss {}(%rip), %xmm0", name));
+                            self.emit("    cvtss2sd %xmm0, %xmm0");
+                        }
+                        Type::Double => {
+                            self.emit(&format!("    movsd {}(%rip), %xmm0", name));
+                        }
                         Type::Pointer(_) => {
                             self.emit(&format!("    movq {}(%rip), %rax", name));
                         }
@@ -761,6 +824,11 @@ impl CodeGenerator {
                     self.emit(&format!("    movzbq {}(%rbp), %rax", symbol.stack_offset));
                 } else if matches!(symbol.symbol_type, Type::Long | Type::ULong) {
                     self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
+                } else if matches!(symbol.symbol_type, Type::Float) {
+                    self.emit(&format!("    movss {}(%rbp), %xmm0", symbol.stack_offset));
+                    self.emit("    cvtss2sd %xmm0, %xmm0");
+                } else if matches!(symbol.symbol_type, Type::Double) {
+                    self.emit(&format!("    movsd {}(%rbp), %xmm0", symbol.stack_offset));
                 } else {
                     self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
                 }
@@ -810,13 +878,11 @@ impl CodeGenerator {
                             // This argument stays on stack
                             stack_args_count += 1;
                         }
+                    } else if *idx < arg_regs.len() {
+                        self.emit(&format!("    popq {}", arg_regs[*idx]));
                     } else {
-                        if *idx < arg_regs.len() {
-                            self.emit(&format!("    popq {}", arg_regs[*idx]));
-                        } else {
-                            // This argument stays on stack
-                            stack_args_count += 1;
-                        }
+                        // This argument stays on stack
+                        stack_args_count += 1;
                     }
                 }
 
@@ -877,13 +943,11 @@ impl CodeGenerator {
                             // This argument stays on stack
                             stack_args_count += 1;
                         }
+                    } else if *idx < arg_regs.len() {
+                        self.emit(&format!("    popq {}", arg_regs[*idx]));
                     } else {
-                        if *idx < arg_regs.len() {
-                            self.emit(&format!("    popq {}", arg_regs[*idx]));
-                        } else {
-                            // This argument stays on stack
-                            stack_args_count += 1;
-                        }
+                        // This argument stays on stack
+                        stack_args_count += 1;
                     }
                 }
 
@@ -1197,7 +1261,11 @@ impl CodeGenerator {
                                     self.emit("    movzbq %al, %rax");
                                 }
                             }
-                            BinOp::Add | BinOp::Subtract | BinOp::LogicalAnd | BinOp::LogicalOr | BinOp::Comma => {
+                            BinOp::Add
+                            | BinOp::Subtract
+                            | BinOp::LogicalAnd
+                            | BinOp::LogicalOr
+                            | BinOp::Comma => {
                                 unreachable!()
                             }
                         }
@@ -1238,6 +1306,7 @@ impl CodeGenerator {
                         self.emit("    sete %al");
                         self.emit("    movzbq %al, %rax");
                     }
+                    UnaryOp::Plus => {}
                     UnaryOp::Negate => {
                         self.emit("    negq %rax");
                     }
@@ -1482,6 +1551,11 @@ impl CodeGenerator {
                     self.emit("    movzbq (%rax), %rax");
                 } else if matches!(pointee_type, Type::Long | Type::ULong) {
                     self.emit("    movq (%rax), %rax");
+                } else if matches!(pointee_type, Type::Float) {
+                    self.emit("    movss (%rax), %xmm0");
+                    self.emit("    cvtss2sd %xmm0, %xmm0");
+                } else if matches!(pointee_type, Type::Double) {
+                    self.emit("    movsd (%rax), %xmm0");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -1508,6 +1582,11 @@ impl CodeGenerator {
                     self.emit("    movzbq (%rax), %rax");
                 } else if matches!(elem_type, Type::Long | Type::ULong) {
                     self.emit("    movq (%rax), %rax");
+                } else if matches!(elem_type, Type::Float) {
+                    self.emit("    movss (%rax), %xmm0");
+                    self.emit("    cvtss2sd %xmm0, %xmm0");
+                } else if matches!(elem_type, Type::Double) {
+                    self.emit("    movsd (%rax), %xmm0");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -1536,6 +1615,11 @@ impl CodeGenerator {
                     self.emit("    movzbq (%rax), %rax");
                 } else if matches!(field_type, Type::Long | Type::ULong) {
                     self.emit("    movq (%rax), %rax");
+                } else if matches!(field_type, Type::Float) {
+                    self.emit("    movss (%rax), %xmm0");
+                    self.emit("    cvtss2sd %xmm0, %xmm0");
+                } else if matches!(field_type, Type::Double) {
+                    self.emit("    movsd (%rax), %xmm0");
                 } else {
                     self.emit("    movq (%rax), %rax");
                 }
@@ -1583,7 +1667,7 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", field_info.offset));
                 Ok(())
             }
-            AstNode::VaStart { ap, last_param } => {
+            AstNode::VaStart { ap, last_param: _ } => {
                 // va_start(ap, last_param)
                 // Initialize the va_list structure according to System V AMD64 ABI
                 // Structure layout (24 bytes total):
@@ -1645,29 +1729,29 @@ impl CodeGenerator {
                     // Float/double argument - use fp_offset
                     // Load fp_offset
                     self.emit("    movl 4(%r10), %eax"); // fp_offset is at offset 4
-                    self.emit("    cmpl $176, %eax");     // Check if fp_offset < 176
+                    self.emit("    cmpl $176, %eax"); // Check if fp_offset < 176
                     let use_stack_label = self.next_label();
                     let done_label = self.next_label();
                     self.emit(&format!("    jge {}", use_stack_label)); // If >= 176, use stack
 
                     // Use register save area
-                    self.emit("    movq 16(%r10), %rcx");  // Load reg_save_area pointer
-                    self.emit("    addq %rax, %rcx");      // Add fp_offset
-                    self.emit("    movsd (%rcx), %xmm0");  // Load double from register save area
-                    self.emit("    addl $16, %eax");       // Increment fp_offset by 16
-                    self.emit("    movl %eax, 4(%r10)");   // Store updated fp_offset
+                    self.emit("    movq 16(%r10), %rcx"); // Load reg_save_area pointer
+                    self.emit("    addq %rax, %rcx"); // Add fp_offset
+                    self.emit("    movsd (%rcx), %xmm0"); // Load double from register save area
+                    self.emit("    addl $16, %eax"); // Increment fp_offset by 16
+                    self.emit("    movl %eax, 4(%r10)"); // Store updated fp_offset
                     self.emit("    subq $8, %rsp");
                     self.emit("    movsd %xmm0, (%rsp)");
-                    self.emit("    movq (%rsp), %rax");    // Move to rax for return
+                    self.emit("    movq (%rsp), %rax"); // Move to rax for return
                     self.emit("    addq $8, %rsp");
                     self.emit(&format!("    jmp {}", done_label));
 
                     // Use stack (overflow area)
                     self.emit(&format!("{}:", use_stack_label));
-                    self.emit("    movq 8(%r10), %rcx");   // Load overflow_arg_area pointer
-                    self.emit("    movsd (%rcx), %xmm0");  // Load double from stack
-                    self.emit("    addq $8, %rcx");        // Increment overflow_arg_area by 8
-                    self.emit("    movq %rcx, 8(%r10)");   // Store updated overflow_arg_area
+                    self.emit("    movq 8(%r10), %rcx"); // Load overflow_arg_area pointer
+                    self.emit("    movsd (%rcx), %xmm0"); // Load double from stack
+                    self.emit("    addq $8, %rcx"); // Increment overflow_arg_area by 8
+                    self.emit("    movq %rcx, 8(%r10)"); // Store updated overflow_arg_area
                     self.emit("    subq $8, %rsp");
                     self.emit("    movsd %xmm0, (%rsp)");
                     self.emit("    movq (%rsp), %rax");
@@ -1678,26 +1762,26 @@ impl CodeGenerator {
                     // Integer/pointer argument - use gp_offset
                     // Load gp_offset
                     self.emit("    movl 0(%r10), %eax"); // gp_offset is at offset 0
-                    self.emit("    cmpl $48, %eax");      // Check if gp_offset < 48
+                    self.emit("    cmpl $48, %eax"); // Check if gp_offset < 48
                     let use_stack_label = self.next_label();
                     let done_label = self.next_label();
                     self.emit(&format!("    jge {}", use_stack_label)); // If >= 48, use stack
 
                     // Use register save area
-                    self.emit("    movq 16(%r10), %rcx");  // Load reg_save_area pointer
-                    self.emit("    addq %rax, %rcx");      // Add gp_offset
-                    self.emit("    movq (%rcx), %rax");    // Load value from register save area
-                    self.emit("    movl 0(%r10), %edx");   // Reload gp_offset
-                    self.emit("    addl $8, %edx");        // Increment gp_offset by 8
-                    self.emit("    movl %edx, 0(%r10)");   // Store updated gp_offset
+                    self.emit("    movq 16(%r10), %rcx"); // Load reg_save_area pointer
+                    self.emit("    addq %rax, %rcx"); // Add gp_offset
+                    self.emit("    movq (%rcx), %rax"); // Load value from register save area
+                    self.emit("    movl 0(%r10), %edx"); // Reload gp_offset
+                    self.emit("    addl $8, %edx"); // Increment gp_offset by 8
+                    self.emit("    movl %edx, 0(%r10)"); // Store updated gp_offset
                     self.emit(&format!("    jmp {}", done_label));
 
                     // Use stack (overflow area)
                     self.emit(&format!("{}:", use_stack_label));
-                    self.emit("    movq 8(%r10), %rcx");   // Load overflow_arg_area pointer
-                    self.emit("    movq (%rcx), %rax");    // Load value from stack
-                    self.emit("    addq $8, %rcx");        // Increment overflow_arg_area by 8
-                    self.emit("    movq %rcx, 8(%r10)");   // Store updated overflow_arg_area
+                    self.emit("    movq 8(%r10), %rcx"); // Load overflow_arg_area pointer
+                    self.emit("    movq (%rcx), %rax"); // Load value from stack
+                    self.emit("    addq $8, %rcx"); // Increment overflow_arg_area by 8
+                    self.emit("    movq %rcx, 8(%r10)"); // Store updated overflow_arg_area
 
                     self.emit(&format!("{}:", done_label));
                 }
@@ -2197,6 +2281,10 @@ impl CodeGenerator {
         let is_signed = |ty: &Type| matches!(ty, Type::Char | Type::Short | Type::Int | Type::Long);
 
         match (from, to) {
+            // Array to pointer decay
+            (Type::Array(elem, _), Type::Pointer(to_elem)) if elem.as_ref() == to_elem.as_ref() => {
+                Ok(())
+            }
             // Pointer to pointer - no conversion needed
             (Type::Pointer(_), Type::Pointer(_)) => Ok(()),
 
@@ -2820,13 +2908,28 @@ impl CodeGenerator {
         Ok(())
     }
 
+    fn collect_function_signatures(&mut self, node: &AstNode) {
+        if let AstNode::Program(nodes) = node {
+            for item in nodes {
+                if let AstNode::Function {
+                    name, return_type, ..
+                } = item
+                {
+                    self.function_return_types
+                        .insert(name.clone(), return_type.clone());
+                }
+            }
+        }
+    }
+
     fn collect_static_locals(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
                 if let AstNode::Function { body, .. } = item
-                    && let Some(body_node) = body {
-                        self.collect_static_locals_from_block(body_node)?;
-                    }
+                    && let Some(body_node) = body
+                {
+                    self.collect_static_locals_from_block(body_node)?;
+                }
             }
         }
         Ok(())
@@ -2995,9 +3098,14 @@ impl CodeGenerator {
                 }
 
                 // Assume it's a function name - return a generic function pointer type
-                // For now, assume functions return int (can be improved later)
+                // Use a known return type if we have a declaration.
+                let return_type = self
+                    .function_return_types
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Type::Int);
                 Ok(Type::FunctionPointer {
-                    return_type: Box::new(Type::Int),
+                    return_type: Box::new(return_type),
                     param_types: vec![],
                 })
             }
@@ -3035,54 +3143,89 @@ impl CodeGenerator {
                         None
                     };
                 match op {
-                    BinOp::Add => match (left_type.clone(), right_type.clone()) {
-                        (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee)),
-                        (Type::Int, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee)),
-                        (Type::UInt, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::UShort) => Ok(Type::Pointer(pointee)),
-                        (Type::UShort, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee)),
-                        (Type::Short, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
-                        (Type::UChar, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
-                        (Type::Char, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
-                        (Type::ULong, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
-                        (Type::Long, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                        _ => integer_type
-                            .clone()
-                            .ok_or_else(|| "Invalid operands for pointer addition".to_string()),
-                    },
-                    BinOp::Subtract => match (left_type, right_type) {
-                        (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::UShort) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
-                        (Type::Pointer(_), Type::Pointer(_)) => Ok(Type::Int),
-                        _ => integer_type
-                            .ok_or_else(|| "Invalid operands for pointer subtraction".to_string()),
-                    },
+                    BinOp::Add => {
+                        if matches!(left_type, Type::Pointer(_))
+                            || matches!(right_type, Type::Pointer(_))
+                        {
+                            match (left_type.clone(), right_type.clone()) {
+                                (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee)),
+                                (Type::Int, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee)),
+                                (Type::UInt, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::UShort) => {
+                                    Ok(Type::Pointer(pointee))
+                                }
+                                (Type::UShort, Type::Pointer(pointee)) => {
+                                    Ok(Type::Pointer(pointee))
+                                }
+                                (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee)),
+                                (Type::Short, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
+                                (Type::UChar, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
+                                (Type::Char, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
+                                (Type::ULong, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
+                                (Type::Long, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
+                                _ => Err("Invalid operands for pointer addition".to_string()),
+                            }
+                        } else if self.is_float_type(&left_type) || self.is_float_type(&right_type)
+                        {
+                            Ok(Type::Double)
+                        } else {
+                            integer_type
+                                .clone()
+                                .ok_or_else(|| "Invalid operands for pointer addition".to_string())
+                        }
+                    }
+                    BinOp::Subtract => {
+                        if matches!(left_type, Type::Pointer(_))
+                            || matches!(right_type, Type::Pointer(_))
+                        {
+                            match (left_type, right_type) {
+                                (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::UShort) => {
+                                    Ok(Type::Pointer(pointee))
+                                }
+                                (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(_), Type::Pointer(_)) => Ok(Type::Int),
+                                _ => Err("Invalid operands for pointer subtraction".to_string()),
+                            }
+                        } else if self.is_float_type(&left_type) || self.is_float_type(&right_type)
+                        {
+                            Ok(Type::Double)
+                        } else {
+                            integer_type.ok_or_else(|| {
+                                "Invalid operands for pointer subtraction".to_string()
+                            })
+                        }
+                    }
                     BinOp::ShiftLeft | BinOp::ShiftRight => {
                         if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type) {
                             return Err("Shift operands must be integers".to_string());
                         }
                         Ok(self.promote_integer_type(&left_type))
                     }
-                    BinOp::Multiply
-                    | BinOp::Divide
-                    | BinOp::Modulo
-                    | BinOp::BitAnd
-                    | BinOp::BitOr
-                    | BinOp::BitXor => integer_type.ok_or_else(|| {
-                        "Bitwise and arithmetic operators require integer operands".to_string()
-                    }),
+                    BinOp::Multiply | BinOp::Divide => {
+                        if self.is_float_type(&left_type) || self.is_float_type(&right_type) {
+                            Ok(Type::Double)
+                        } else {
+                            integer_type.ok_or_else(|| {
+                                "Bitwise and arithmetic operators require integer operands"
+                                    .to_string()
+                            })
+                        }
+                    }
+                    BinOp::Modulo | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => integer_type
+                        .ok_or_else(|| {
+                            "Bitwise and arithmetic operators require integer operands".to_string()
+                        }),
                     BinOp::Less
                     | BinOp::Greater
                     | BinOp::LessEqual
@@ -3116,6 +3259,14 @@ impl CodeGenerator {
             AstNode::Assignment { target, .. } => self.expr_type(target),
             AstNode::UnaryOp { op, operand } => match op {
                 UnaryOp::LogicalNot => Ok(Type::Int),
+                UnaryOp::Plus => {
+                    let operand_type = self.expr_type(operand)?;
+                    if self.is_integer_type(&operand_type) {
+                        Ok(self.promote_integer_type(&operand_type))
+                    } else {
+                        Ok(operand_type)
+                    }
+                }
                 UnaryOp::Negate | UnaryOp::BitNot => {
                     let operand_type = self.expr_type(operand)?;
                     Ok(self.promote_integer_type(&operand_type))
@@ -3125,13 +3276,23 @@ impl CodeGenerator {
             | AstNode::PrefixDecrement(operand)
             | AstNode::PostfixIncrement(operand)
             | AstNode::PostfixDecrement(operand) => self.expr_type(operand),
-            AstNode::FunctionCall { .. } | AstNode::IndirectCall { .. } => Ok(Type::Int),
+            AstNode::FunctionCall { name, .. } => {
+                if let Some(return_type) = self.function_return_types.get(name) {
+                    Ok(return_type.clone())
+                } else {
+                    Ok(Type::Int)
+                }
+            }
+            AstNode::IndirectCall { target, .. } => match self.expr_type(target) {
+                Ok(Type::FunctionPointer { return_type, .. }) => Ok(*return_type),
+                _ => Ok(Type::Int),
+            },
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
-            AstNode::VaStart { .. } => Ok(Type::Void), // va_start returns void
+            AstNode::VaStart { .. } => Ok(Type::Void),   // va_start returns void
             AstNode::VaArg { arg_type, .. } => Ok(arg_type.clone()), // va_arg returns the specified type
-            AstNode::VaEnd(_) => Ok(Type::Void), // va_end returns void
+            AstNode::VaEnd(_) => Ok(Type::Void),                     // va_end returns void
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }
@@ -3326,8 +3487,8 @@ impl CodeGenerator {
             for (label, value) in &literals {
                 self.emit("    .align 8");
                 self.emit(&format!("{}:", label));
-                // Emit as 8-byte double precision value
-                self.emit(&format!("    .double {}", value));
+                // Emit the exact IEEE-754 bits to avoid assembler parsing issues.
+                self.emit(&format!("    .quad 0x{:016x}", value.to_bits()));
             }
         }
     }

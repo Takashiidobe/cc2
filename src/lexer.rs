@@ -41,10 +41,10 @@ impl fmt::Display for LocatedToken {
 /// Integer literal suffix types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntSuffix {
-    None,           // No suffix: int or long
-    Unsigned,       // U or u: unsigned int or unsigned long
-    Long,           // L or l: long
-    UnsignedLong,   // UL, ul, LU, lu: unsigned long
+    None,         // No suffix: int or long
+    Unsigned,     // U or u: unsigned int or unsigned long
+    Long,         // L or l: long
+    UnsignedLong, // UL, ul, LU, lu: unsigned long
 }
 
 /// Floating-point literal suffix types
@@ -205,7 +205,9 @@ impl fmt::Display for Token {
             Token::VaEnd => write!(f, "va_end"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n, suffix) => write!(f, "IntLiteral({}, {:?})", n, suffix),
-            Token::FloatLiteral(f_val, suffix) => write!(f, "FloatLiteral({}, {:?})", f_val, suffix),
+            Token::FloatLiteral(f_val, suffix) => {
+                write!(f, "FloatLiteral({}, {:?})", f_val, suffix)
+            }
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
             Token::CharLiteral(c) => write!(f, "CharLiteral({})", c),
             Token::OpenParen => write!(f, "("),
@@ -628,7 +630,9 @@ impl Lexer {
                     float_suffix = FloatSuffix::LongDouble;
                 } else {
                     // Check for U after L (unsigned long)
-                    if !self.is_at_end() && (self.current_char() == 'u' || self.current_char() == 'U') {
+                    if !self.is_at_end()
+                        && (self.current_char() == 'u' || self.current_char() == 'U')
+                    {
                         int_suffix = IntSuffix::UnsignedLong;
                         self.advance();
                     } else {
@@ -655,14 +659,20 @@ impl Lexer {
             let num = clean_str
                 .parse::<f64>()
                 .map_err(|_| format!("Invalid float literal: {}", num_str))?;
-            Ok(LocatedToken::new(Token::FloatLiteral(num, float_suffix), location))
+            Ok(LocatedToken::new(
+                Token::FloatLiteral(num, float_suffix),
+                location,
+            ))
         } else {
             // Remove suffix if present for parsing
             let clean_str = num_str.trim_end_matches(['u', 'U', 'l', 'L']);
             let num = clean_str
                 .parse::<i64>()
                 .map_err(|_| format!("Invalid number: {}", num_str))?;
-            Ok(LocatedToken::new(Token::IntLiteral(num, int_suffix), location))
+            Ok(LocatedToken::new(
+                Token::IntLiteral(num, int_suffix),
+                location,
+            ))
         }
     }
 

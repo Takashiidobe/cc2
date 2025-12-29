@@ -1,5 +1,7 @@
 // Test va_list type support
 // va_list is a built-in keyword in cc2
+#include <stdarg.h>
+
 int main() {
     va_list args;
     // Just test that we can declare a va_list variable

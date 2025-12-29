@@ -13,6 +13,7 @@ fn compile(src: &Path, exe: &Path) -> io::Result<Output> {
     cmd.arg("-o").arg(exe).arg(src);
     // Use our custom include directory and skip system includes to avoid conflicts
     cmd.arg("-nostdinc").arg("-I").arg("include");
+    cmd.arg("-lm");
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output()
 }
 

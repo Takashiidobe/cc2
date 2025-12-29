@@ -164,6 +164,7 @@ pub enum BinOp {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnaryOp {
     LogicalNot,
+    Plus,
     Negate,
     BitNot,
 }

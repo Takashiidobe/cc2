@@ -222,7 +222,7 @@ mod codegen_tests {
                 return_type: Type::Int,
                 params: vec![],
                 is_variadic: false,
-            body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
                     Box::new(AstNode::SizeOfType(Type::Struct("Point".to_string()))),
                 ))]))),
             },
@@ -257,7 +257,7 @@ mod codegen_tests {
                 return_type: Type::Int,
                 params: vec![],
                 is_variadic: false,
-            body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
+                body: Some(Box::new(AstNode::Block(vec![AstNode::Return(Some(
                     Box::new(AstNode::SizeOfType(Type::Struct("Mix".to_string()))),
                 ))]))),
             },

@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::lexer::{LocatedToken, SourceLocation, Token};
+use crate::lexer::{FloatSuffix, IntSuffix, LocatedToken, SourceLocation, Token};
 
 pub struct Parser {
     tokens: Vec<LocatedToken>,
@@ -175,12 +175,10 @@ impl Parser {
         })
     }
 
-    fn parse_global_variable(
-        &mut self,
-        var_type: Type,
-        name: String,
-    ) -> Result<AstNode, String> {
-        self.parse_global_variable_with_storage(var_type, name, false, false, false, false, false, false)
+    fn parse_global_variable(&mut self, var_type: Type, name: String) -> Result<AstNode, String> {
+        self.parse_global_variable_with_storage(
+            var_type, name, false, false, false, false, false, false,
+        )
     }
 
     fn parse_global_variable_with_storage(
@@ -1162,6 +1160,14 @@ impl Parser {
                     operand: Box::new(operand),
                 })
             }
+            Token::Plus => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(AstNode::UnaryOp {
+                    op: UnaryOp::Plus,
+                    operand: Box::new(operand),
+                })
+            }
             Token::Minus => {
                 self.advance();
                 let operand = self.parse_unary()?;
@@ -1212,17 +1218,47 @@ impl Parser {
         }
     }
 
+    fn int_literal_node(&self, value: i64, suffix: IntSuffix) -> AstNode {
+        match suffix {
+            IntSuffix::None => AstNode::IntLiteral(value),
+            IntSuffix::Unsigned => AstNode::Cast {
+                target_type: Type::UInt,
+                expr: Box::new(AstNode::IntLiteral(value)),
+            },
+            IntSuffix::Long => AstNode::Cast {
+                target_type: Type::Long,
+                expr: Box::new(AstNode::IntLiteral(value)),
+            },
+            IntSuffix::UnsignedLong => AstNode::Cast {
+                target_type: Type::ULong,
+                expr: Box::new(AstNode::IntLiteral(value)),
+            },
+        }
+    }
+
+    fn float_literal_node(&self, value: f64, suffix: FloatSuffix) -> AstNode {
+        match suffix {
+            FloatSuffix::None | FloatSuffix::LongDouble => AstNode::FloatLiteral(value),
+            FloatSuffix::Float => AstNode::Cast {
+                target_type: Type::Float,
+                expr: Box::new(AstNode::FloatLiteral(value)),
+            },
+        }
+    }
+
     fn parse_primary(&mut self) -> Result<AstNode, String> {
         let mut expr = match self.current_token() {
-            Token::IntLiteral(n, _) => {
+            Token::IntLiteral(n, suffix) => {
                 let val = *n;
+                let suffix = *suffix;
                 self.advance();
-                AstNode::IntLiteral(val)
+                self.int_literal_node(val, suffix)
             }
-            Token::FloatLiteral(f, _) => {
+            Token::FloatLiteral(f, suffix) => {
                 let val = *f;
+                let suffix = *suffix;
                 self.advance();
-                AstNode::FloatLiteral(val)
+                self.float_literal_node(val, suffix)
             }
             Token::CharLiteral(c) => {
                 let val = *c;
@@ -1372,7 +1408,7 @@ impl Parser {
             self.advance();
             // Allow empty brackets [] for arrays with initializers (size will be inferred)
             let len = if self.current_token() == &Token::CloseBracket {
-                0  // Placeholder size, will be inferred from initializer
+                0 // Placeholder size, will be inferred from initializer
             } else {
                 match self.current_token() {
                     Token::IntLiteral(n, _) if *n >= 0 => {
@@ -1380,7 +1416,11 @@ impl Parser {
                         self.advance();
                         len
                     }
-                    _ => return Err("Array length must be a non-negative integer literal".to_string()),
+                    _ => {
+                        return Err(
+                            "Array length must be a non-negative integer literal".to_string()
+                        );
+                    }
                 }
             };
             self.expect(Token::CloseBracket)?;
@@ -1479,7 +1519,9 @@ impl Parser {
                         Some(w)
                     }
                     _ => {
-                        return Err("Bit-field width must be a positive integer literal".to_string());
+                        return Err(
+                            "Bit-field width must be a positive integer literal".to_string()
+                        );
                     }
                 }
             } else {
@@ -1605,7 +1647,9 @@ impl Parser {
                         Some(w)
                     }
                     _ => {
-                        return Err("Bit-field width must be a positive integer literal".to_string());
+                        return Err(
+                            "Bit-field width must be a positive integer literal".to_string()
+                        );
                     }
                 }
             } else {

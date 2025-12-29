@@ -1,4 +1,6 @@
 // Test variadic function with va_* builtins
+#include <stdarg.h>
+
 int sum_ints(int count, ...) {
     va_list args;
     va_start(args, count);

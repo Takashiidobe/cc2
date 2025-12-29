@@ -81,7 +81,7 @@ impl Preprocessor {
             macros: HashMap::new(),
             include_paths: Vec::new(),
             system_include_paths: vec![
-                "include".to_string(),  // Our C standard library headers
+                "include".to_string(), // Our C standard library headers
                 "/usr/include".to_string(),
                 "/usr/local/include".to_string(),
             ],
@@ -112,10 +112,12 @@ impl Preprocessor {
     /// Initialize predefined macros (__STDC__, __DATE__, __TIME__, etc.)
     fn init_predefined_macros(&mut self) {
         // __STDC__ = 1 (indicates C standard conformance)
-        self.macros.insert(
-            "__STDC__".to_string(),
-            MacroDef::Object("1".to_string()),
-        );
+        self.macros
+            .insert("__STDC__".to_string(), MacroDef::Object("1".to_string()));
+
+        // __CC2__ = 1 (compiler identifier)
+        self.macros
+            .insert("__CC2__".to_string(), MacroDef::Object("1".to_string()));
 
         // __STDC_VERSION__ = 201112L (C11)
         self.macros.insert(
@@ -172,15 +174,14 @@ impl Preprocessor {
                 day -= days;
             }
 
-            let month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            let month_names = [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            ];
             let date_str = format!("\"{} {:2} {}\"", month_names[month], day, year);
 
             // __DATE__ = "Mmm dd yyyy"
-            self.macros.insert(
-                "__DATE__".to_string(),
-                MacroDef::Object(date_str),
-            );
+            self.macros
+                .insert("__DATE__".to_string(), MacroDef::Object(date_str));
 
             // Calculate time
             let hour = seconds_today / 3600;
@@ -189,10 +190,8 @@ impl Preprocessor {
             let time_str = format!("\"{:02}:{:02}:{:02}\"", hour, minute, second);
 
             // __TIME__ = "hh:mm:ss"
-            self.macros.insert(
-                "__TIME__".to_string(),
-                MacroDef::Object(time_str),
-            );
+            self.macros
+                .insert("__TIME__".to_string(), MacroDef::Object(time_str));
         }
     }
 
@@ -288,7 +287,11 @@ impl Preprocessor {
             if chars[i] == '\\' && i + 1 < chars.len() && chars[i + 1] == '\n' {
                 // Skip both the backslash and newline
                 i += 2;
-            } else if chars[i] == '\\' && i + 2 < chars.len() && chars[i + 1] == '\r' && chars[i + 2] == '\n' {
+            } else if chars[i] == '\\'
+                && i + 2 < chars.len()
+                && chars[i + 1] == '\r'
+                && chars[i + 2] == '\n'
+            {
                 // Handle Windows-style line endings (\r\n)
                 i += 3;
             } else {
@@ -761,7 +764,10 @@ impl Preprocessor {
         // directive is like "warning message text"
         let after_warning = directive.trim_start();
         if !after_warning.starts_with("warning") {
-            return Err(format!("Invalid warning directive at line {}", line_num + 1));
+            return Err(format!(
+                "Invalid warning directive at line {}",
+                line_num + 1
+            ));
         }
 
         let message = after_warning[7..].trim(); // Skip "warning"
@@ -823,12 +829,19 @@ impl Preprocessor {
         let parts: Vec<&str> = rest.splitn(2, char::is_whitespace).collect();
 
         if parts.is_empty() || parts[0].is_empty() {
-            return Err(format!("Missing line number in #line directive at line {}", line_num + 1));
+            return Err(format!(
+                "Missing line number in #line directive at line {}",
+                line_num + 1
+            ));
         }
 
         // Parse the line number
         let new_line: usize = parts[0].parse().map_err(|_| {
-            format!("Invalid line number '{}' in #line directive at line {}", parts[0], line_num + 1)
+            format!(
+                "Invalid line number '{}' in #line directive at line {}",
+                parts[0],
+                line_num + 1
+            )
         })?;
 
         // Update current line
@@ -843,7 +856,7 @@ impl Preprocessor {
             if !filename_part.is_empty() {
                 // Remove quotes if present
                 let filename = if filename_part.starts_with('"') && filename_part.ends_with('"') {
-                    &filename_part[1..filename_part.len()-1]
+                    &filename_part[1..filename_part.len() - 1]
                 } else {
                     filename_part
                 };
