@@ -23,6 +23,9 @@ pub struct CodeGenerator {
     symbol_table: SymbolTable,
     label_counter: usize,
     current_function_end_label: Option<String>,
+    current_reg_save_area_offset: Option<i32>, // Offset of register save area for variadic functions
+    current_gp_params: usize,                   // Number of GP parameters for current function
+    current_fp_params: usize,                   // Number of FP parameters for current function
     loop_stack: Vec<LoopContext>,
     struct_layouts: HashMap<String, StructLayout>,
     union_layouts: HashMap<String, StructLayout>,
@@ -52,6 +55,9 @@ impl CodeGenerator {
             symbol_table: SymbolTable::new(),
             label_counter: 0,
             current_function_end_label: None,
+            current_reg_save_area_offset: None,
+            current_gp_params: 0,
+            current_fp_params: 0,
             loop_stack: Vec::new(),
             struct_layouts: HashMap::new(),
             union_layouts: HashMap::new(),
@@ -120,7 +126,11 @@ impl CodeGenerator {
             AstNode::TypedefDef { .. } => Ok(()),
             AstNode::EnumDef { .. } => Ok(()),
             AstNode::Function {
-                name, body, params, ..
+                name,
+                body,
+                params,
+                is_variadic,
+                ..
             } => {
                 // Skip forward declarations (no body)
                 let body = match body {
@@ -159,6 +169,30 @@ impl CodeGenerator {
                 // Create end label for this function
                 let end_label = self.next_label();
                 self.current_function_end_label = Some(end_label.clone());
+
+                // For variadic functions, allocate register save area
+                // System V AMD64 ABI: 6 GP regs (48 bytes) + 8 XMM regs (128 bytes) = 176 bytes
+                let reg_save_area_offset = if *is_variadic {
+                    // Allocate 176 bytes for register save area using a dummy variable
+                    // This will be at a negative offset from %rbp
+                    Some(
+                        self.symbol_table
+                            .add_variable_with_layout(
+                                "__reg_save_area__".to_string(),
+                                Type::Array(Box::new(Type::Char), 176),
+                                176,
+                                16,
+                            )
+                            .unwrap(),
+                    )
+                } else {
+                    None
+                };
+
+                // Store variadic function info for va_start/va_arg
+                self.current_reg_save_area_offset = reg_save_area_offset;
+                self.current_gp_params = int_param_count;
+                self.current_fp_params = float_param_count;
 
                 // Save current output and generate function body first to discover all variables
                 let saved_output = self.output.clone();
@@ -223,6 +257,23 @@ impl CodeGenerator {
                     }
                 }
 
+                // For variadic functions, save all argument registers to register save area
+                if let Some(offset) = reg_save_area_offset {
+                    self.emit("    # Save register arguments for variadic function");
+                    // Save 6 general purpose argument registers
+                    let gp_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+                    for (i, reg) in gp_regs.iter().enumerate() {
+                        let reg_offset = offset + (i as i32 * 8);
+                        self.emit(&format!("    movq {}, {}(%rbp)", reg, reg_offset));
+                    }
+                    // Save 8 XMM argument registers (as doubles, 8 bytes each)
+                    let xmm_regs = ["%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"];
+                    for (i, reg) in xmm_regs.iter().enumerate() {
+                        let reg_offset = offset + 48 + (i as i32 * 16); // XMM regs are 16 bytes apart in the save area
+                        self.emit(&format!("    movsd {}, {}(%rbp)", reg, reg_offset));
+                    }
+                }
+
                 self.generate_node(body)?;
 
                 let body_code = self.output.clone();
@@ -249,7 +300,11 @@ impl CodeGenerator {
                 self.emit("    popq %rbp");
                 self.emit("    ret");
 
+                // Reset function-specific state
                 self.current_function_end_label = None;
+                self.current_reg_save_area_offset = None;
+                self.current_gp_params = 0;
+                self.current_fp_params = 0;
                 Ok(())
             }
             AstNode::Block(statements) => {
@@ -1513,23 +1568,123 @@ impl CodeGenerator {
             }
             AstNode::VaStart { ap, last_param } => {
                 // va_start(ap, last_param)
-                // For now, implement as a no-op - full implementation requires
-                // setting up the va_list structure with register save area pointers
-                // Evaluate both arguments (for correctness) but don't do anything with them
-                self.generate_node(ap)?;
-                self.generate_node(last_param)?;
-                // No-op: just set %rax to 0
-                self.emit("    xorq %rax, %rax");
+                // Initialize the va_list structure according to System V AMD64 ABI
+                // Structure layout (24 bytes total):
+                //   0-3:   gp_offset (unsigned int)
+                //   4-7:   fp_offset (unsigned int)
+                //   8-15:  overflow_arg_area (void*)
+                //   16-23: reg_save_area (void*)
+
+                // Get the address of the va_list variable (ap)
+                self.generate_lvalue(ap)?;
+                self.emit("    pushq %rax"); // Save va_list address
+
+                // Calculate gp_offset: number of GP parameters * 8
+                let gp_offset = self.current_gp_params * 8;
+                // Calculate fp_offset: 48 (for 6 GP regs) + number of FP parameters * 16
+                let fp_offset = 48 + self.current_fp_params * 16;
+
+                // Set gp_offset (offset 0-3 in va_list)
+                self.emit(&format!("    movl ${}, %eax", gp_offset));
+                self.emit("    movq (%rsp), %rcx"); // Get va_list address
+                self.emit("    movl %eax, 0(%rcx)");
+
+                // Set fp_offset (offset 4-7 in va_list)
+                self.emit(&format!("    movl ${}, %eax", fp_offset));
+                self.emit("    movq (%rsp), %rcx");
+                self.emit("    movl %eax, 4(%rcx)");
+
+                // Set overflow_arg_area (offset 8-15 in va_list)
+                // Points to first stack argument at 16(%rbp)
+                self.emit("    leaq 16(%rbp), %rax");
+                self.emit("    movq (%rsp), %rcx");
+                self.emit("    movq %rax, 8(%rcx)");
+
+                // Set reg_save_area (offset 16-23 in va_list)
+                if let Some(offset) = self.current_reg_save_area_offset {
+                    self.emit(&format!("    leaq {}(%rbp), %rax", offset));
+                    self.emit("    movq (%rsp), %rcx");
+                    self.emit("    movq %rax, 16(%rcx)");
+                }
+
+                self.emit("    addq $8, %rsp"); // Pop va_list address
+                self.emit("    xorq %rax, %rax"); // va_start returns void (set rax to 0)
                 Ok(())
             }
             AstNode::VaArg { ap, arg_type } => {
                 // va_arg(ap, type)
-                // For now, implement as a no-op - full implementation requires
-                // extracting the next argument from the va_list structure
-                self.generate_node(ap)?;
-                // TODO: Extract next argument of arg_type from va_list
-                // For now, just return 0
-                self.emit("    xorq %rax, %rax");
+                // Extract the next argument from va_list according to System V AMD64 ABI
+                // Algorithm:
+                //   - For GP types: check if gp_offset < 48, use reg_save_area or overflow_arg_area
+                //   - For FP types: check if fp_offset < 176, use reg_save_area or overflow_arg_area
+
+                // Get address of va_list
+                self.generate_lvalue(ap)?;
+                self.emit("    movq %rax, %r10"); // Save va_list address in r10
+
+                let is_float = self.is_float_type(arg_type);
+
+                if is_float {
+                    // Float/double argument - use fp_offset
+                    // Load fp_offset
+                    self.emit("    movl 4(%r10), %eax"); // fp_offset is at offset 4
+                    self.emit("    cmpl $176, %eax");     // Check if fp_offset < 176
+                    let use_stack_label = self.next_label();
+                    let done_label = self.next_label();
+                    self.emit(&format!("    jge {}", use_stack_label)); // If >= 176, use stack
+
+                    // Use register save area
+                    self.emit("    movq 16(%r10), %rcx");  // Load reg_save_area pointer
+                    self.emit("    addq %rax, %rcx");      // Add fp_offset
+                    self.emit("    movsd (%rcx), %xmm0");  // Load double from register save area
+                    self.emit("    addl $16, %eax");       // Increment fp_offset by 16
+                    self.emit("    movl %eax, 4(%r10)");   // Store updated fp_offset
+                    self.emit("    subq $8, %rsp");
+                    self.emit("    movsd %xmm0, (%rsp)");
+                    self.emit("    movq (%rsp), %rax");    // Move to rax for return
+                    self.emit("    addq $8, %rsp");
+                    self.emit(&format!("    jmp {}", done_label));
+
+                    // Use stack (overflow area)
+                    self.emit(&format!("{}:", use_stack_label));
+                    self.emit("    movq 8(%r10), %rcx");   // Load overflow_arg_area pointer
+                    self.emit("    movsd (%rcx), %xmm0");  // Load double from stack
+                    self.emit("    addq $8, %rcx");        // Increment overflow_arg_area by 8
+                    self.emit("    movq %rcx, 8(%r10)");   // Store updated overflow_arg_area
+                    self.emit("    subq $8, %rsp");
+                    self.emit("    movsd %xmm0, (%rsp)");
+                    self.emit("    movq (%rsp), %rax");
+                    self.emit("    addq $8, %rsp");
+
+                    self.emit(&format!("{}:", done_label));
+                } else {
+                    // Integer/pointer argument - use gp_offset
+                    // Load gp_offset
+                    self.emit("    movl 0(%r10), %eax"); // gp_offset is at offset 0
+                    self.emit("    cmpl $48, %eax");      // Check if gp_offset < 48
+                    let use_stack_label = self.next_label();
+                    let done_label = self.next_label();
+                    self.emit(&format!("    jge {}", use_stack_label)); // If >= 48, use stack
+
+                    // Use register save area
+                    self.emit("    movq 16(%r10), %rcx");  // Load reg_save_area pointer
+                    self.emit("    addq %rax, %rcx");      // Add gp_offset
+                    self.emit("    movq (%rcx), %rax");    // Load value from register save area
+                    self.emit("    movl 0(%r10), %edx");   // Reload gp_offset
+                    self.emit("    addl $8, %edx");        // Increment gp_offset by 8
+                    self.emit("    movl %edx, 0(%r10)");   // Store updated gp_offset
+                    self.emit(&format!("    jmp {}", done_label));
+
+                    // Use stack (overflow area)
+                    self.emit(&format!("{}:", use_stack_label));
+                    self.emit("    movq 8(%r10), %rcx");   // Load overflow_arg_area pointer
+                    self.emit("    movq (%rcx), %rax");    // Load value from stack
+                    self.emit("    addq $8, %rcx");        // Increment overflow_arg_area by 8
+                    self.emit("    movq %rcx, 8(%r10)");   // Store updated overflow_arg_area
+
+                    self.emit(&format!("{}:", done_label));
+                }
+
                 Ok(())
             }
             AstNode::VaEnd(ap) => {

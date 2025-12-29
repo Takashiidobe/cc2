@@ -4,16 +4,19 @@ int sum_ints(int count, ...) {
     va_start(args, count);
 
     int sum = 0;
-    // Note: va_arg currently returns 0 (stub implementation)
-    // Full implementation would extract actual arguments
-    int val = va_arg(args, int);
-    sum = sum + val;
+    int i = 0;
+    while (i < count) {
+        int val = va_arg(args, int);
+        sum = sum + val;
+        i = i + 1;
+    }
 
     va_end(args);
     return sum;
 }
 
 int main() {
-    int result = sum_ints(2, 10, 20);
-    return 0;
+    // Test: sum_ints(3, 10, 20, 30) should return 60
+    int result = sum_ints(3, 10, 20, 30);
+    return result; // Should return 60
 }
