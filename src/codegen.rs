@@ -726,6 +726,19 @@ impl CodeGenerator {
                         self.generate_subtract(left, right)?;
                     }
                     _ => {
+                        // Check for float operations
+                        if self.are_float_operands(left, right) {
+                            match op {
+                                BinOp::Multiply => {
+                                    return self.generate_float_binary_op(left, right, "mulsd");
+                                }
+                                BinOp::Divide => {
+                                    return self.generate_float_binary_op(left, right, "divsd");
+                                }
+                                _ => {}
+                            }
+                        }
+
                         let int_operands = self.are_int_operands(left, right);
                         let unsigned_ops = self.uses_unsigned_ops(left, right);
                         self.generate_node(left)?;
@@ -1414,6 +1427,11 @@ impl CodeGenerator {
     }
 
     fn generate_add(&mut self, left: &AstNode, right: &AstNode) -> Result<(), String> {
+        // Check for float operands first
+        if self.are_float_operands(left, right) {
+            return self.generate_float_binary_op(left, right, "addsd");
+        }
+
         let left_elem = self.pointer_elem_size(left)?;
         let right_elem = self.pointer_elem_size(right)?;
         let int_operands = self.are_int_operands(left, right);
@@ -1446,6 +1464,11 @@ impl CodeGenerator {
     }
 
     fn generate_subtract(&mut self, left: &AstNode, right: &AstNode) -> Result<(), String> {
+        // Check for float operands first
+        if self.are_float_operands(left, right) {
+            return self.generate_float_binary_op(left, right, "subsd");
+        }
+
         let left_elem = self.pointer_elem_size(left)?;
         let right_elem = self.pointer_elem_size(right)?;
         let int_operands = self.are_int_operands(left, right);
@@ -1548,6 +1571,41 @@ impl CodeGenerator {
             return Err("Shift operands must be integers".to_string());
         }
         Ok(self.promote_integer_type(&left_ty))
+    }
+
+    fn is_float_type(&self, ty: &Type) -> bool {
+        matches!(ty, Type::Float | Type::Double)
+    }
+
+    fn are_float_operands(&self, left: &AstNode, right: &AstNode) -> bool {
+        match (self.expr_type(left), self.expr_type(right)) {
+            (Ok(left_ty), Ok(right_ty)) => {
+                self.is_float_type(&left_ty) || self.is_float_type(&right_ty)
+            }
+            _ => false,
+        }
+    }
+
+    fn generate_float_binary_op(&mut self, left: &AstNode, right: &AstNode, instruction: &str) -> Result<(), String> {
+        // Generate left operand (result in xmm0)
+        self.generate_node(left)?;
+        // Save xmm0 to stack
+        self.emit("    subq $8, %rsp");
+        self.emit("    movsd %xmm0, (%rsp)");
+
+        // Generate right operand (result in xmm0)
+        self.generate_node(right)?;
+        // Move right to xmm1
+        self.emit("    movsd %xmm0, %xmm1");
+
+        // Restore left to xmm0
+        self.emit("    movsd (%rsp), %xmm0");
+        self.emit("    addq $8, %rsp");
+
+        // Perform operation: instruction xmm1, xmm0
+        self.emit(&format!("    {} %xmm1, %xmm0", instruction));
+
+        Ok(())
     }
 
     fn is_integer_type(&self, ty: &Type) -> bool {
@@ -2361,6 +2419,7 @@ impl CodeGenerator {
     fn expr_type(&self, expr: &AstNode) -> Result<Type, String> {
         match expr {
             AstNode::IntLiteral(_) => Ok(Type::Int),
+            AstNode::FloatLiteral(_) => Ok(Type::Double),
             AstNode::CharLiteral(_) => Ok(Type::Char),
             AstNode::Variable(name) => {
                 // Check if it's a global variable first
