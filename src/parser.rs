@@ -57,6 +57,8 @@ impl Parser {
         // Check for storage class specifiers and type qualifiers
         let mut is_extern = false;
         let mut is_static = false;
+        let mut is_auto = false;
+        let mut is_register = false;
         let mut is_const = false;
         let mut is_volatile = false;
 
@@ -70,6 +72,14 @@ impl Parser {
                 Token::Static if !is_static => {
                     self.advance();
                     is_static = true;
+                }
+                Token::Auto if !is_auto => {
+                    self.advance();
+                    is_auto = true;
+                }
+                Token::Register if !is_register => {
+                    self.advance();
+                    is_register = true;
                 }
                 Token::Const if !is_const => {
                     self.advance();
@@ -110,6 +120,8 @@ impl Parser {
                     name,
                     is_extern,
                     is_static,
+                    is_auto,
+                    is_register,
                     is_const,
                     is_volatile,
                 )
@@ -168,7 +180,7 @@ impl Parser {
         var_type: Type,
         name: String,
     ) -> Result<AstNode, String> {
-        self.parse_global_variable_with_storage(var_type, name, false, false, false, false)
+        self.parse_global_variable_with_storage(var_type, name, false, false, false, false, false, false)
     }
 
     fn parse_global_variable_with_storage(
@@ -177,6 +189,8 @@ impl Parser {
         name: String,
         is_extern: bool,
         is_static: bool,
+        is_auto: bool,
+        is_register: bool,
         is_const: bool,
         is_volatile: bool,
     ) -> Result<AstNode, String> {
@@ -207,6 +221,8 @@ impl Parser {
             init,
             is_extern,
             is_static,
+            is_auto,
+            is_register,
             is_const,
             is_volatile,
         })
@@ -447,6 +463,8 @@ impl Parser {
             | Token::Void
             | Token::VaList
             | Token::Static
+            | Token::Auto
+            | Token::Register
             | Token::Const
             | Token::Volatile => self.parse_var_decl(),
             Token::Identifier(name) if self.type_aliases.contains_key(name) => {
@@ -471,6 +489,8 @@ impl Parser {
     fn parse_var_decl(&mut self) -> Result<AstNode, String> {
         // Check for storage class and qualifiers
         let mut is_static = false;
+        let mut is_auto = false;
+        let mut is_register = false;
         let mut is_const = false;
         let mut is_volatile = false;
 
@@ -480,6 +500,14 @@ impl Parser {
                 Token::Static if !is_static => {
                     self.advance();
                     is_static = true;
+                }
+                Token::Auto if !is_auto => {
+                    self.advance();
+                    is_auto = true;
+                }
+                Token::Register if !is_register => {
+                    self.advance();
+                    is_register = true;
                 }
                 Token::Const if !is_const => {
                     self.advance();
@@ -531,6 +559,8 @@ impl Parser {
             init,
             is_extern: false,
             is_static,
+            is_auto,
+            is_register,
             is_const,
             is_volatile,
         })
@@ -612,7 +642,26 @@ impl Parser {
         let init = if self.current_token() == &Token::Semicolon {
             self.advance();
             None
-        } else if self.current_token() == &Token::Int {
+        } else if matches!(
+            self.current_token(),
+            Token::Int
+                | Token::Char
+                | Token::Unsigned
+                | Token::Short
+                | Token::Long
+                | Token::Float
+                | Token::Double
+                | Token::Struct
+                | Token::Union
+                | Token::Enum
+                | Token::Void
+                | Token::VaList
+                | Token::Static
+                | Token::Auto
+                | Token::Register
+                | Token::Const
+                | Token::Volatile
+        ) {
             let decl = self.parse_var_decl()?;
             Some(Box::new(decl))
         } else {

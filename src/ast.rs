@@ -53,6 +53,8 @@ pub enum AstNode {
         init: Option<Box<AstNode>>,
         is_extern: bool,
         is_static: bool,
+        is_auto: bool,
+        is_register: bool,
         is_const: bool,
         is_volatile: bool,
     },

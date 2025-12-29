@@ -567,6 +567,7 @@ impl CodeGenerator {
                 is_static,
                 is_const,
                 is_volatile,
+                ..
             } => {
                 // Handle static local variables differently - allocate in .data/.bss, not on stack
                 if *is_static {
@@ -2722,6 +2723,7 @@ impl CodeGenerator {
                     is_static,
                     is_const,
                     is_volatile,
+                    ..
                 } = item
                 {
                     // If variable already exists and new declaration is extern, skip it
@@ -2774,6 +2776,7 @@ impl CodeGenerator {
                 is_static,
                 is_const,
                 is_volatile,
+                ..
             } => {
                 if *is_static {
                     self.global_variables.insert(
