@@ -166,47 +166,58 @@ impl CodeGenerator {
 
                 let mut int_idx = 0;
                 let mut float_idx = 0;
+                let mut stack_param_offset = 16; // Parameters 7+ start at 16(%rbp)
                 for param in params.iter() {
-                    let symbol = self.symbol_table.get_variable(&param.name).unwrap();
+                    let local_offset = self.symbol_table.get_variable(&param.name).unwrap().stack_offset;
 
                     if self.is_float_type(&param.param_type) {
-                        // Float parameter - use xmm registers
+                        // Float parameter - use xmm registers or stack
                         if float_idx < param_regs_xmm.len() {
                             self.emit(&format!(
                                 "    movsd {}, {}(%rbp)",
-                                param_regs_xmm[float_idx], symbol.stack_offset
+                                param_regs_xmm[float_idx], local_offset
                             ));
+                        } else {
+                            // Parameter is on stack - copy from incoming position to local slot
+                            self.emit(&format!("    movsd {}(%rbp), %xmm0", stack_param_offset));
+                            self.emit(&format!("    movsd %xmm0, {}(%rbp)", local_offset));
+                            stack_param_offset += 8;
                         }
                         float_idx += 1;
                     } else {
-                        // Integer parameter - use general purpose registers
+                        // Integer parameter - use general purpose registers or stack
                         if int_idx < param_regs_64.len() {
                             if matches!(param.param_type, Type::Int | Type::UInt) {
                                 self.emit(&format!(
                                     "    movl {}, {}(%rbp)",
-                                    param_regs_32[int_idx], symbol.stack_offset
+                                    param_regs_32[int_idx], local_offset
                                 ));
                             } else if matches!(param.param_type, Type::UShort | Type::Short) {
                                 self.emit(&format!(
                                     "    movw {}, {}(%rbp)",
-                                    param_regs_16[int_idx], symbol.stack_offset
+                                    param_regs_16[int_idx], local_offset
                                 ));
                             } else if matches!(param.param_type, Type::Char | Type::UChar) {
                                 self.emit(&format!(
                                     "    movb {}, {}(%rbp)",
-                                    param_regs_8[int_idx], symbol.stack_offset
+                                    param_regs_8[int_idx], local_offset
                                 ));
                             } else if matches!(param.param_type, Type::Long) {
                                 self.emit(&format!(
                                     "    movq {}, {}(%rbp)",
-                                    param_regs_64[int_idx], symbol.stack_offset
+                                    param_regs_64[int_idx], local_offset
                                 ));
                             } else {
                                 self.emit(&format!(
                                     "    movq {}, {}(%rbp)",
-                                    param_regs_64[int_idx], symbol.stack_offset
+                                    param_regs_64[int_idx], local_offset
                                 ));
                             }
+                        } else {
+                            // Parameter is on stack - copy from incoming position to local slot
+                            self.emit(&format!("    movq {}(%rbp), %rax", stack_param_offset));
+                            self.emit(&format!("    movq %rax, {}(%rbp)", local_offset));
+                            stack_param_offset += 8;
                         }
                         int_idx += 1;
                     }
@@ -716,19 +727,33 @@ impl CodeGenerator {
                     }
                 }
 
-                // Pop arguments into appropriate registers in reverse order
+                // Pop/move arguments: register args go into registers, stack args stay on stack
+                let mut stack_args_count = 0;
                 for (is_float, idx) in arg_info.iter().rev() {
                     if *is_float {
                         if *idx < arg_regs_xmm.len() {
                             self.emit(&format!("    movsd (%rsp), {}", arg_regs_xmm[*idx]));
                             self.emit("    addq $8, %rsp");
+                        } else {
+                            // This argument stays on stack
+                            stack_args_count += 1;
                         }
-                    } else if *idx < arg_regs.len() {
-                        self.emit(&format!("    popq {}", arg_regs[*idx]));
+                    } else {
+                        if *idx < arg_regs.len() {
+                            self.emit(&format!("    popq {}", arg_regs[*idx]));
+                        } else {
+                            // This argument stays on stack
+                            stack_args_count += 1;
+                        }
                     }
                 }
 
                 self.emit(&format!("    call {}", name));
+
+                // Clean up stack arguments if any
+                if stack_args_count > 0 {
+                    self.emit(&format!("    addq ${}, %rsp", stack_args_count * 8));
+                }
 
                 Ok(())
             }
