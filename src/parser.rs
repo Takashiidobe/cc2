@@ -391,6 +391,23 @@ impl Parser {
             return Ok((params, false));
         }
 
+        // Check for single 'void' parameter (means no parameters in C)
+        // But only if it's not part of a function pointer type (void (*func)(...))
+        if self.current_token() == &Token::Void {
+            // Peek ahead to see if this is followed by close paren
+            let saved_pos = self.position;
+            self.advance();
+            let next_is_close_paren = self.current_token() == &Token::CloseParen;
+            self.position = saved_pos;
+
+            if next_is_close_paren {
+                // This is a single void parameter, consume it and return empty list
+                self.advance(); // Skip 'void'
+                return Ok((params, false));
+            }
+            // Otherwise, fall through to normal parameter parsing
+        }
+
         loop {
             // Check for ellipsis (...)
             if self.current_token() == &Token::Ellipsis {
