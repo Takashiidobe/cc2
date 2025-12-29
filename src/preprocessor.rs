@@ -66,6 +66,8 @@ pub struct Preprocessor {
     pub(crate) system_include_paths: Vec<String>,
     /// Current file being processed (for error messages)
     pub(crate) current_file: String,
+    /// Current line number being processed (1-indexed for __LINE__)
+    pub(crate) current_line: usize,
     /// Stack of files being included (for cycle detection)
     pub(crate) include_stack: HashSet<PathBuf>,
 }
@@ -73,7 +75,7 @@ pub struct Preprocessor {
 impl Preprocessor {
     /// Create a new preprocessor with default settings
     pub fn new() -> Self {
-        Preprocessor {
+        let mut preprocessor = Preprocessor {
             macros: HashMap::new(),
             include_paths: Vec::new(),
             system_include_paths: vec![
@@ -81,18 +83,111 @@ impl Preprocessor {
                 "/usr/local/include".to_string(),
             ],
             current_file: "<input>".to_string(),
+            current_line: 1,
             include_stack: HashSet::new(),
-        }
+        };
+        preprocessor.init_predefined_macros();
+        preprocessor
     }
 
     /// Create a new preprocessor without standard include paths
     pub fn new_no_std() -> Self {
-        Preprocessor {
+        let mut preprocessor = Preprocessor {
             macros: HashMap::new(),
             include_paths: Vec::new(),
             system_include_paths: Vec::new(),
             current_file: "<input>".to_string(),
+            current_line: 1,
             include_stack: HashSet::new(),
+        };
+        preprocessor.init_predefined_macros();
+        preprocessor
+    }
+
+    /// Initialize predefined macros (__STDC__, __DATE__, __TIME__, etc.)
+    fn init_predefined_macros(&mut self) {
+        // __STDC__ = 1 (indicates C standard conformance)
+        self.macros.insert(
+            "__STDC__".to_string(),
+            MacroDef::Object("1".to_string()),
+        );
+
+        // __STDC_VERSION__ = 201112L (C11)
+        self.macros.insert(
+            "__STDC_VERSION__".to_string(),
+            MacroDef::Object("201112L".to_string()),
+        );
+
+        // __STDC_HOSTED__ = 1 (hosted implementation)
+        self.macros.insert(
+            "__STDC_HOSTED__".to_string(),
+            MacroDef::Object("1".to_string()),
+        );
+
+        // __DATE__ and __TIME__ - compilation timestamp
+        let now = std::time::SystemTime::now();
+        if let Ok(duration) = now.duration_since(std::time::UNIX_EPOCH) {
+            let secs = duration.as_secs();
+
+            // Convert to date/time
+            // This is a simple implementation - not handling timezones properly
+            let days_since_epoch = secs / 86400;
+            let seconds_today = secs % 86400;
+
+            // Calculate date (simplified - assumes 365.25 days/year starting from 1970)
+            let mut year = 1970;
+            let mut remaining_days = days_since_epoch;
+            loop {
+                let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+                    366
+                } else {
+                    365
+                };
+                if remaining_days < days_in_year {
+                    break;
+                }
+                remaining_days -= days_in_year;
+                year += 1;
+            }
+
+            // Calculate month and day
+            let days_in_months = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+                [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            } else {
+                [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            };
+
+            let mut month = 0;
+            let mut day = remaining_days + 1;
+            for (m, &days) in days_in_months.iter().enumerate() {
+                if day <= days {
+                    month = m;
+                    break;
+                }
+                day -= days;
+            }
+
+            let month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            let date_str = format!("\"{} {:2} {}\"", month_names[month], day, year);
+
+            // __DATE__ = "Mmm dd yyyy"
+            self.macros.insert(
+                "__DATE__".to_string(),
+                MacroDef::Object(date_str),
+            );
+
+            // Calculate time
+            let hour = seconds_today / 3600;
+            let minute = (seconds_today % 3600) / 60;
+            let second = seconds_today % 60;
+            let time_str = format!("\"{:02}:{:02}:{:02}\"", hour, minute, second);
+
+            // __TIME__ = "hh:mm:ss"
+            self.macros.insert(
+                "__TIME__".to_string(),
+                MacroDef::Object(time_str),
+            );
         }
     }
 
@@ -188,6 +283,9 @@ impl Preprocessor {
         while line_num < lines.len() {
             let line = lines[line_num];
             let trimmed = line.trim_start();
+
+            // Update current line for __LINE__ macro (1-indexed)
+            self.current_line = line_num + 1;
 
             if trimmed.starts_with('#') {
                 // This is a preprocessor directive
@@ -1585,6 +1683,17 @@ impl Preprocessor {
             if let Some((before, ident, after)) = self.find_next_identifier(remaining) {
                 // Add everything before the identifier
                 result.push_str(before);
+
+                // Handle special predefined macros __FILE__ and __LINE__
+                if ident == "__FILE__" {
+                    result.push_str(&format!("\"{}\"", self.current_file));
+                    remaining = after;
+                    continue;
+                } else if ident == "__LINE__" {
+                    result.push_str(&format!("{}", self.current_line));
+                    remaining = after;
+                    continue;
+                }
 
                 // Check if this identifier is a macro
                 if let Some(macro_def) = self.macros.get(ident) {
