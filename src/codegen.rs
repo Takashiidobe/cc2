@@ -1511,6 +1511,35 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", field_info.offset));
                 Ok(())
             }
+            AstNode::VaStart { ap, last_param } => {
+                // va_start(ap, last_param)
+                // For now, implement as a no-op - full implementation requires
+                // setting up the va_list structure with register save area pointers
+                // Evaluate both arguments (for correctness) but don't do anything with them
+                self.generate_node(ap)?;
+                self.generate_node(last_param)?;
+                // No-op: just set %rax to 0
+                self.emit("    xorq %rax, %rax");
+                Ok(())
+            }
+            AstNode::VaArg { ap, arg_type } => {
+                // va_arg(ap, type)
+                // For now, implement as a no-op - full implementation requires
+                // extracting the next argument from the va_list structure
+                self.generate_node(ap)?;
+                // TODO: Extract next argument of arg_type from va_list
+                // For now, just return 0
+                self.emit("    xorq %rax, %rax");
+                Ok(())
+            }
+            AstNode::VaEnd(ap) => {
+                // va_end(ap)
+                // This is typically a no-op on x86-64
+                self.generate_node(ap)?;
+                // No-op: nothing to clean up for va_list on x86-64
+                self.emit("    xorq %rax, %rax");
+                Ok(())
+            }
             AstNode::Cast { target_type, expr } => {
                 // Generate code for the expression
                 self.generate_node(expr)?;
@@ -1932,6 +1961,7 @@ impl CodeGenerator {
             Type::Double => Ok(8),
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(0),
+            Type::VaList => Ok(24), // Size of __va_list_tag in System V AMD64 ABI
             Type::Array(elem, len) => Ok(self.type_size(elem)? * (*len as i32)),
             Type::Struct(name) => {
                 let layout = self
@@ -1965,6 +1995,7 @@ impl CodeGenerator {
             Type::Double => Ok(8),
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(1),
+            Type::VaList => Ok(8), // Alignment of __va_list_tag in System V AMD64 ABI
             Type::Array(elem, _) => self.type_alignment(elem),
             Type::Struct(name) => {
                 let layout = self
@@ -2869,6 +2900,9 @@ impl CodeGenerator {
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
+            AstNode::VaStart { .. } => Ok(Type::Void), // va_start returns void
+            AstNode::VaArg { arg_type, .. } => Ok(arg_type.clone()), // va_arg returns the specified type
+            AstNode::VaEnd(_) => Ok(Type::Void), // va_end returns void
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }

@@ -293,6 +293,10 @@ impl Parser {
                 self.advance();
                 Type::Void
             }
+            Token::VaList => {
+                self.advance();
+                Type::VaList
+            }
             Token::Float => {
                 self.advance();
                 Type::Float
@@ -441,6 +445,7 @@ impl Parser {
             | Token::Union
             | Token::Enum
             | Token::Void
+            | Token::VaList
             | Token::Static
             | Token::Const
             | Token::Volatile => self.parse_var_decl(),
@@ -1114,6 +1119,9 @@ impl Parser {
             }
             Token::Sizeof => self.parse_sizeof(),
             Token::Offsetof => self.parse_offsetof(),
+            Token::VaStart => self.parse_va_start(),
+            Token::VaArg => self.parse_va_arg(),
+            Token::VaEnd => self.parse_va_end(),
             Token::OpenParen => {
                 // Check if this is a cast expression: (type)expr
                 if self.is_type_start(self.peek(1)) {
@@ -1585,6 +1593,58 @@ impl Parser {
             struct_type,
             member,
         })
+    }
+
+    fn parse_va_start(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::VaStart)?;
+        self.expect(Token::OpenParen)?;
+
+        // Parse the va_list argument
+        let ap = self.parse_assignment()?;
+
+        self.expect(Token::Comma)?;
+
+        // Parse the last_param argument
+        let last_param = self.parse_assignment()?;
+
+        self.expect(Token::CloseParen)?;
+
+        Ok(AstNode::VaStart {
+            ap: Box::new(ap),
+            last_param: Box::new(last_param),
+        })
+    }
+
+    fn parse_va_arg(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::VaArg)?;
+        self.expect(Token::OpenParen)?;
+
+        // Parse the va_list argument
+        let ap = self.parse_assignment()?;
+
+        self.expect(Token::Comma)?;
+
+        // Parse the type argument
+        let arg_type = self.parse_type()?;
+
+        self.expect(Token::CloseParen)?;
+
+        Ok(AstNode::VaArg {
+            ap: Box::new(ap),
+            arg_type,
+        })
+    }
+
+    fn parse_va_end(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::VaEnd)?;
+        self.expect(Token::OpenParen)?;
+
+        // Parse the va_list argument
+        let ap = self.parse_assignment()?;
+
+        self.expect(Token::CloseParen)?;
+
+        Ok(AstNode::VaEnd(Box::new(ap)))
     }
 
     fn is_at_end(&self) -> bool {

@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "int at 2:1\nIdentifier(sum_ints) at 2:5\n( at 2:13\nint at 2:14\nIdentifier(count) at 2:18\n, at 2:23\n... at 2:25\n) at 2:28\n; at 2:29\nint at 4:1\nIdentifier(main) at 4:5\n( at 4:9\n) at 4:10\n{ at 4:12\nreturn at 6:5\nIntLiteral(0) at 6:12\n; at 6:13\n} at 7:1\nEOF at 8:1\n"
+stdout: "int at 2:1\nIdentifier(sum_ints) at 2:5\n( at 2:13\nint at 2:14\nIdentifier(count) at 2:18\n, at 2:23\n... at 2:25\n) at 2:28\n{ at 2:30\nva_list at 3:5\nIdentifier(args) at 3:13\n; at 3:17\nva_start at 4:5\n( at 4:13\nIdentifier(args) at 4:14\n, at 4:18\nIdentifier(count) at 4:20\n) at 4:25\n; at 4:26\nint at 6:5\nIdentifier(sum) at 6:9\n= at 6:13\nIntLiteral(0) at 6:15\n; at 6:16\nint at 9:5\nIdentifier(val) at 9:9\n= at 9:13\nva_arg at 9:15\n( at 9:21\nIdentifier(args) at 9:22\n, at 9:26\nint at 9:28\n) at 9:31\n; at 9:32\nIdentifier(sum) at 10:5\n= at 10:9\nIdentifier(sum) at 10:11\n+ at 10:15\nIdentifier(val) at 10:17\n; at 10:20\nva_end at 12:5\n( at 12:11\nIdentifier(args) at 12:12\n) at 12:16\n; at 12:17\nreturn at 13:5\nIdentifier(sum) at 13:12\n; at 13:15\n} at 14:1\nint at 16:1\nIdentifier(main) at 16:5\n( at 16:9\n) at 16:10\n{ at 16:12\nint at 17:5\nIdentifier(result) at 17:9\n= at 17:16\nIdentifier(sum_ints) at 17:18\n( at 17:26\nIntLiteral(2) at 17:27\n, at 17:28\nIntLiteral(10) at 17:30\n, at 17:32\nIntLiteral(20) at 17:34\n) at 17:36\n; at 17:37\nreturn at 18:5\nIntLiteral(0) at 18:12\n; at 18:13\n} at 19:1\nEOF at 20:1\n"
 stderr: ""
 status: 0
