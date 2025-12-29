@@ -1,0 +1,6 @@
+---
+source: tests/preprocessor.rs
+expression: "&mine"
+---
+stdout: ""
+status: 76

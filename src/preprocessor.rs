@@ -268,6 +268,33 @@ impl Preprocessor {
         result
     }
 
+    /// Handle line continuation (backslash-newline)
+    ///
+    /// According to the C standard, a backslash immediately followed by
+    /// a newline is removed during preprocessing (translation phase 2).
+    /// This allows multi-line macros and directives.
+    fn handle_line_continuation(source: &str) -> String {
+        let mut result = String::new();
+        let chars: Vec<char> = source.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            // Check for backslash-newline sequence
+            if chars[i] == '\\' && i + 1 < chars.len() && chars[i + 1] == '\n' {
+                // Skip both the backslash and newline
+                i += 2;
+            } else if chars[i] == '\\' && i + 2 < chars.len() && chars[i + 1] == '\r' && chars[i + 2] == '\n' {
+                // Handle Windows-style line endings (\r\n)
+                i += 3;
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        }
+
+        result
+    }
+
     /// Preprocess source text
     ///
     /// This is the main entry point for preprocessing. It processes all
@@ -275,6 +302,9 @@ impl Preprocessor {
     pub fn preprocess(&mut self, source: &str) -> Result<String, String> {
         // First, remove all comments
         let source = Self::remove_comments(source);
+
+        // Second, handle line continuation (backslash-newline)
+        let source = Self::handle_line_continuation(&source);
 
         let mut output = String::new();
         let lines: Vec<&str> = source.lines().collect();
