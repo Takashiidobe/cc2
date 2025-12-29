@@ -81,6 +81,7 @@ impl Preprocessor {
             macros: HashMap::new(),
             include_paths: Vec::new(),
             system_include_paths: vec![
+                "include".to_string(),  // Our C standard library headers
                 "/usr/include".to_string(),
                 "/usr/local/include".to_string(),
             ],
