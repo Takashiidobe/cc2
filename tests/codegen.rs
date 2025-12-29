@@ -1,4 +1,3 @@
-use assert_cmd::cargo::CommandCargoExt;
 use insta::assert_yaml_snapshot;
 use insta_cmd::Command;
 use serde::Serialize;
@@ -57,7 +56,7 @@ fn run_case(path: &Path) -> datatest_stable::Result<()> {
     let exe_ref = tmp.path().join(format!("{stem}.ref"));
 
     // 1) Your compiler: codegen -> .S, then cc -> exe_mine
-    let mut bin = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
+    let mut bin = Command::new(assert_cmd::cargo::cargo_bin!(env!("CARGO_PKG_NAME")));
     let codegen_out = bin
         .arg(path)
         .arg("-o")

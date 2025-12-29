@@ -7,6 +7,16 @@ pub struct Parser {
     type_aliases: std::collections::HashMap<String, Type>,
 }
 
+#[derive(Clone, Copy)]
+struct StorageClassSpecifiers {
+    is_extern: bool,
+    is_static: bool,
+    is_auto: bool,
+    is_register: bool,
+    is_const: bool,
+    is_volatile: bool,
+}
+
 impl Parser {
     pub fn new(tokens: Vec<LocatedToken>) -> Self {
         Parser {
@@ -94,6 +104,14 @@ impl Parser {
         }
 
         let var_type = self.parse_type()?;
+        let storage = StorageClassSpecifiers {
+            is_extern,
+            is_static,
+            is_auto,
+            is_register,
+            is_const,
+            is_volatile,
+        };
 
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
@@ -115,40 +133,13 @@ impl Parser {
             }
             Token::Semicolon | Token::Equals | Token::OpenBracket => {
                 // It's a global variable
-                self.parse_global_variable_with_storage(
-                    var_type,
-                    name,
-                    is_extern,
-                    is_static,
-                    is_auto,
-                    is_register,
-                    is_const,
-                    is_volatile,
-                )
+                self.parse_global_variable_with_storage(var_type, name, storage)
             }
             _ => Err(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
                 self.current_token()
             )),
         }
-    }
-
-    fn parse_function(&mut self) -> Result<AstNode, String> {
-        let return_type = self.parse_type()?;
-
-        let name = match self.current_token() {
-            Token::Identifier(s) => s.clone(),
-            _ => {
-                return Err(format!(
-                    "Expected function name, got {:?} at {}",
-                    self.current_token(),
-                    self.current_location()
-                ));
-            }
-        };
-        self.advance();
-
-        self.parse_function_rest(return_type, name)
     }
 
     fn parse_function_rest(&mut self, return_type: Type, name: String) -> Result<AstNode, String> {
@@ -175,23 +166,21 @@ impl Parser {
         })
     }
 
-    fn parse_global_variable(&mut self, var_type: Type, name: String) -> Result<AstNode, String> {
-        self.parse_global_variable_with_storage(
-            var_type, name, false, false, false, false, false, false,
-        )
-    }
-
     fn parse_global_variable_with_storage(
         &mut self,
         mut var_type: Type,
         name: String,
-        is_extern: bool,
-        is_static: bool,
-        is_auto: bool,
-        is_register: bool,
-        is_const: bool,
-        is_volatile: bool,
+        storage: StorageClassSpecifiers,
     ) -> Result<AstNode, String> {
+        let StorageClassSpecifiers {
+            is_extern,
+            is_static,
+            is_auto,
+            is_register,
+            is_const,
+            is_volatile,
+        } = storage;
+
         // Handle array type suffix if present
         var_type = self.parse_array_type_suffix(var_type)?;
 

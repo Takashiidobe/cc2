@@ -14,8 +14,6 @@ struct GlobalVariable {
     init: Option<AstNode>,
     is_extern: bool,
     is_static: bool,
-    is_const: bool,
-    is_volatile: bool,
 }
 
 pub struct CodeGenerator {
@@ -261,11 +259,6 @@ impl CodeGenerator {
                                 self.emit(&format!(
                                     "    movb {}, {}(%rbp)",
                                     param_regs_8[int_idx], local_offset
-                                ));
-                            } else if matches!(param.param_type, Type::Long) {
-                                self.emit(&format!(
-                                    "    movq {}, {}(%rbp)",
-                                    param_regs_64[int_idx], local_offset
                                 ));
                             } else {
                                 self.emit(&format!(
@@ -593,8 +586,6 @@ impl CodeGenerator {
                 init,
                 is_extern: _,
                 is_static,
-                is_const,
-                is_volatile,
                 ..
             } => {
                 // Handle static local variables differently - allocate in .data/.bss, not on stack
@@ -608,8 +599,6 @@ impl CodeGenerator {
                             init: init.clone().map(|n| (*n).clone()),
                             is_extern: false,
                             is_static: true,
-                            is_const: *is_const,
-                            is_volatile: *is_volatile,
                         },
                     );
 
@@ -681,8 +670,6 @@ impl CodeGenerator {
                                     self.emit(&format!("    movw %ax, {}(%rbp)", offset));
                                 } else if matches!(var_type, Type::Char | Type::UChar) {
                                     self.emit(&format!("    movb %al, {}(%rbp)", offset));
-                                } else if matches!(var_type, Type::Long | Type::ULong) {
-                                    self.emit(&format!("    movq %rax, {}(%rbp)", offset));
                                 } else {
                                     self.emit(&format!("    movq %rax, {}(%rbp)", offset));
                                 }
@@ -730,8 +717,6 @@ impl CodeGenerator {
                     self.emit("    movw %ax, (%rcx)");
                 } else if matches!(target_type, Type::Char | Type::UChar) {
                     self.emit("    movb %al, (%rcx)");
-                } else if matches!(target_type, Type::Long | Type::ULong) {
-                    self.emit("    movq %rax, (%rcx)");
                 } else {
                     self.emit("    movq %rax, (%rcx)");
                 }
@@ -2605,8 +2590,6 @@ impl CodeGenerator {
                     self.emit(&format!("    movw %ax, {}(%rbp)", elem_offset));
                 } else if matches!(elem_type, Type::Char | Type::UChar) {
                     self.emit(&format!("    movb %al, {}(%rbp)", elem_offset));
-                } else if matches!(elem_type, Type::Long | Type::ULong) {
-                    self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
                 } else {
                     self.emit(&format!("    movq %rax, {}(%rbp)", elem_offset));
                 }
@@ -2693,8 +2676,6 @@ impl CodeGenerator {
                 self.emit(&format!("    movw $0, {}(%rbp)", offset));
             } else if matches!(elem_type, Type::Char | Type::UChar) {
                 self.emit(&format!("    movb $0, {}(%rbp)", offset));
-            } else if matches!(elem_type, Type::Long | Type::ULong) {
-                self.emit(&format!("    movq $0, {}(%rbp)", offset));
             } else {
                 self.emit(&format!("    movq $0, {}(%rbp)", offset));
             }
@@ -2880,8 +2861,6 @@ impl CodeGenerator {
                     init,
                     is_extern,
                     is_static,
-                    is_const,
-                    is_volatile,
                     ..
                 } = item
                 {
@@ -2898,8 +2877,6 @@ impl CodeGenerator {
                             init: init.as_ref().map(|n| (**n).clone()),
                             is_extern: *is_extern,
                             is_static: *is_static,
-                            is_const: *is_const,
-                            is_volatile: *is_volatile,
                         },
                     );
                 }
@@ -2948,8 +2925,6 @@ impl CodeGenerator {
                 init,
                 is_extern: _,
                 is_static,
-                is_const,
-                is_volatile,
                 ..
             } => {
                 if *is_static {
@@ -2960,8 +2935,6 @@ impl CodeGenerator {
                             init: init.as_ref().map(|n| (**n).clone()),
                             is_extern: false,
                             is_static: true,
-                            is_const: *is_const,
-                            is_volatile: *is_volatile,
                         },
                     );
                 }

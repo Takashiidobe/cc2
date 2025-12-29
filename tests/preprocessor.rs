@@ -1,4 +1,3 @@
-use assert_cmd::cargo::cargo_bin;
 use insta::assert_yaml_snapshot;
 use serde::Serialize;
 use std::{
@@ -64,7 +63,7 @@ fn run_case(path: &Path) -> datatest_stable::Result<()> {
         .expect("test file should have parent directory");
 
     // 1) Your compiler: codegen -> .S, then cc -> exe_mine
-    let codegen_out = StdCommand::new(cargo_bin!(env!("CARGO_PKG_NAME")))
+    let codegen_out = StdCommand::new(assert_cmd::cargo::cargo_bin!(env!("CARGO_PKG_NAME")))
         .arg(path)
         .arg("-o")
         .arg(&asm_path)

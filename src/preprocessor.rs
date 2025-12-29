@@ -354,15 +354,12 @@ impl Preprocessor {
         let line = lines[line_num];
         let trimmed = line.trim_start();
 
-        if !trimmed.starts_with('#') {
-            return Err(format!(
-                "Expected preprocessor directive at line {}",
-                line_num + 1
-            ));
-        }
+        let after_hash = trimmed
+            .strip_prefix('#')
+            .ok_or_else(|| format!("Expected preprocessor directive at line {}", line_num + 1))?;
 
         // Extract directive name (first word after #)
-        let after_hash = trimmed[1..].trim_start();
+        let after_hash = after_hash.trim_start();
         let directive_name = after_hash.split_whitespace().next().unwrap_or("");
 
         match directive_name {
@@ -481,14 +478,14 @@ impl Preprocessor {
         }
 
         // Check for quotes: #include "file.h"
-        if rest.starts_with('"') {
-            let end = rest[1..].find('"').ok_or_else(|| {
+        if let Some(rest) = rest.strip_prefix('"') {
+            let end = rest.find('"').ok_or_else(|| {
                 format!(
                     "Missing closing '\"' in include directive at line {}",
                     line_num + 1
                 )
             })?;
-            let filename = rest[1..end + 1].to_string();
+            let filename = rest[..end].to_string();
             return Ok((filename, false));
         }
 
@@ -879,17 +876,25 @@ impl Preprocessor {
 
         // Extract the directive and macro name
         let directive_name = if is_ifndef { "ifndef" } else { "ifdef" };
-        let after_hash = trimmed[1..].trim_start(); // Skip '#'
-
-        if !after_hash.starts_with(directive_name) {
-            return Err(format!(
+        let after_hash = trimmed.strip_prefix('#').ok_or_else(|| {
+            format!(
                 "Expected #{} directive at line {}",
                 directive_name,
                 line_num + 1
-            ));
-        }
+            )
+        })?;
+        let after_hash = after_hash.trim_start();
 
-        let rest = after_hash[directive_name.len()..].trim();
+        let rest = after_hash
+            .strip_prefix(directive_name)
+            .ok_or_else(|| {
+                format!(
+                    "Expected #{} directive at line {}",
+                    directive_name,
+                    line_num + 1
+                )
+            })?
+            .trim();
         if rest.is_empty() {
             return Err(format!(
                 "Missing macro name in #{} at line {}",
@@ -926,108 +931,21 @@ impl Preprocessor {
         Ok((end_line, block_output))
     }
 
-    /// Process a conditional block when condition is true
-    fn process_conditional_block(
-        &mut self,
-        lines: &[&str],
-        start_line: usize,
-        _is_active: bool,
-    ) -> Result<(usize, String), String> {
-        let mut output = String::new();
-        let mut current_line = start_line;
-
-        while current_line < lines.len() {
-            let line = lines[current_line];
-            let trimmed = line.trim_start();
-
-            if trimmed.starts_with('#') {
-                let after_hash = trimmed[1..].trim_start();
-
-                if after_hash.starts_with("endif") {
-                    // This is our matching #endif
-                    return Ok((current_line + 1, output));
-                } else if after_hash.starts_with("ifdef") || after_hash.starts_with("ifndef") {
-                    // Process the nested conditional - it will handle its own #endif
-                    let (new_line, directive_output) =
-                        self.process_directive(lines, current_line)?;
-                    current_line = new_line;
-                    output.push_str(&directive_output);
-                } else {
-                    // Other directive - process normally
-                    let (new_line, directive_output) =
-                        self.process_directive(lines, current_line)?;
-                    current_line = new_line;
-                    output.push_str(&directive_output);
-                }
-            } else {
-                // Regular line - expand macros
-                let expanded = self.expand_macros(line)?;
-                output.push_str(&expanded);
-                output.push('\n');
-                current_line += 1;
-            }
-        }
-
-        Err(format!(
-            "Missing #endif for conditional starting at line {}",
-            start_line
-        ))
-    }
-
-    /// Skip a conditional block when condition is false
-    fn skip_conditional_block(
-        &mut self,
-        lines: &[&str],
-        start_line: usize,
-    ) -> Result<(usize, String), String> {
-        let mut current_line = start_line;
-        let mut nesting_level = 0;
-
-        while current_line < lines.len() {
-            let line = lines[current_line];
-            let trimmed = line.trim_start();
-
-            if trimmed.starts_with('#') {
-                let after_hash = trimmed[1..].trim_start();
-
-                // Check for nested conditionals
-                if after_hash.starts_with("ifdef")
-                    || after_hash.starts_with("ifndef")
-                    || after_hash.starts_with("if")
-                {
-                    nesting_level += 1;
-                } else if after_hash.starts_with("endif") {
-                    if nesting_level == 0 {
-                        // This is our matching #endif - skip it and return
-                        return Ok((current_line + 1, String::new()));
-                    } else {
-                        nesting_level -= 1;
-                    }
-                }
-            }
-
-            current_line += 1;
-        }
-
-        Err(format!(
-            "Missing #endif for conditional starting at line {}",
-            start_line
-        ))
-    }
-
     /// Process #if directive
     fn process_if(&mut self, lines: &[&str], line_num: usize) -> Result<(usize, String), String> {
         let line = lines[line_num];
         let trimmed = line.trim_start();
 
         // Extract the expression after #if
-        let after_hash = trimmed[1..].trim_start(); // Skip '#'
+        let after_hash = trimmed
+            .strip_prefix('#')
+            .ok_or_else(|| format!("Expected #if directive at line {}", line_num + 1))?;
+        let after_hash = after_hash.trim_start();
 
-        if !after_hash.starts_with("if") {
-            return Err(format!("Expected #if directive at line {}", line_num + 1));
-        }
-
-        let rest = after_hash[2..].trim(); // Skip "if"
+        let rest = after_hash
+            .strip_prefix("if")
+            .ok_or_else(|| format!("Expected #if directive at line {}", line_num + 1))?
+            .trim();
         if rest.is_empty() {
             return Err(format!(
                 "Missing expression in #if at line {}",
@@ -1064,8 +982,8 @@ impl Preprocessor {
             let line = lines[current_line];
             let trimmed = line.trim_start();
 
-            if trimmed.starts_with('#') {
-                let after_hash = trimmed[1..].trim_start();
+            if let Some(after_hash) = trimmed.strip_prefix('#') {
+                let after_hash = after_hash.trim_start();
 
                 if after_hash.starts_with("endif") {
                     // This is our matching #endif
@@ -1077,7 +995,12 @@ impl Preprocessor {
                         return Ok((end_line, output));
                     } else {
                         // Evaluate the #elif condition
-                        let rest = after_hash[4..].trim(); // Skip "elif"
+                        let rest = after_hash
+                            .strip_prefix("elif")
+                            .ok_or_else(|| {
+                                format!("Missing expression in #elif at line {}", current_line + 1)
+                            })?
+                            .trim();
                         if rest.is_empty() {
                             return Err(format!(
                                 "Missing expression in #elif at line {}",
@@ -1162,8 +1085,8 @@ impl Preprocessor {
             let line = lines[current_line];
             let trimmed = line.trim_start();
 
-            if trimmed.starts_with('#') {
-                let after_hash = trimmed[1..].trim_start();
+            if let Some(after_hash) = trimmed.strip_prefix('#') {
+                let after_hash = after_hash.trim_start();
 
                 if after_hash.starts_with("ifdef")
                     || after_hash.starts_with("ifndef")
@@ -1183,7 +1106,12 @@ impl Preprocessor {
                     // Found #elif or #else at our level
                     if after_hash.starts_with("elif") {
                         // Evaluate the elif condition
-                        let rest = after_hash[4..].trim();
+                        let rest = after_hash
+                            .strip_prefix("elif")
+                            .ok_or_else(|| {
+                                format!("Missing expression in #elif at line {}", current_line + 1)
+                            })?
+                            .trim();
                         if rest.is_empty() {
                             return Err(format!(
                                 "Missing expression in #elif at line {}",
@@ -1229,8 +1157,8 @@ impl Preprocessor {
             let line = lines[current_line];
             let trimmed = line.trim_start();
 
-            if trimmed.starts_with('#') {
-                let after_hash = trimmed[1..].trim_start();
+            if let Some(after_hash) = trimmed.strip_prefix('#') {
+                let after_hash = after_hash.trim_start();
 
                 if after_hash.starts_with("ifdef")
                     || after_hash.starts_with("ifndef")
@@ -1268,6 +1196,7 @@ impl Preprocessor {
     /// - Comparison: ==, !=, <, >, <=, >=
     /// - Bitwise: &, |, ^, ~, <<, >>
     /// - Special: defined(NAME) or defined NAME
+    ///
     /// Expand macros in preprocessor expression while preserving defined() syntax
     fn expand_macros_in_expr(&self, expr: &str) -> Result<String, String> {
         let mut result = String::new();

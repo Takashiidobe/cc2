@@ -1,4 +1,3 @@
-use assert_cmd::cargo::CommandCargoExt;
 use insta::assert_yaml_snapshot;
 use insta_cmd::Command;
 use serde::Serialize;
@@ -14,7 +13,7 @@ struct ParseOutput {
 fn run_parse(path: &Path) -> datatest_stable::Result<()> {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
 
-    let mut bin = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
+    let mut bin = Command::new(assert_cmd::cargo::cargo_bin!(env!("CARGO_PKG_NAME")));
     let output = bin
         .arg(path)
         .arg("--parse-only")
