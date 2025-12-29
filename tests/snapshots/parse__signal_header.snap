@@ -1,0 +1,7 @@
+---
+source: tests/parse.rs
+expression: "&result"
+---
+stdout: "Program\n  TypedefDef(sig_atomic_t)\n  Function(raise)\n  Function(signal)\n  Function(main)\n\n"
+stderr: ""
+status: 0
