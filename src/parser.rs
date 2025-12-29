@@ -1208,8 +1208,18 @@ impl Parser {
                 AstNode::CharLiteral(val)
             }
             Token::StringLiteral(s) => {
-                let val = s.clone();
+                // C89 string literal concatenation: adjacent string literals are concatenated
+                let mut val = s.clone();
                 self.advance();
+
+                // Concatenate any adjacent string literals
+                while matches!(self.current_token(), Token::StringLiteral(_)) {
+                    if let Token::StringLiteral(next_s) = self.current_token() {
+                        val.push_str(next_s);
+                        self.advance();
+                    }
+                }
+
                 AstNode::StringLiteral(val)
             }
             Token::Identifier(name) => {
