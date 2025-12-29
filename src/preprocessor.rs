@@ -70,6 +70,8 @@ pub struct Preprocessor {
     pub(crate) current_line: usize,
     /// Stack of files being included (for cycle detection)
     pub(crate) include_stack: HashSet<PathBuf>,
+    /// Files that have #pragma once (should not be re-included)
+    pub(crate) pragma_once_files: HashSet<PathBuf>,
 }
 
 impl Preprocessor {
@@ -85,6 +87,7 @@ impl Preprocessor {
             current_file: "<input>".to_string(),
             current_line: 1,
             include_stack: HashSet::new(),
+            pragma_once_files: HashSet::new(),
         };
         preprocessor.init_predefined_macros();
         preprocessor
@@ -99,6 +102,7 @@ impl Preprocessor {
             current_file: "<input>".to_string(),
             current_line: 1,
             include_stack: HashSet::new(),
+            pragma_once_files: HashSet::new(),
         };
         preprocessor.init_predefined_macros();
         preprocessor
@@ -368,10 +372,7 @@ impl Preprocessor {
             "elif" => Err(format!("Unexpected #elif at line {}", line_num + 1)),
             "error" => self.process_error(after_hash, line_num),
             "warning" => self.process_warning(after_hash, line_num),
-            "pragma" => {
-                // Ignore pragma directives for now
-                Ok((line_num + 1, String::new()))
-            }
+            "pragma" => self.process_pragma(after_hash, line_num),
             "" => {
                 // Empty directive (just #) - ignore
                 Ok((line_num + 1, String::new()))
@@ -411,6 +412,12 @@ impl Preprocessor {
                 line_num + 1,
                 canonical_path.display()
             ));
+        }
+
+        // Check if this file has #pragma once and has already been included
+        if self.pragma_once_files.contains(&canonical_path) {
+            // Skip this file - it has #pragma once and was already processed
+            return Ok((line_num + 1, String::new()));
         }
 
         // Read the file
@@ -758,6 +765,37 @@ impl Preprocessor {
         // For warnings, we could print to stderr and continue, but for now we'll just ignore them
         // TODO: Actually emit warnings to stderr
         eprintln!("warning: #warning at line {}: {}", line_num + 1, message);
+        Ok((line_num + 1, String::new()))
+    }
+
+    /// Process #pragma directive
+    fn process_pragma(
+        &mut self,
+        directive: &str,
+        line_num: usize,
+    ) -> Result<(usize, String), String> {
+        // directive is like "pragma once" or "pragma other_stuff"
+        let after_pragma = directive.trim_start();
+        if !after_pragma.starts_with("pragma") {
+            return Err(format!("Invalid pragma directive at line {}", line_num + 1));
+        }
+
+        let pragma_content = after_pragma[6..].trim(); // Skip "pragma"
+
+        // Check for #pragma once
+        if pragma_content == "once" {
+            // Mark current file as pragma once
+            let current_path = PathBuf::from(&self.current_file);
+            // Canonicalize the path to handle relative paths and symlinks
+            if let Ok(canonical_path) = current_path.canonicalize() {
+                self.pragma_once_files.insert(canonical_path);
+            } else {
+                // If we can't canonicalize, just use the path as-is
+                self.pragma_once_files.insert(current_path);
+            }
+        }
+        // Ignore other pragma directives
+
         Ok((line_num + 1, String::new()))
     }
 
