@@ -2347,10 +2347,35 @@ impl CodeGenerator {
     }
 
     fn register_struct_layout(&mut self, name: &str, fields: &[StructField]) -> Result<(), String> {
-        if self.struct_layouts.contains_key(name) {
-            return Err(format!("Struct '{}' already defined", name));
+        // Check if struct already exists
+        if let Some(existing_layout) = self.struct_layouts.get(name) {
+            // If existing is complete (has fields), error
+            if !existing_layout.fields.is_empty() {
+                return Err(format!("Struct '{}' already defined", name));
+            }
+            // If existing is incomplete (forward declaration)
+            if fields.is_empty() {
+                // New is also incomplete - multiple forward declarations are OK
+                return Ok(());
+            }
+            // New is complete - replace incomplete with complete
+            // (fall through to register the complete definition)
         }
 
+        // If this is a forward declaration (no fields), register with empty layout
+        if fields.is_empty() {
+            self.struct_layouts.insert(
+                name.to_string(),
+                StructLayout {
+                    fields: HashMap::new(),
+                    size: 0,
+                    alignment: 1,
+                },
+            );
+            return Ok(());
+        }
+
+        // This is a complete definition - calculate layout
         let mut offset = 0;
         let mut max_align = 1;
         let mut field_map = HashMap::new();
@@ -2386,10 +2411,35 @@ impl CodeGenerator {
     }
 
     fn register_union_layout(&mut self, name: &str, fields: &[StructField]) -> Result<(), String> {
-        if self.union_layouts.contains_key(name) {
-            return Err(format!("Union '{}' already defined", name));
+        // Check if union already exists
+        if let Some(existing_layout) = self.union_layouts.get(name) {
+            // If existing is complete (has fields), error
+            if !existing_layout.fields.is_empty() {
+                return Err(format!("Union '{}' already defined", name));
+            }
+            // If existing is incomplete (forward declaration)
+            if fields.is_empty() {
+                // New is also incomplete - multiple forward declarations are OK
+                return Ok(());
+            }
+            // New is complete - replace incomplete with complete
+            // (fall through to register the complete definition)
         }
 
+        // If this is a forward declaration (no fields), register with empty layout
+        if fields.is_empty() {
+            self.union_layouts.insert(
+                name.to_string(),
+                StructLayout {
+                    fields: HashMap::new(),
+                    size: 0,
+                    alignment: 1,
+                },
+            );
+            return Ok(());
+        }
+
+        // This is a complete definition - calculate layout
         let mut max_size = 0;
         let mut max_align = 1;
         let mut field_map = HashMap::new();

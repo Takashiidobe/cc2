@@ -1441,6 +1441,17 @@ impl Parser {
             }
         };
         self.advance();
+
+        // Check for forward declaration (struct Foo;) vs definition (struct Foo { ... };)
+        if self.current_token() == &Token::Semicolon {
+            // Forward declaration - incomplete type
+            self.advance();
+            return Ok(AstNode::StructDef {
+                name,
+                fields: Vec::new(), // Empty fields indicates incomplete type
+            });
+        }
+
         self.expect(Token::OpenBrace)?;
 
         let mut fields = Vec::new();
@@ -1537,6 +1548,17 @@ impl Parser {
             }
         };
         self.advance();
+
+        // Check for forward declaration (union Foo;) vs definition (union Foo { ... };)
+        if self.current_token() == &Token::Semicolon {
+            // Forward declaration - incomplete type
+            self.advance();
+            return Ok(AstNode::UnionDef {
+                name,
+                fields: Vec::new(), // Empty fields indicates incomplete type
+            });
+        }
+
         self.expect(Token::OpenBrace)?;
 
         let mut fields = Vec::new();
@@ -1741,15 +1763,19 @@ impl Parser {
     }
 
     fn is_struct_definition(&self) -> bool {
+        // Accept both full definitions (struct Foo { ... };) and forward declarations (struct Foo;)
         matches!(self.current_token(), Token::Struct)
             && matches!(self.peek(1), Some(Token::Identifier(_)))
-            && matches!(self.peek(2), Some(Token::OpenBrace))
+            && (matches!(self.peek(2), Some(Token::OpenBrace))
+                || matches!(self.peek(2), Some(Token::Semicolon)))
     }
 
     fn is_union_definition(&self) -> bool {
+        // Accept both full definitions (union Foo { ... };) and forward declarations (union Foo;)
         matches!(self.current_token(), Token::Union)
             && matches!(self.peek(1), Some(Token::Identifier(_)))
-            && matches!(self.peek(2), Some(Token::OpenBrace))
+            && (matches!(self.peek(2), Some(Token::OpenBrace))
+                || matches!(self.peek(2), Some(Token::Semicolon)))
     }
 
     fn is_enum_definition(&self) -> bool {
