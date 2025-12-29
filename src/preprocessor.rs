@@ -646,10 +646,10 @@ impl Preprocessor {
         // Find the matching #endif and process the block
         let (end_line, block_output) = if condition {
             // Condition is true - process the block normally
-            self.process_conditional_block(lines, line_num + 1, true)?
+            self.process_if_block(lines, line_num + 1, true)?
         } else {
-            // Condition is false - skip the block
-            self.skip_conditional_block(lines, line_num + 1)?
+            // Condition is false - skip to #elif, #else, or #endif
+            self.skip_to_else_or_endif(lines, line_num + 1)?
         };
 
         Ok((end_line, block_output))
@@ -1715,6 +1715,28 @@ impl Preprocessor {
         Ok((args, &text[end_pos..]))
     }
 
+    /// Normalize whitespace in a string for stringification
+    /// Collapses multiple whitespace chars to single space, trims edges
+    fn normalize_whitespace(s: &str) -> String {
+        let mut result = String::new();
+        let mut prev_was_space = false;
+
+        for ch in s.chars() {
+            if ch.is_whitespace() {
+                if !prev_was_space && !result.is_empty() {
+                    result.push(' ');
+                    prev_was_space = true;
+                }
+            } else {
+                result.push(ch);
+                prev_was_space = false;
+            }
+        }
+
+        // Trim trailing space
+        result.trim_end().to_string()
+    }
+
     /// Expand a function-like macro with arguments
     fn expand_function_macro(
         &self,
@@ -1751,7 +1773,8 @@ impl Preprocessor {
         // First pass: handle stringification (#param) - must be done before ## processing
         // BUT we need to be careful not to replace # that's part of ##
         for (i, param) in params.iter().enumerate() {
-            let stringified = format!("\"{}\"", args[i]);
+            let normalized = Self::normalize_whitespace(&args[i]);
+            let stringified = format!("\"{}\"", normalized);
             let pattern = format!("#{}", param);
 
             // Replace only if it's not preceded by another #
