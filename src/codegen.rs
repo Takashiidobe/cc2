@@ -113,6 +113,7 @@ impl CodeGenerator {
             }
             AstNode::StructDef { .. } => Ok(()),
             AstNode::UnionDef { .. } => Ok(()),
+            AstNode::TypedefDef { .. } => Ok(()),
             AstNode::EnumDef { .. } => Ok(()),
             AstNode::Function {
                 name, body, params, ..

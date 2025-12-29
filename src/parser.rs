@@ -4,6 +4,7 @@ use crate::lexer::{LocatedToken, SourceLocation, Token};
 pub struct Parser {
     tokens: Vec<LocatedToken>,
     position: usize,
+    type_aliases: std::collections::HashMap<String, Type>,
 }
 
 impl Parser {
@@ -11,6 +12,7 @@ impl Parser {
         Parser {
             tokens,
             position: 0,
+            type_aliases: std::collections::HashMap::new(),
         }
     }
 
@@ -47,6 +49,11 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Result<AstNode, String> {
+        // Check for typedef first
+        if matches!(self.current_token(), Token::Typedef) {
+            return self.parse_typedef();
+        }
+
         // Check for storage class specifiers and type qualifiers
         let mut is_extern = false;
         let mut is_static = false;
@@ -201,6 +208,32 @@ impl Parser {
         })
     }
 
+    fn parse_typedef(&mut self) -> Result<AstNode, String> {
+        // Consume 'typedef' token
+        self.expect(Token::Typedef)?;
+
+        // Parse the target type
+        let target_type = self.parse_type()?;
+
+        // Parse the alias name
+        let name = match self.current_token() {
+            Token::Identifier(s) => s.clone(),
+            _ => return Err(format!("Expected identifier after typedef, got {:?}", self.current_token())),
+        };
+        self.advance();
+
+        // Expect semicolon
+        self.expect(Token::Semicolon)?;
+
+        // Store the type alias
+        self.type_aliases.insert(name.clone(), target_type.clone());
+
+        Ok(AstNode::TypedefDef {
+            name,
+            target_type,
+        })
+    }
+
     fn parse_type(&mut self) -> Result<Type, String> {
         let mut ty = match self.current_token() {
             Token::Unsigned => {
@@ -281,6 +314,15 @@ impl Parser {
                 self.advance();
                 Type::Enum(name)
             }
+            Token::Identifier(name) => {
+                // Check if this is a typedef'd type
+                if let Some(aliased_type) = self.type_aliases.get(name).cloned() {
+                    self.advance();
+                    aliased_type
+                } else {
+                    return Err(format!("Unknown type: {}", name));
+                }
+            }
             _ => return Err(format!("Expected type, got {:?}", self.current_token())),
         };
 
@@ -353,6 +395,10 @@ impl Parser {
             | Token::Static
             | Token::Const
             | Token::Volatile => self.parse_var_decl(),
+            Token::Identifier(name) if self.type_aliases.contains_key(name) => {
+                // This is a typedef'd type, parse as variable declaration
+                self.parse_var_decl()
+            }
             _ => {
                 let expr = self.parse_expression()?;
                 self.expect(Token::Semicolon)?;

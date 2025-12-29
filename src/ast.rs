@@ -42,6 +42,10 @@ pub enum AstNode {
         name: String,
         fields: Vec<StructField>,
     },
+    TypedefDef {
+        name: String,
+        target_type: Type,
+    },
     VarDecl {
         name: String,
         var_type: Type,
@@ -225,6 +229,7 @@ impl fmt::Display for AstNode {
             AstNode::ForLoop { .. } => write!(f, "ForLoop"),
             AstNode::StructDef { name, .. } => write!(f, "StructDef({})", name),
             AstNode::UnionDef { name, .. } => write!(f, "UnionDef({})", name),
+            AstNode::TypedefDef { name, .. } => write!(f, "TypedefDef({})", name),
             AstNode::EnumDef { name, .. } => write!(f, "EnumDef({})", name),
             AstNode::VarDecl { name, .. } => write!(f, "VarDecl({})", name),
             AstNode::Assignment { .. } => write!(f, "Assignment"),
