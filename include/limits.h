@@ -30,16 +30,14 @@
 #define INT_MAX 2147483647
 
 /* Maximum value for an unsigned int */
-/* Note: Suffixes U, L, UL not yet supported by compiler */
-#define UINT_MAX 4294967295
+#define UINT_MAX 4294967295U
 
 /* Minimum and maximum values for a long */
 /* On x86-64 Linux, long is 64 bits */
-#define LONG_MIN (-9223372036854775807 - 1)
-#define LONG_MAX 9223372036854775807
+#define LONG_MIN (-9223372036854775807L - 1L)
+#define LONG_MAX 9223372036854775807L
 
 /* Maximum value for an unsigned long */
-/* Note: Value truncated to fit in signed long until UL suffix supported */
-#define ULONG_MAX 9223372036854775807
+#define ULONG_MAX 18446744073709551615UL
 
 #endif /* _LIMITS_H */

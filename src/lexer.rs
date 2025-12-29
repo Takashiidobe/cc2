@@ -38,6 +38,23 @@ impl fmt::Display for LocatedToken {
     }
 }
 
+/// Integer literal suffix types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntSuffix {
+    None,           // No suffix: int or long
+    Unsigned,       // U or u: unsigned int or unsigned long
+    Long,           // L or l: long
+    UnsignedLong,   // UL, ul, LU, lu: unsigned long
+}
+
+/// Floating-point literal suffix types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatSuffix {
+    None,       // No suffix: double
+    Float,      // F or f: float
+    LongDouble, // L or l: long double
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Keywords
@@ -79,8 +96,8 @@ pub enum Token {
 
     // Identifiers and literals
     Identifier(String),
-    IntLiteral(i64),
-    FloatLiteral(f64),
+    IntLiteral(i64, IntSuffix),
+    FloatLiteral(f64, FloatSuffix),
     StringLiteral(String),
     CharLiteral(i64),
 
@@ -183,8 +200,8 @@ impl fmt::Display for Token {
             Token::VaArg => write!(f, "va_arg"),
             Token::VaEnd => write!(f, "va_end"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
-            Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
-            Token::FloatLiteral(f_val) => write!(f, "FloatLiteral({})", f_val),
+            Token::IntLiteral(n, suffix) => write!(f, "IntLiteral({}, {:?})", n, suffix),
+            Token::FloatLiteral(f_val, suffix) => write!(f, "FloatLiteral({}, {:?})", f_val, suffix),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
             Token::CharLiteral(c) => write!(f, "CharLiteral({})", c),
             Token::OpenParen => write!(f, "("),
@@ -588,26 +605,60 @@ impl Lexer {
             }
         }
 
-        // Check for float suffix (f or F)
-        if !self.is_at_end() && (self.current_char() == 'f' || self.current_char() == 'F') {
-            is_float = true;
-            self.advance();
+        // Parse suffixes
+        let mut float_suffix = FloatSuffix::None;
+        let mut int_suffix = IntSuffix::None;
+
+        if !self.is_at_end() {
+            let ch = self.current_char();
+
+            // Check for float suffix (F/f or L/l for long double)
+            if ch == 'f' || ch == 'F' {
+                is_float = true;
+                float_suffix = FloatSuffix::Float;
+                self.advance();
+            } else if ch == 'l' || ch == 'L' {
+                // Could be long double or long int
+                self.advance();
+                if is_float {
+                    float_suffix = FloatSuffix::LongDouble;
+                } else {
+                    // Check for U after L (unsigned long)
+                    if !self.is_at_end() && (self.current_char() == 'u' || self.current_char() == 'U') {
+                        int_suffix = IntSuffix::UnsignedLong;
+                        self.advance();
+                    } else {
+                        int_suffix = IntSuffix::Long;
+                    }
+                }
+            } else if ch == 'u' || ch == 'U' {
+                // Unsigned - check for L after U
+                self.advance();
+                if !self.is_at_end() && (self.current_char() == 'l' || self.current_char() == 'L') {
+                    int_suffix = IntSuffix::UnsignedLong;
+                    self.advance();
+                } else {
+                    int_suffix = IntSuffix::Unsigned;
+                }
+            }
         }
 
         let num_str: String = self.input[start..self.position].iter().collect();
 
         if is_float {
             // Remove suffix if present
-            let clean_str = num_str.trim_end_matches(['f', 'F']);
+            let clean_str = num_str.trim_end_matches(['f', 'F', 'l', 'L']);
             let num = clean_str
                 .parse::<f64>()
                 .map_err(|_| format!("Invalid float literal: {}", num_str))?;
-            Ok(LocatedToken::new(Token::FloatLiteral(num), location))
+            Ok(LocatedToken::new(Token::FloatLiteral(num, float_suffix), location))
         } else {
-            let num = num_str
+            // Remove suffix if present for parsing
+            let clean_str = num_str.trim_end_matches(['u', 'U', 'l', 'L']);
+            let num = clean_str
                 .parse::<i64>()
                 .map_err(|_| format!("Invalid number: {}", num_str))?;
-            Ok(LocatedToken::new(Token::IntLiteral(num), location))
+            Ok(LocatedToken::new(Token::IntLiteral(num, int_suffix), location))
         }
     }
 

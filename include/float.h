@@ -37,20 +37,19 @@
 #define LDBL_MAX_10_EXP 4932
 
 /* Maximum representable finite floating-point number */
-/* Note: F and L suffixes not yet supported, using double for all */
-#define FLT_MAX 3.402823466e+38
+#define FLT_MAX 3.402823466e+38F
 #define DBL_MAX 1.7976931348623157e+308
-#define LDBL_MAX 1.18973149535723176502e+4932
+#define LDBL_MAX 1.18973149535723176502e+4932L
 
 /* Minimum normalized positive floating-point number */
-#define FLT_MIN 1.175494351e-38
+#define FLT_MIN 1.175494351e-38F
 #define DBL_MIN 2.2250738585072014e-308
-#define LDBL_MIN 3.36210314311209350626e-4932
+#define LDBL_MIN 3.36210314311209350626e-4932L
 
 /* Difference between 1.0 and the next representable value (machine epsilon) */
-#define FLT_EPSILON 1.192092896e-07
+#define FLT_EPSILON 1.192092896e-07F
 #define DBL_EPSILON 2.2204460492503131e-16
-#define LDBL_EPSILON 1.08420217248550443401e-19
+#define LDBL_EPSILON 1.08420217248550443401e-19L
 
 /* Addition rounds to nearest */
 #define FLT_ROUNDS 1

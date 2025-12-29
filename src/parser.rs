@@ -711,7 +711,7 @@ impl Parser {
     fn parse_case(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Case)?;
         let value = match self.current_token() {
-            Token::IntLiteral(n) => *n,
+            Token::IntLiteral(n, _) => *n,
             _ => {
                 return Err(format!(
                     "Expected integer literal after case, got {:?}",
@@ -1143,12 +1143,12 @@ impl Parser {
 
     fn parse_primary(&mut self) -> Result<AstNode, String> {
         let mut expr = match self.current_token() {
-            Token::IntLiteral(n) => {
+            Token::IntLiteral(n, _) => {
                 let val = *n;
                 self.advance();
                 AstNode::IntLiteral(val)
             }
-            Token::FloatLiteral(f) => {
+            Token::FloatLiteral(f, _) => {
                 let val = *f;
                 self.advance();
                 AstNode::FloatLiteral(val)
@@ -1290,7 +1290,7 @@ impl Parser {
         while self.current_token() == &Token::OpenBracket {
             self.advance();
             let len = match self.current_token() {
-                Token::IntLiteral(n) if *n >= 0 => *n as usize,
+                Token::IntLiteral(n, _) if *n >= 0 => *n as usize,
                 _ => return Err("Array length must be a non-negative integer literal".to_string()),
             };
             self.advance();
@@ -1509,7 +1509,7 @@ impl Parser {
             let value = if self.current_token() == &Token::Equals {
                 self.advance();
                 match self.current_token() {
-                    Token::IntLiteral(n) => {
+                    Token::IntLiteral(n, _) => {
                         let val = *n;
                         self.advance();
                         next_value = val + 1;
