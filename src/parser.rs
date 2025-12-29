@@ -1064,6 +1064,11 @@ impl Parser {
                 self.advance();
                 AstNode::IntLiteral(val)
             }
+            Token::FloatLiteral(f) => {
+                let val = *f;
+                self.advance();
+                AstNode::FloatLiteral(val)
+            }
             Token::CharLiteral(c) => {
                 let val = *c;
                 self.advance();

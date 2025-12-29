@@ -76,6 +76,7 @@ pub enum Token {
     // Identifiers and literals
     Identifier(String),
     IntLiteral(i64),
+    FloatLiteral(f64),
     StringLiteral(String),
     CharLiteral(i64),
 
@@ -174,6 +175,7 @@ impl fmt::Display for Token {
             Token::Asm => write!(f, "asm"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
+            Token::FloatLiteral(f_val) => write!(f, "FloatLiteral({})", f_val),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
             Token::CharLiteral(c) => write!(f, "CharLiteral({})", c),
             Token::OpenParen => write!(f, "("),
@@ -529,14 +531,62 @@ impl Lexer {
 
     fn read_number(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
         let start = self.position;
+        let mut is_float = false;
+
+        // Read digits before decimal point
         while !self.is_at_end() && self.current_char().is_ascii_digit() {
             self.advance();
         }
+
+        // Check for decimal point
+        if !self.is_at_end() && self.current_char() == '.' {
+            // Peek ahead to see if next char is a digit
+            if self.position + 1 < self.input.len() && self.input[self.position + 1].is_ascii_digit() {
+                is_float = true;
+                self.advance(); // consume '.'
+                while !self.is_at_end() && self.current_char().is_ascii_digit() {
+                    self.advance();
+                }
+            }
+        }
+
+        // Check for exponent (e or E)
+        if !self.is_at_end() && (self.current_char() == 'e' || self.current_char() == 'E') {
+            is_float = true;
+            self.advance(); // consume 'e' or 'E'
+
+            // Optional sign
+            if !self.is_at_end() && (self.current_char() == '+' || self.current_char() == '-') {
+                self.advance();
+            }
+
+            // Exponent digits
+            while !self.is_at_end() && self.current_char().is_ascii_digit() {
+                self.advance();
+            }
+        }
+
+        // Check for float suffix (f or F)
+        if !self.is_at_end() && (self.current_char() == 'f' || self.current_char() == 'F') {
+            is_float = true;
+            self.advance();
+        }
+
         let num_str: String = self.input[start..self.position].iter().collect();
-        let num = num_str
-            .parse::<i64>()
-            .map_err(|_| format!("Invalid number: {}", num_str))?;
-        Ok(LocatedToken::new(Token::IntLiteral(num), location))
+
+        if is_float {
+            // Remove suffix if present
+            let clean_str = num_str.trim_end_matches(|c| c == 'f' || c == 'F');
+            let num = clean_str
+                .parse::<f64>()
+                .map_err(|_| format!("Invalid float literal: {}", num_str))?;
+            Ok(LocatedToken::new(Token::FloatLiteral(num), location))
+        } else {
+            let num = num_str
+                .parse::<i64>()
+                .map_err(|_| format!("Invalid number: {}", num_str))?;
+            Ok(LocatedToken::new(Token::IntLiteral(num), location))
+        }
     }
 
     fn read_identifier(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {

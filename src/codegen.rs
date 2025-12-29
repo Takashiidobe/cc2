@@ -28,6 +28,7 @@ pub struct CodeGenerator {
     union_layouts: HashMap<String, StructLayout>,
     enum_constants: HashMap<String, i64>,
     string_literals: Vec<(String, String)>, // (label, string_content)
+    float_literals: Vec<(String, f64)>,     // (label, value)
     global_variables: HashMap<String, GlobalVariable>,
 }
 
@@ -56,6 +57,7 @@ impl CodeGenerator {
             union_layouts: HashMap::new(),
             enum_constants: HashMap::new(),
             string_literals: Vec::new(),
+            float_literals: Vec::new(),
             global_variables: HashMap::new(),
         }
     }
@@ -70,6 +72,7 @@ impl CodeGenerator {
         self.union_layouts.clear();
         self.enum_constants.clear();
         self.string_literals.clear();
+        self.float_literals.clear();
         self.global_variables.clear();
         self.collect_struct_layouts(ast)?;
         self.collect_union_layouts(ast)?;
@@ -88,8 +91,9 @@ impl CodeGenerator {
         // Then generate code for functions
         self.generate_node(ast)?;
 
-        // Emit .rodata section with string literals at the end
+        // Emit .rodata section with string and float literals at the end
         self.emit_string_literals();
+        self.emit_float_literals();
 
         Ok(self.output.clone())
     }
@@ -1301,6 +1305,13 @@ impl CodeGenerator {
             AstNode::CharLiteral(c) => {
                 self.emit(&format!("    movl ${}, %eax", c));
                 self.emit("    cltq");
+                Ok(())
+            }
+            AstNode::FloatLiteral(f) => {
+                // Get or create a label for this float literal
+                let label = self.add_float_literal(*f);
+                // Load the float value into xmm0
+                self.emit(&format!("    movsd {}(%rip), %xmm0", label));
                 Ok(())
             }
             AstNode::StringLiteral(s) => {
@@ -2623,6 +2634,20 @@ impl CodeGenerator {
         }
     }
 
+    fn add_float_literal(&mut self, value: f64) -> String {
+        // Check if this exact value already exists
+        for (label, v) in &self.float_literals {
+            if *v == value {
+                return label.clone();
+            }
+        }
+
+        // Create a new label for this float
+        let label = format!(".LF{}", self.float_literals.len());
+        self.float_literals.push((label.clone(), value));
+        label
+    }
+
     fn add_string_literal(&mut self, s: String) -> String {
         // Check if this exact string already exists
         for (label, content) in &self.string_literals {
@@ -2653,6 +2678,26 @@ impl CodeGenerator {
             // Escape special characters for assembly
             let escaped = self.escape_string_for_asm(content);
             self.emit(&format!("    .string \"{}\"", escaped));
+        }
+    }
+
+    fn emit_float_literals(&mut self) {
+        if self.float_literals.is_empty() {
+            return;
+        }
+
+        // Clone the float literals to avoid borrow checker issues
+        let literals = self.float_literals.clone();
+
+        // Emit .rodata section with all float literals
+        if !literals.is_empty() {
+            self.emit("    .section .rodata");
+            for (label, value) in &literals {
+                self.emit(&format!("    .align 8"));
+                self.emit(&format!("{}:", label));
+                // Emit as 8-byte double precision value
+                self.emit(&format!("    .double {}", value));
+            }
         }
     }
 
