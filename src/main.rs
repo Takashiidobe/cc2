@@ -29,6 +29,9 @@ struct Args {
     #[arg(long = "nostdinc", help = "Do not search standard system directories")]
     no_std_includes: bool,
 
+    #[arg(short = 'D', long = "define", value_name = "MACRO", help = "Define a macro (e.g., -D NAME or -D NAME=value)")]
+    defines: Vec<String>,
+
     #[arg(long, help = "Print preprocessed source")]
     preprocess_only: bool,
 
@@ -81,6 +84,19 @@ fn compile_file_to_assembly(input: &PathBuf, args: &Args) -> Result<String, Stri
     // Add system include paths
     for path in &args.system_include_paths {
         preprocessor.add_system_include_path(path.clone());
+    }
+
+    // Process -D command-line macro definitions
+    for define in &args.defines {
+        if let Some(eq_pos) = define.find('=') {
+            // -D NAME=value
+            let name = define[..eq_pos].to_string();
+            let value = define[eq_pos + 1..].to_string();
+            preprocessor.define_macro(name, cc2::MacroDef::Object(value));
+        } else {
+            // -D NAME (define as 1)
+            preprocessor.define_macro(define.clone(), cc2::MacroDef::Object("1".to_string()));
+        }
     }
 
     // Set the current file for resolving relative includes
@@ -218,6 +234,19 @@ fn main() {
 
         for path in &args.system_include_paths {
             preprocessor.add_system_include_path(path.clone());
+        }
+
+        // Process -D command-line macro definitions
+        for define in &args.defines {
+            if let Some(eq_pos) = define.find('=') {
+                // -D NAME=value
+                let name = define[..eq_pos].to_string();
+                let value = define[eq_pos + 1..].to_string();
+                preprocessor.define_macro(name, cc2::MacroDef::Object(value));
+            } else {
+                // -D NAME (define as 1)
+                preprocessor.define_macro(define.clone(), cc2::MacroDef::Object("1".to_string()));
+            }
         }
 
         // Set the current file for resolving relative includes
