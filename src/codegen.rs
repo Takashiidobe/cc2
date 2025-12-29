@@ -588,11 +588,27 @@ impl CodeGenerator {
                     return Ok(());
                 }
 
-                let var_size = self.type_size(var_type)?;
-                let var_align = self.type_alignment(var_type)?;
+                // If array has size 0 (from [] syntax) and string literal initializer,
+                // infer the actual size before allocating stack space
+                let actual_var_type = if let Type::Array(elem_type, 0) = var_type {
+                    if let Some(init_expr) = init {
+                        if let AstNode::StringLiteral(s) = init_expr.as_ref() {
+                            Type::Array(elem_type.clone(), s.len() + 1) // +1 for null terminator
+                        } else {
+                            var_type.clone()
+                        }
+                    } else {
+                        var_type.clone()
+                    }
+                } else {
+                    var_type.clone()
+                };
+
+                let var_size = self.type_size(&actual_var_type)?;
+                let var_align = self.type_alignment(&actual_var_type)?;
                 let offset = self.symbol_table.add_variable_with_layout(
                     name.clone(),
-                    var_type.clone(),
+                    actual_var_type.clone(),
                     var_size,
                     var_align,
                 )?;
@@ -2475,10 +2491,15 @@ impl CodeGenerator {
         base_offset: i32,
     ) -> Result<(), String> {
         let elem_type = self.array_element_type_from_type(array_type)?;
-        let array_len = match array_type {
+        let mut array_len = match array_type {
             Type::Array(_, len) => *len,
             _ => return Err("Expected array type".to_string()),
         };
+
+        // If array length is 0 (from [] syntax), infer from string literal
+        if array_len == 0 {
+            array_len = string.len() + 1; // +1 for null terminator
+        }
 
         // Ensure element type is char or uchar
         if !matches!(elem_type, Type::Char | Type::UChar) {

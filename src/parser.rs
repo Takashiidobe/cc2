@@ -399,6 +399,11 @@ impl Parser {
                 break;
             }
 
+            // Skip const and volatile qualifiers in function parameters
+            while matches!(self.current_token(), Token::Const | Token::Volatile) {
+                self.advance();
+            }
+
             let param_type = self.parse_type()?;
 
             let name = match self.current_token() {
@@ -1348,11 +1353,19 @@ impl Parser {
         let mut dimensions = Vec::new();
         while self.current_token() == &Token::OpenBracket {
             self.advance();
-            let len = match self.current_token() {
-                Token::IntLiteral(n, _) if *n >= 0 => *n as usize,
-                _ => return Err("Array length must be a non-negative integer literal".to_string()),
+            // Allow empty brackets [] for arrays with initializers (size will be inferred)
+            let len = if self.current_token() == &Token::CloseBracket {
+                0  // Placeholder size, will be inferred from initializer
+            } else {
+                match self.current_token() {
+                    Token::IntLiteral(n, _) if *n >= 0 => {
+                        let len = *n as usize;
+                        self.advance();
+                        len
+                    }
+                    _ => return Err("Array length must be a non-negative integer literal".to_string()),
+                }
             };
-            self.advance();
             self.expect(Token::CloseBracket)?;
             dimensions.push(len);
         }
