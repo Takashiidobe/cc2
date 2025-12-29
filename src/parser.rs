@@ -92,7 +92,7 @@ impl Parser {
                     "Expected identifier, got {:?} at {}",
                     self.current_token(),
                     self.current_location()
-                ))
+                ));
             }
         };
         self.advance();
@@ -105,7 +105,14 @@ impl Parser {
             }
             Token::Semicolon | Token::Equals | Token::OpenBracket => {
                 // It's a global variable
-                self.parse_global_variable_with_storage(var_type, name, is_extern, is_static, is_const, is_volatile)
+                self.parse_global_variable_with_storage(
+                    var_type,
+                    name,
+                    is_extern,
+                    is_static,
+                    is_const,
+                    is_volatile,
+                )
             }
             _ => Err(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
@@ -124,7 +131,7 @@ impl Parser {
                     "Expected function name, got {:?} at {}",
                     self.current_token(),
                     self.current_location()
-                ))
+                ));
             }
         };
         self.advance();
@@ -132,11 +139,7 @@ impl Parser {
         self.parse_function_rest(return_type, name)
     }
 
-    fn parse_function_rest(
-        &mut self,
-        return_type: Type,
-        name: String,
-    ) -> Result<AstNode, String> {
+    fn parse_function_rest(&mut self, return_type: Type, name: String) -> Result<AstNode, String> {
         self.expect(Token::OpenParen)?;
         let params = self.parse_parameters()?;
         self.expect(Token::CloseParen)?;
@@ -161,7 +164,7 @@ impl Parser {
 
     fn parse_global_variable(
         &mut self,
-        mut var_type: Type,
+        var_type: Type,
         name: String,
     ) -> Result<AstNode, String> {
         self.parse_global_variable_with_storage(var_type, name, false, false, false, false)
@@ -218,7 +221,12 @@ impl Parser {
         // Parse the alias name
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
-            _ => return Err(format!("Expected identifier after typedef, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected identifier after typedef, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
 
@@ -228,10 +236,7 @@ impl Parser {
         // Store the type alias
         self.type_aliases.insert(name.clone(), target_type.clone());
 
-        Ok(AstNode::TypedefDef {
-            name,
-            target_type,
-        })
+        Ok(AstNode::TypedefDef { name, target_type })
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
@@ -299,7 +304,12 @@ impl Parser {
                 self.advance();
                 let name = match self.current_token() {
                     Token::Identifier(s) => s.clone(),
-                    _ => return Err(format!("Expected struct name, got {:?}", self.current_token())),
+                    _ => {
+                        return Err(format!(
+                            "Expected struct name, got {:?}",
+                            self.current_token()
+                        ));
+                    }
                 };
                 self.advance();
                 Type::Struct(name)
@@ -308,7 +318,12 @@ impl Parser {
                 self.advance();
                 let name = match self.current_token() {
                     Token::Identifier(s) => s.clone(),
-                    _ => return Err(format!("Expected union name, got {:?}", self.current_token())),
+                    _ => {
+                        return Err(format!(
+                            "Expected union name, got {:?}",
+                            self.current_token()
+                        ));
+                    }
                 };
                 self.advance();
                 Type::Union(name)
@@ -317,7 +332,12 @@ impl Parser {
                 self.advance();
                 let name = match self.current_token() {
                     Token::Identifier(s) => s.clone(),
-                    _ => return Err(format!("Expected enum name, got {:?}", self.current_token())),
+                    _ => {
+                        return Err(format!(
+                            "Expected enum name, got {:?}",
+                            self.current_token()
+                        ));
+                    }
                 };
                 self.advance();
                 Type::Enum(name)
@@ -354,7 +374,12 @@ impl Parser {
 
             let name = match self.current_token() {
                 Token::Identifier(s) => s.clone(),
-                _ => return Err(format!("Expected parameter name, got {:?}", self.current_token())),
+                _ => {
+                    return Err(format!(
+                        "Expected parameter name, got {:?}",
+                        self.current_token()
+                    ));
+                }
             };
             self.advance();
 
@@ -458,7 +483,12 @@ impl Parser {
 
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
-            _ => return Err(format!("Expected variable name, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected variable name, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
 
@@ -633,7 +663,12 @@ impl Parser {
         self.expect(Token::Goto)?;
         let label = match self.current_token() {
             Token::Identifier(s) => s.clone(),
-            _ => return Err(format!("Expected label name after goto, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected label name after goto, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
         self.expect(Token::Semicolon)?;
@@ -663,7 +698,12 @@ impl Parser {
         self.expect(Token::Case)?;
         let value = match self.current_token() {
             Token::IntLiteral(n) => *n,
-            _ => return Err(format!("Expected integer literal after case, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected integer literal after case, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
         self.expect(Token::Colon)?;
@@ -682,7 +722,12 @@ impl Parser {
 
         let asm_code = match self.current_token() {
             Token::StringLiteral(s) => s.clone(),
-            _ => return Err(format!("Expected string literal in asm statement, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected string literal in asm statement, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
 
@@ -929,7 +974,10 @@ impl Parser {
     fn parse_shift(&mut self) -> Result<AstNode, String> {
         let mut left = self.parse_additive()?;
 
-        while matches!(self.current_token(), Token::LessLess | Token::GreaterGreater) {
+        while matches!(
+            self.current_token(),
+            Token::LessLess | Token::GreaterGreater
+        ) {
             let op = match self.current_token() {
                 Token::LessLess => BinOp::ShiftLeft,
                 Token::GreaterGreater => BinOp::ShiftRight,
@@ -971,7 +1019,10 @@ impl Parser {
     fn parse_multiplicative(&mut self) -> Result<AstNode, String> {
         let mut left = self.parse_unary()?;
 
-        while matches!(self.current_token(), Token::Star | Token::Slash | Token::Percent) {
+        while matches!(
+            self.current_token(),
+            Token::Star | Token::Slash | Token::Percent
+        ) {
             let op = match self.current_token() {
                 Token::Star => BinOp::Multiply,
                 Token::Slash => BinOp::Divide,
@@ -1090,7 +1141,12 @@ impl Parser {
                 self.expect(Token::CloseParen)?;
                 expr
             }
-            _ => return Err(format!("Expected expression, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected expression, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
 
         loop {
@@ -1119,7 +1175,12 @@ impl Parser {
                     self.advance();
                     let member = match self.current_token() {
                         Token::Identifier(s) => s.clone(),
-                        _ => return Err(format!("Expected member name, got {:?}", self.current_token())),
+                        _ => {
+                            return Err(format!(
+                                "Expected member name, got {:?}",
+                                self.current_token()
+                            ));
+                        }
                     };
                     self.advance();
                     expr = AstNode::MemberAccess {
@@ -1242,7 +1303,12 @@ impl Parser {
         self.expect(Token::Struct)?;
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
-            _ => return Err(format!("Expected struct name, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected struct name, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
         self.expect(Token::OpenBrace)?;
@@ -1252,7 +1318,12 @@ impl Parser {
             let field_type = self.parse_type()?;
             let field_name = match self.current_token() {
                 Token::Identifier(s) => s.clone(),
-                _ => return Err(format!("Expected field name, got {:?}", self.current_token())),
+                _ => {
+                    return Err(format!(
+                        "Expected field name, got {:?}",
+                        self.current_token()
+                    ));
+                }
             };
             self.advance();
             let field_type = self.parse_array_type_suffix(field_type)?;
@@ -1289,7 +1360,12 @@ impl Parser {
                         self.expect(Token::Equals)?;
                         Some(field)
                     }
-                    _ => return Err(format!("Expected field name after '.', got {:?}", self.current_token())),
+                    _ => {
+                        return Err(format!(
+                            "Expected field name after '.', got {:?}",
+                            self.current_token()
+                        ));
+                    }
                 }
             } else {
                 None // Positional initializer
@@ -1322,7 +1398,12 @@ impl Parser {
         self.expect(Token::Union)?;
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
-            _ => return Err(format!("Expected union name, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected union name, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
         self.expect(Token::OpenBrace)?;
@@ -1332,7 +1413,12 @@ impl Parser {
             let field_type = self.parse_type()?;
             let field_name = match self.current_token() {
                 Token::Identifier(s) => s.clone(),
-                _ => return Err(format!("Expected field name, got {:?}", self.current_token())),
+                _ => {
+                    return Err(format!(
+                        "Expected field name, got {:?}",
+                        self.current_token()
+                    ));
+                }
             };
             self.advance();
             let field_type = self.parse_array_type_suffix(field_type)?;
@@ -1353,7 +1439,12 @@ impl Parser {
         self.expect(Token::Enum)?;
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
-            _ => return Err(format!("Expected enum name, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected enum name, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
         self.expect(Token::OpenBrace)?;
@@ -1445,7 +1536,12 @@ impl Parser {
         // Parse the member name
         let member = match self.current_token() {
             Token::Identifier(s) => s.clone(),
-            _ => return Err(format!("Expected member name in offsetof, got {:?}", self.current_token())),
+            _ => {
+                return Err(format!(
+                    "Expected member name in offsetof, got {:?}",
+                    self.current_token()
+                ));
+            }
         };
         self.advance();
 

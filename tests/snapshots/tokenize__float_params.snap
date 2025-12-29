@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "double at 2:1\nIdentifier(add_doubles) at 2:8\n( at 2:19\ndouble at 2:20\nIdentifier(a) at 2:27\n, at 2:28\ndouble at 2:30\nIdentifier(b) at 2:37\n) at 2:38\n{ at 2:40\nreturn at 3:5\nIdentifier(a) at 3:12\n+ at 3:14\nIdentifier(b) at 3:16\n; at 3:17\n} at 4:1\nint at 6:1\nIdentifier(mixed_params) at 6:5\n( at 6:17\nint at 6:18\nIdentifier(x) at 6:22\n, at 6:23\ndouble at 6:25\nIdentifier(y) at 6:32\n, at 6:33\nint at 6:35\nIdentifier(z) at 6:39\n, at 6:40\ndouble at 6:42\nIdentifier(w) at 6:49\n) at 6:50\n{ at 6:52\ndouble at 7:5\nIdentifier(sum) at 7:12\n= at 7:16\nIdentifier(y) at 7:18\n+ at 7:20\nIdentifier(w) at 7:22\n; at 7:23\nint at 8:5\nIdentifier(result) at 8:9\n= at 8:16\nIdentifier(x) at 8:18\n+ at 8:20\nIdentifier(z) at 8:22\n; at 8:23\nreturn at 9:5\nIdentifier(result) at 9:12\n; at 9:18\n} at 10:1\nint at 12:1\nIdentifier(main) at 12:5\n( at 12:9\n) at 12:10\n{ at 12:12\ndouble at 13:5\nIdentifier(result1) at 13:12\n= at 13:20\nIdentifier(add_doubles) at 13:22\n( at 13:33\nFloatLiteral(3.14) at 13:34\n, at 13:38\nFloatLiteral(2.71) at 13:40\n) at 13:44\n; at 13:45\nint at 14:5\nIdentifier(result2) at 14:9\n= at 14:17\nIdentifier(mixed_params) at 14:19\n( at 14:31\nIntLiteral(10) at 14:32\n, at 14:34\nFloatLiteral(1.5) at 14:36\n, at 14:39\nIntLiteral(20) at 14:41\n, at 14:43\nFloatLiteral(2.5) at 14:45\n) at 14:48\n; at 14:49\nreturn at 15:5\nIntLiteral(0) at 15:12\n; at 15:13\n} at 16:1\nEOF at 17:1\n"
+stderr: ""
+status: 0

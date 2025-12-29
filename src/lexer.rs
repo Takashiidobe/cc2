@@ -541,7 +541,9 @@ impl Lexer {
         // Check for decimal point
         if !self.is_at_end() && self.current_char() == '.' {
             // Peek ahead to see if next char is a digit
-            if self.position + 1 < self.input.len() && self.input[self.position + 1].is_ascii_digit() {
+            if self.position + 1 < self.input.len()
+                && self.input[self.position + 1].is_ascii_digit()
+            {
                 is_float = true;
                 self.advance(); // consume '.'
                 while !self.is_at_end() && self.current_char().is_ascii_digit() {
@@ -576,7 +578,7 @@ impl Lexer {
 
         if is_float {
             // Remove suffix if present
-            let clean_str = num_str.trim_end_matches(|c| c == 'f' || c == 'F');
+            let clean_str = num_str.trim_end_matches(['f', 'F']);
             let num = clean_str
                 .parse::<f64>()
                 .map_err(|_| format!("Invalid float literal: {}", num_str))?;
@@ -633,7 +635,7 @@ impl Lexer {
             "case" => Token::Case,
             "default" => Token::Default,
             "asm" => Token::Asm,
-            "__asm__" => Token::Asm,  // GCC variant
+            "__asm__" => Token::Asm, // GCC variant
             _ => Token::Identifier(ident),
         };
 
@@ -757,7 +759,7 @@ impl Lexer {
                 // Read up to 3 octal digits
                 while count < 3 && !self.is_at_end() {
                     let c = self.current_char();
-                    if c >= '0' && c <= '7' {
+                    if ('0'..='7').contains(&c) {
                         value = value * 8 + (c as u8 - b'0');
                         self.advance();
                         count += 1;

@@ -3,7 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use cc2::{format_error, format_simple_error, CodeGenerator, Lexer, Parser, Preprocessor, SourceLocation};
+use cc2::{
+    CodeGenerator, Lexer, Parser, Preprocessor, SourceLocation, format_error, format_simple_error,
+};
 
 #[derive(ClapParser, Debug)]
 #[command(name = "cc2")]
@@ -43,11 +45,10 @@ fn extract_location(error_msg: &str) -> Option<SourceLocation> {
     if let Some(at_pos) = error_msg.rfind(" at ") {
         let location_str = &error_msg[at_pos + 4..];
         let parts: Vec<&str> = location_str.split(':').collect();
-        if parts.len() == 2 {
-            if let (Ok(line), Ok(col)) = (parts[0].parse(), parts[1].parse()) {
+        if parts.len() == 2
+            && let (Ok(line), Ok(col)) = (parts[0].parse(), parts[1].parse()) {
                 return Some(SourceLocation::new(line, col));
             }
-        }
     }
     None
 }
@@ -85,37 +86,43 @@ fn compile_file_to_assembly(input: &PathBuf, args: &Args) -> Result<String, Stri
     // Set the current file for resolving relative includes
     preprocessor.set_current_file(input.display().to_string());
 
-    let preprocessed_source = preprocessor
-        .preprocess(&source)
-        .map_err(|e| format_simple_error(&format!("Preprocessor error in '{}': {}", input.display(), e)))?;
+    let preprocessed_source = preprocessor.preprocess(&source).map_err(|e| {
+        format_simple_error(&format!(
+            "Preprocessor error in '{}': {}",
+            input.display(),
+            e
+        ))
+    })?;
 
     let mut lexer = Lexer::new(&preprocessed_source);
-    let tokens = lexer
-        .tokenize()
-        .map_err(|e| format_simple_error(&format!("Lexer error in '{}': {}", input.display(), e)))?;
+    let tokens = lexer.tokenize().map_err(|e| {
+        format_simple_error(&format!("Lexer error in '{}': {}", input.display(), e))
+    })?;
 
     let mut parser = Parser::new(tokens);
-    let ast = parser
-        .parse()
-        .map_err(|e| {
-            // Try to extract location and format with context
-            if let Some(location) = extract_location(&e) {
-                let message = strip_location(&e);
-                format_error(
-                    &input.display().to_string(),
-                    &preprocessed_source,
-                    location,
-                    message,
-                )
-            } else {
-                format_simple_error(&format!("Parser error in '{}': {}", input.display(), e))
-            }
-        })?;
+    let ast = parser.parse().map_err(|e| {
+        // Try to extract location and format with context
+        if let Some(location) = extract_location(&e) {
+            let message = strip_location(&e);
+            format_error(
+                &input.display().to_string(),
+                &preprocessed_source,
+                location,
+                message,
+            )
+        } else {
+            format_simple_error(&format!("Parser error in '{}': {}", input.display(), e))
+        }
+    })?;
 
     let mut codegen = CodeGenerator::new();
-    let assembly = codegen
-        .generate(&ast)
-        .map_err(|e| format_simple_error(&format!("Code generation error in '{}': {}", input.display(), e)))?;
+    let assembly = codegen.generate(&ast).map_err(|e| {
+        format_simple_error(&format!(
+            "Code generation error in '{}': {}",
+            input.display(),
+            e
+        ))
+    })?;
 
     Ok(assembly)
 }
@@ -140,7 +147,7 @@ fn compile_to_object(input: &PathBuf, args: &Args) -> Result<PathBuf, String> {
     obj_path.set_extension("o");
 
     let status = process::Command::new("as")
-        .args(&["-o", obj_path.to_str().unwrap(), asm_path.to_str().unwrap()])
+        .args(["-o", obj_path.to_str().unwrap(), asm_path.to_str().unwrap()])
         .status()
         .map_err(|e| format!("Failed to run assembler: {}", e))?;
 

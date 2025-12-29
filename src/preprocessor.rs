@@ -1102,8 +1102,8 @@ impl Preprocessor {
                         if ch.is_ascii_digit()
                             || ch == 'x'
                             || ch == 'X'
-                            || (ch >= 'a' && ch <= 'f')
-                            || (ch >= 'A' && ch <= 'F')
+                            || ('a'..='f').contains(&ch)
+                            || ('A'..='F').contains(&ch)
                         {
                             num_str.push(ch);
                             chars.next();

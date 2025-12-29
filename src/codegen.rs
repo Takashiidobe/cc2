@@ -134,7 +134,13 @@ impl CodeGenerator {
                 let param_regs_32 = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"];
                 let param_regs_16 = ["%di", "%si", "%dx", "%cx", "%r8w", "%r9w"];
                 let param_regs_8 = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
-                for (i, param) in params.iter().enumerate() {
+                let param_regs_xmm = [
+                    "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
+                ];
+
+                let mut int_param_count = 0;
+                let mut float_param_count = 0;
+                for param in params.iter() {
                     let param_size = self.type_size(&param.param_type)?;
                     let param_align = self.type_alignment(&param.param_type)?;
                     let _offset = self.symbol_table.add_variable_with_layout(
@@ -143,8 +149,10 @@ impl CodeGenerator {
                         param_size,
                         param_align,
                     )?;
-                    if i < param_regs_64.len() {
-                        // Parameter will be stored on stack
+                    if self.is_float_type(&param.param_type) {
+                        float_param_count += 1;
+                    } else {
+                        int_param_count += 1;
                     }
                 }
 
@@ -156,35 +164,51 @@ impl CodeGenerator {
                 let saved_output = self.output.clone();
                 self.output.clear();
 
-                for (i, param) in params.iter().enumerate() {
-                    if i < param_regs_64.len() {
-                        let symbol = self.symbol_table.get_variable(&param.name).unwrap();
-                        if matches!(param.param_type, Type::Int | Type::UInt) {
+                let mut int_idx = 0;
+                let mut float_idx = 0;
+                for param in params.iter() {
+                    let symbol = self.symbol_table.get_variable(&param.name).unwrap();
+
+                    if self.is_float_type(&param.param_type) {
+                        // Float parameter - use xmm registers
+                        if float_idx < param_regs_xmm.len() {
                             self.emit(&format!(
-                                "    movl {}, {}(%rbp)",
-                                param_regs_32[i], symbol.stack_offset
-                            ));
-                        } else if matches!(param.param_type, Type::UShort | Type::Short) {
-                            self.emit(&format!(
-                                "    movw {}, {}(%rbp)",
-                                param_regs_16[i], symbol.stack_offset
-                            ));
-                        } else if matches!(param.param_type, Type::Char | Type::UChar) {
-                            self.emit(&format!(
-                                "    movb {}, {}(%rbp)",
-                                param_regs_8[i], symbol.stack_offset
-                            ));
-                        } else if matches!(param.param_type, Type::Long) {
-                            self.emit(&format!(
-                                "    movq {}, {}(%rbp)",
-                                param_regs_64[i], symbol.stack_offset
-                            ));
-                        } else {
-                            self.emit(&format!(
-                                "    movq {}, {}(%rbp)",
-                                param_regs_64[i], symbol.stack_offset
+                                "    movsd {}, {}(%rbp)",
+                                param_regs_xmm[float_idx], symbol.stack_offset
                             ));
                         }
+                        float_idx += 1;
+                    } else {
+                        // Integer parameter - use general purpose registers
+                        if int_idx < param_regs_64.len() {
+                            if matches!(param.param_type, Type::Int | Type::UInt) {
+                                self.emit(&format!(
+                                    "    movl {}, {}(%rbp)",
+                                    param_regs_32[int_idx], symbol.stack_offset
+                                ));
+                            } else if matches!(param.param_type, Type::UShort | Type::Short) {
+                                self.emit(&format!(
+                                    "    movw {}, {}(%rbp)",
+                                    param_regs_16[int_idx], symbol.stack_offset
+                                ));
+                            } else if matches!(param.param_type, Type::Char | Type::UChar) {
+                                self.emit(&format!(
+                                    "    movb {}, {}(%rbp)",
+                                    param_regs_8[int_idx], symbol.stack_offset
+                                ));
+                            } else if matches!(param.param_type, Type::Long) {
+                                self.emit(&format!(
+                                    "    movq {}, {}(%rbp)",
+                                    param_regs_64[int_idx], symbol.stack_offset
+                                ));
+                            } else {
+                                self.emit(&format!(
+                                    "    movq {}, {}(%rbp)",
+                                    param_regs_64[int_idx], symbol.stack_offset
+                                ));
+                            }
+                        }
+                        int_idx += 1;
                     }
                 }
 
@@ -291,7 +315,7 @@ impl CodeGenerator {
                 }
 
                 // Generate code for each statement in body
-                for (i, node) in body.iter().enumerate() {
+                for node in body.iter() {
                     match node {
                         AstNode::Case(value) => {
                             // Find and emit the case label
@@ -473,7 +497,7 @@ impl CodeGenerator {
                 name,
                 var_type,
                 init,
-                is_extern,
+                is_extern: _,
                 is_static,
                 is_const,
                 is_volatile,
@@ -661,15 +685,46 @@ impl CodeGenerator {
             }
             AstNode::FunctionCall { name, args } => {
                 let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+                let arg_regs_xmm = [
+                    "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
+                ];
+
+                // Track which arguments are floats and their position within their type class
+                let mut int_counter = 0;
+                let mut float_counter = 0;
+                let mut arg_info: Vec<(bool, usize)> = Vec::new(); // (is_float, index_within_type)
 
                 for arg in args.iter() {
-                    self.generate_node(arg)?;
-                    self.emit("    pushq %rax");
+                    let arg_type = self.expr_type(arg)?;
+                    if self.is_float_type(&arg_type) {
+                        arg_info.push((true, float_counter));
+                        float_counter += 1;
+                    } else {
+                        arg_info.push((false, int_counter));
+                        int_counter += 1;
+                    }
                 }
 
-                for (i, _) in args.iter().enumerate().rev() {
-                    if i < arg_regs.len() {
-                        self.emit(&format!("    popq {}", arg_regs[i]));
+                // Generate all arguments and push to stack
+                for (arg, (is_float, _)) in args.iter().zip(arg_info.iter()) {
+                    self.generate_node(arg)?;
+                    if *is_float {
+                        self.emit("    subq $8, %rsp");
+                        self.emit("    movsd %xmm0, (%rsp)");
+                    } else {
+                        self.emit("    pushq %rax");
+                    }
+                }
+
+                // Pop arguments into appropriate registers in reverse order
+                for (is_float, idx) in arg_info.iter().rev() {
+                    if *is_float {
+                        if *idx < arg_regs_xmm.len() {
+                            self.emit(&format!("    movsd (%rsp), {}", arg_regs_xmm[*idx]));
+                            self.emit("    addq $8, %rsp");
+                        }
+                    } else if *idx < arg_regs.len() {
+                        self.emit(&format!("    popq {}", arg_regs[*idx]));
                     }
                 }
 
@@ -1299,26 +1354,33 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", size));
                 Ok(())
             }
-            AstNode::OffsetOf { struct_type, member } => {
+            AstNode::OffsetOf {
+                struct_type,
+                member,
+            } => {
                 // Get the struct/union layout
                 let layout = match struct_type {
-                    Type::Struct(name) => {
-                        self.struct_layouts.get(name).ok_or_else(|| {
-                            format!("Unknown struct: {}", name)
-                        })?
+                    Type::Struct(name) => self
+                        .struct_layouts
+                        .get(name)
+                        .ok_or_else(|| format!("Unknown struct: {}", name))?,
+                    Type::Union(name) => self
+                        .union_layouts
+                        .get(name)
+                        .ok_or_else(|| format!("Unknown union: {}", name))?,
+                    _ => {
+                        return Err(format!(
+                            "offsetof requires struct or union type, got {:?}",
+                            struct_type
+                        ));
                     }
-                    Type::Union(name) => {
-                        self.union_layouts.get(name).ok_or_else(|| {
-                            format!("Unknown union: {}", name)
-                        })?
-                    }
-                    _ => return Err(format!("offsetof requires struct or union type, got {:?}", struct_type)),
                 };
 
                 // Find the member and get its offset
-                let field_info = layout.fields.get(member).ok_or_else(|| {
-                    format!("Unknown member '{}' in struct/union", member)
-                })?;
+                let field_info = layout
+                    .fields
+                    .get(member)
+                    .ok_or_else(|| format!("Unknown member '{}' in struct/union", member))?;
 
                 self.emit(&format!("    movq ${}, %rax", field_info.offset));
                 Ok(())
@@ -1610,7 +1672,12 @@ impl CodeGenerator {
         }
     }
 
-    fn generate_float_binary_op(&mut self, left: &AstNode, right: &AstNode, instruction: &str) -> Result<(), String> {
+    fn generate_float_binary_op(
+        &mut self,
+        left: &AstNode,
+        right: &AstNode,
+        instruction: &str,
+    ) -> Result<(), String> {
         // Generate left operand (result in xmm0)
         self.generate_node(left)?;
         // Save xmm0 to stack
@@ -1632,7 +1699,12 @@ impl CodeGenerator {
         Ok(())
     }
 
-    fn generate_float_comparison(&mut self, left: &AstNode, right: &AstNode, set_instruction: &str) {
+    fn generate_float_comparison(
+        &mut self,
+        left: &AstNode,
+        right: &AstNode,
+        set_instruction: &str,
+    ) {
         self.generate_node(left).unwrap();
         self.emit("    subq $8, %rsp");
         self.emit("    movsd %xmm0, (%rsp)");
@@ -1818,7 +1890,17 @@ impl CodeGenerator {
             }
 
             // Float to integer conversions
-            (Type::Float | Type::Double, Type::Int | Type::UInt | Type::Long | Type::ULong | Type::Char | Type::UChar | Type::Short | Type::UShort) => {
+            (
+                Type::Float | Type::Double,
+                Type::Int
+                | Type::UInt
+                | Type::Long
+                | Type::ULong
+                | Type::Char
+                | Type::UChar
+                | Type::Short
+                | Type::UShort,
+            ) => {
                 // Convert float (in xmm0) to int (in rax)
                 self.emit("    cvttsd2si %xmm0, %rax");
                 // Now convert based on target integer size
@@ -1827,7 +1909,17 @@ impl CodeGenerator {
             }
 
             // Integer to float conversions
-            (Type::Int | Type::UInt | Type::Long | Type::ULong | Type::Char | Type::UChar | Type::Short | Type::UShort, Type::Float | Type::Double) => {
+            (
+                Type::Int
+                | Type::UInt
+                | Type::Long
+                | Type::ULong
+                | Type::Char
+                | Type::UChar
+                | Type::Short
+                | Type::UShort,
+                Type::Float | Type::Double,
+            ) => {
                 // First convert to 64-bit integer in rax if needed
                 let from_size = self.type_size(from)?;
                 if from_size < 8 {
@@ -1916,7 +2008,10 @@ impl CodeGenerator {
                         Ok(())
                     }
 
-                    _ => Err(format!("Unsupported type conversion from {:?} to {:?}", from, to)),
+                    _ => Err(format!(
+                        "Unsupported type conversion from {:?} to {:?}",
+                        from, to
+                    )),
                 }
             }
         }
@@ -2307,7 +2402,16 @@ impl CodeGenerator {
     fn collect_global_variables(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
-                if let AstNode::VarDecl { name, var_type, init, is_extern, is_static, is_const, is_volatile } = item {
+                if let AstNode::VarDecl {
+                    name,
+                    var_type,
+                    init,
+                    is_extern,
+                    is_static,
+                    is_const,
+                    is_volatile,
+                } = item
+                {
                     // If variable already exists and new declaration is extern, skip it
                     // (the existing definition takes precedence)
                     if *is_extern && self.global_variables.contains_key(name) {
@@ -2334,11 +2438,10 @@ impl CodeGenerator {
     fn collect_static_locals(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
-                if let AstNode::Function { body, .. } = item {
-                    if let Some(body_node) = body {
+                if let AstNode::Function { body, .. } = item
+                    && let Some(body_node) = body {
                         self.collect_static_locals_from_block(body_node)?;
                     }
-                }
             }
         }
         Ok(())
@@ -2351,7 +2454,15 @@ impl CodeGenerator {
                     self.collect_static_locals_from_block(stmt)?;
                 }
             }
-            AstNode::VarDecl { name, var_type, init, is_extern: _, is_static, is_const, is_volatile } => {
+            AstNode::VarDecl {
+                name,
+                var_type,
+                init,
+                is_extern: _,
+                is_static,
+                is_const,
+                is_volatile,
+            } => {
                 if *is_static {
                     self.global_variables.insert(
                         name.clone(),
@@ -2366,7 +2477,11 @@ impl CodeGenerator {
                     );
                 }
             }
-            AstNode::IfStatement { then_branch, else_branch, .. } => {
+            AstNode::IfStatement {
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 self.collect_static_locals_from_block(then_branch)?;
                 if let Some(else_b) = else_branch {
                     self.collect_static_locals_from_block(else_b)?;
@@ -2617,7 +2732,7 @@ impl CodeGenerator {
             AstNode::FunctionCall { .. } => Ok(Type::Int),
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
-            AstNode::OffsetOf { .. } => Ok(Type::ULong),  // offsetof returns size_t (unsigned long)
+            AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }
@@ -2747,10 +2862,7 @@ impl CodeGenerator {
                     Err("Array initializer for non-array type".to_string())
                 }
             }
-            _ => Err(format!(
-                "Unsupported global initializer: {:?}",
-                init
-            )),
+            _ => Err(format!("Unsupported global initializer: {:?}", init)),
         }
     }
 
@@ -2813,7 +2925,7 @@ impl CodeGenerator {
         if !literals.is_empty() {
             self.emit("    .section .rodata");
             for (label, value) in &literals {
-                self.emit(&format!("    .align 8"));
+                self.emit("    .align 8");
                 self.emit(&format!("{}:", label));
                 // Emit as 8-byte double precision value
                 self.emit(&format!("    .double {}", value));
