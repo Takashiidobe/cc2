@@ -1,0 +1,6 @@
+---
+source: tests/codegen.rs
+expression: "&mine"
+---
+stdout: "Hello, World!\nNumber: 42\nNegative: -10\nSum: 10 + 20 = 30\nsprintf result: Value: 123\n"
+status: 0

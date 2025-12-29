@@ -1,0 +1,6 @@
+---
+source: tests/codegen.rs
+expression: "&mine"
+---
+stdout: "strlen(\"Hello\") = 5\nstrcpy result: World\nstrcmp(\"Hello\", \"Hello\") = 0\nstrcmp(\"Hello\", \"World\") = -15\nstrcat result: Hello World\nAll string tests passed!\n"
+status: 0
