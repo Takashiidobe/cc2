@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int at 2:1\nIdentifier(main) at 2:5\n( at 2:9\n) at 2:10\n{ at 2:12\ndouble at 3:5\nIdentifier(x) at 3:12\n= at 3:14\nFloatLiteral(3.14) at 3:16\n; at 3:20\ndouble at 4:5\nIdentifier(y) at 4:12\n= at 4:14\nFloatLiteral(2.71) at 4:16\n; at 4:20\nint at 6:5\nIdentifier(lt) at 6:9\n= at 6:12\nIdentifier(x) at 6:14\n< at 6:16\nIdentifier(y) at 6:18\n; at 6:19\nint at 7:5\nIdentifier(gt) at 7:9\n= at 7:12\nIdentifier(x) at 7:14\n> at 7:16\nIdentifier(y) at 7:18\n; at 7:19\nint at 8:5\nIdentifier(le) at 8:9\n= at 8:12\nIdentifier(x) at 8:14\n<= at 8:16\nIdentifier(y) at 8:19\n; at 8:20\nint at 9:5\nIdentifier(ge) at 9:9\n= at 9:12\nIdentifier(x) at 9:14\n>= at 9:16\nIdentifier(y) at 9:19\n; at 9:20\nint at 10:5\nIdentifier(eq) at 10:9\n= at 10:12\nIdentifier(x) at 10:14\n== at 10:16\nIdentifier(y) at 10:19\n; at 10:20\nint at 11:5\nIdentifier(ne) at 11:9\n= at 11:12\nIdentifier(x) at 11:14\n!= at 11:16\nIdentifier(y) at 11:19\n; at 11:20\nreturn at 13:5\nIntLiteral(0) at 13:12\n; at 13:13\n} at 14:1\nEOF at 15:1\n"
+stderr: ""
+status: 0

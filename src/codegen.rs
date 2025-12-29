@@ -878,74 +878,98 @@ impl CodeGenerator {
                                 }
                             }
                             BinOp::Less => {
-                                if int_operands {
-                                    self.emit("    cmpl %eax, %ecx");
+                                if self.are_float_operands(left, right) {
+                                    self.generate_float_comparison(left, right, "setb");
                                 } else {
-                                    self.emit("    cmpq %rax, %rcx");
+                                    if int_operands {
+                                        self.emit("    cmpl %eax, %ecx");
+                                    } else {
+                                        self.emit("    cmpq %rax, %rcx");
+                                    }
+                                    if unsigned_ops {
+                                        self.emit("    setb %al");
+                                    } else {
+                                        self.emit("    setl %al");
+                                    }
+                                    self.emit("    movzbq %al, %rax");
                                 }
-                                if unsigned_ops {
-                                    self.emit("    setb %al");
-                                } else {
-                                    self.emit("    setl %al");
-                                }
-                                self.emit("    movzbq %al, %rax");
                             }
                             BinOp::Greater => {
-                                if int_operands {
-                                    self.emit("    cmpl %eax, %ecx");
+                                if self.are_float_operands(left, right) {
+                                    self.generate_float_comparison(left, right, "seta");
                                 } else {
-                                    self.emit("    cmpq %rax, %rcx");
+                                    if int_operands {
+                                        self.emit("    cmpl %eax, %ecx");
+                                    } else {
+                                        self.emit("    cmpq %rax, %rcx");
+                                    }
+                                    if unsigned_ops {
+                                        self.emit("    seta %al");
+                                    } else {
+                                        self.emit("    setg %al");
+                                    }
+                                    self.emit("    movzbq %al, %rax");
                                 }
-                                if unsigned_ops {
-                                    self.emit("    seta %al");
-                                } else {
-                                    self.emit("    setg %al");
-                                }
-                                self.emit("    movzbq %al, %rax");
                             }
                             BinOp::LessEqual => {
-                                if int_operands {
-                                    self.emit("    cmpl %eax, %ecx");
+                                if self.are_float_operands(left, right) {
+                                    self.generate_float_comparison(left, right, "setbe");
                                 } else {
-                                    self.emit("    cmpq %rax, %rcx");
+                                    if int_operands {
+                                        self.emit("    cmpl %eax, %ecx");
+                                    } else {
+                                        self.emit("    cmpq %rax, %rcx");
+                                    }
+                                    if unsigned_ops {
+                                        self.emit("    setbe %al");
+                                    } else {
+                                        self.emit("    setle %al");
+                                    }
+                                    self.emit("    movzbq %al, %rax");
                                 }
-                                if unsigned_ops {
-                                    self.emit("    setbe %al");
-                                } else {
-                                    self.emit("    setle %al");
-                                }
-                                self.emit("    movzbq %al, %rax");
                             }
                             BinOp::GreaterEqual => {
-                                if int_operands {
-                                    self.emit("    cmpl %eax, %ecx");
+                                if self.are_float_operands(left, right) {
+                                    self.generate_float_comparison(left, right, "setae");
                                 } else {
-                                    self.emit("    cmpq %rax, %rcx");
+                                    if int_operands {
+                                        self.emit("    cmpl %eax, %ecx");
+                                    } else {
+                                        self.emit("    cmpq %rax, %rcx");
+                                    }
+                                    if unsigned_ops {
+                                        self.emit("    setae %al");
+                                    } else {
+                                        self.emit("    setge %al");
+                                    }
+                                    self.emit("    movzbq %al, %rax");
                                 }
-                                if unsigned_ops {
-                                    self.emit("    setae %al");
-                                } else {
-                                    self.emit("    setge %al");
-                                }
-                                self.emit("    movzbq %al, %rax");
                             }
                             BinOp::EqualEqual => {
-                                if int_operands {
-                                    self.emit("    cmpl %eax, %ecx");
+                                if self.are_float_operands(left, right) {
+                                    self.generate_float_comparison(left, right, "sete");
                                 } else {
-                                    self.emit("    cmpq %rax, %rcx");
+                                    if int_operands {
+                                        self.emit("    cmpl %eax, %ecx");
+                                    } else {
+                                        self.emit("    cmpq %rax, %rcx");
+                                    }
+                                    self.emit("    sete %al");
+                                    self.emit("    movzbq %al, %rax");
                                 }
-                                self.emit("    sete %al");
-                                self.emit("    movzbq %al, %rax");
                             }
                             BinOp::NotEqual => {
-                                if int_operands {
-                                    self.emit("    cmpl %eax, %ecx");
+                                if self.are_float_operands(left, right) {
+                                    self.generate_float_comparison(left, right, "setne");
                                 } else {
-                                    self.emit("    cmpq %rax, %rcx");
+                                    if int_operands {
+                                        self.emit("    cmpl %eax, %ecx");
+                                    } else {
+                                        self.emit("    cmpq %rax, %rcx");
+                                    }
+                                    self.emit("    setne %al");
+                                    self.emit("    movzbq %al, %rax");
                                 }
-                                self.emit("    setne %al");
-                                self.emit("    movzbq %al, %rax");
                             }
                             BinOp::Add | BinOp::Subtract | BinOp::LogicalAnd | BinOp::LogicalOr => {
                                 unreachable!()
@@ -1606,6 +1630,19 @@ impl CodeGenerator {
         self.emit(&format!("    {} %xmm1, %xmm0", instruction));
 
         Ok(())
+    }
+
+    fn generate_float_comparison(&mut self, left: &AstNode, right: &AstNode, set_instruction: &str) {
+        self.generate_node(left).unwrap();
+        self.emit("    subq $8, %rsp");
+        self.emit("    movsd %xmm0, (%rsp)");
+        self.generate_node(right).unwrap();
+        self.emit("    movsd %xmm0, %xmm1");
+        self.emit("    movsd (%rsp), %xmm0");
+        self.emit("    addq $8, %rsp");
+        self.emit("    ucomisd %xmm1, %xmm0");
+        self.emit(&format!("    {} %al", set_instruction));
+        self.emit("    movzbq %al, %rax");
     }
 
     fn is_integer_type(&self, ty: &Type) -> bool {
