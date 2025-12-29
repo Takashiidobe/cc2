@@ -1835,7 +1835,7 @@ impl CodeGenerator {
             Type::ULong => Ok(8),
             Type::Float => Ok(4),
             Type::Double => Ok(8),
-            Type::Pointer(_) => Ok(8),
+            Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(0),
             Type::Array(elem, len) => Ok(self.type_size(elem)? * (*len as i32)),
             Type::Struct(name) => {
@@ -1868,7 +1868,7 @@ impl CodeGenerator {
             Type::ULong => Ok(8),
             Type::Float => Ok(4),
             Type::Double => Ok(8),
-            Type::Pointer(_) => Ok(8),
+            Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(1),
             Type::Array(elem, _) => self.type_alignment(elem),
             Type::Struct(name) => {
