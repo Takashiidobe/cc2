@@ -384,6 +384,9 @@ impl Parser {
             Token::Break => self.parse_break(),
             Token::Continue => self.parse_continue(),
             Token::Goto => self.parse_goto(),
+            Token::Switch => self.parse_switch_statement(),
+            Token::Case => self.parse_case(),
+            Token::Default => self.parse_default(),
             Token::Unsigned
             | Token::Int
             | Token::Char
@@ -624,6 +627,42 @@ impl Parser {
         self.advance();
         self.expect(Token::Semicolon)?;
         Ok(AstNode::Goto(label))
+    }
+
+    fn parse_switch_statement(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Switch)?;
+        self.expect(Token::OpenParen)?;
+        let expr = self.parse_expression()?;
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::OpenBrace)?;
+
+        let mut body = Vec::new();
+        while self.current_token() != &Token::CloseBrace {
+            body.push(self.parse_statement()?);
+        }
+        self.expect(Token::CloseBrace)?;
+
+        Ok(AstNode::SwitchStatement {
+            expr: Box::new(expr),
+            body,
+        })
+    }
+
+    fn parse_case(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Case)?;
+        let value = match self.current_token() {
+            Token::IntLiteral(n) => *n,
+            _ => return Err(format!("Expected integer literal after case, got {:?}", self.current_token())),
+        };
+        self.advance();
+        self.expect(Token::Colon)?;
+        Ok(AstNode::Case(value))
+    }
+
+    fn parse_default(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Default)?;
+        self.expect(Token::Colon)?;
+        Ok(AstNode::Default)
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {

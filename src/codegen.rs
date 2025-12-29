@@ -236,6 +236,93 @@ impl CodeGenerator {
                 self.emit(&format!("    jmp {}", label));
                 Ok(())
             }
+            AstNode::SwitchStatement { expr, body } => {
+                // Evaluate switch expression
+                self.generate_node(expr)?;
+                self.emit("    pushq %rax");
+
+                // Create end label for break statements
+                let end_label = self.next_label();
+
+                // Push switch context for break handling
+                let switch_ctx = LoopContext {
+                    break_label: end_label.clone(),
+                    continue_label: String::new(), // switch doesn't have continue
+                };
+                self.loop_stack.push(switch_ctx);
+
+                // First pass: collect case values and create labels
+                let mut case_labels = Vec::new();
+                let mut default_label = None;
+                for (i, node) in body.iter().enumerate() {
+                    match node {
+                        AstNode::Case(value) => {
+                            let label = format!(".L_case_{}_{}", self.label_counter, i);
+                            case_labels.push((*value, label));
+                        }
+                        AstNode::Default => {
+                            default_label = Some(format!(".L_default_{}", self.label_counter));
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Generate comparison code for each case
+                for (value, label) in &case_labels {
+                    self.emit("    movq (%rsp), %rax");
+                    self.emit(&format!("    cmpq ${}, %rax", value));
+                    self.emit(&format!("    je {}", label));
+                }
+
+                // Jump to default or end
+                if let Some(ref default_lbl) = default_label {
+                    self.emit(&format!("    jmp {}", default_lbl));
+                } else {
+                    self.emit(&format!("    jmp {}", end_label));
+                }
+
+                // Generate code for each statement in body
+                for (i, node) in body.iter().enumerate() {
+                    match node {
+                        AstNode::Case(value) => {
+                            // Find and emit the case label
+                            for (case_val, label) in &case_labels {
+                                if case_val == value {
+                                    self.emit(&format!("{}:", label));
+                                    break;
+                                }
+                            }
+                        }
+                        AstNode::Default => {
+                            if let Some(ref lbl) = default_label {
+                                self.emit(&format!("{}:", lbl));
+                            }
+                        }
+                        _ => {
+                            self.generate_node(node)?;
+                        }
+                    }
+                }
+
+                // Emit end label
+                self.emit(&format!("{}:", end_label));
+
+                // Clean up switch expression from stack
+                self.emit("    addq $8, %rsp");
+
+                // Pop switch context
+                self.loop_stack.pop();
+
+                Ok(())
+            }
+            AstNode::Case(_) => {
+                // Case labels are handled by SwitchStatement
+                Ok(())
+            }
+            AstNode::Default => {
+                // Default label is handled by SwitchStatement
+                Ok(())
+            }
             AstNode::Break => {
                 if let Some(ctx) = self.loop_stack.last() {
                     self.emit(&format!("    jmp {}", ctx.break_label));
@@ -2133,6 +2220,11 @@ impl CodeGenerator {
                     self.collect_static_locals_from_block(init_stmt)?;
                 }
                 self.collect_static_locals_from_block(body)?;
+            }
+            AstNode::SwitchStatement { body, .. } => {
+                for stmt in body {
+                    self.collect_static_locals_from_block(stmt)?;
+                }
             }
             _ => {}
         }

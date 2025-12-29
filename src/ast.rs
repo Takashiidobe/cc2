@@ -106,6 +106,12 @@ pub enum AstNode {
     CharLiteral(i64),
     Label(String),
     Goto(String),
+    SwitchStatement {
+        expr: Box<AstNode>,
+        body: Vec<AstNode>,
+    },
+    Case(i64),
+    Default,
     Break,
     Continue,
 }
@@ -258,6 +264,9 @@ impl fmt::Display for AstNode {
             AstNode::CharLiteral(c) => write!(f, "CharLiteral({})", c),
             AstNode::Label(name) => write!(f, "Label({})", name),
             AstNode::Goto(name) => write!(f, "Goto({})", name),
+            AstNode::SwitchStatement { .. } => write!(f, "SwitchStatement"),
+            AstNode::Case(value) => write!(f, "Case({})", value),
+            AstNode::Default => write!(f, "Default"),
             AstNode::Break => write!(f, "Break"),
             AstNode::Continue => write!(f, "Continue"),
         }
