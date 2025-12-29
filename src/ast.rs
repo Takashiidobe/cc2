@@ -110,6 +110,7 @@ pub enum AstNode {
     CharLiteral(i64),
     Label(String),
     Goto(String),
+    InlineAsm(String),
     SwitchStatement {
         expr: Box<AstNode>,
         body: Vec<AstNode>,
@@ -269,6 +270,7 @@ impl fmt::Display for AstNode {
             AstNode::CharLiteral(c) => write!(f, "CharLiteral({})", c),
             AstNode::Label(name) => write!(f, "Label({})", name),
             AstNode::Goto(name) => write!(f, "Goto({})", name),
+            AstNode::InlineAsm(_) => write!(f, "InlineAsm"),
             AstNode::SwitchStatement { .. } => write!(f, "SwitchStatement"),
             AstNode::Case(value) => write!(f, "Case({})", value),
             AstNode::Default => write!(f, "Default"),

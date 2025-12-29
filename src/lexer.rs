@@ -69,6 +69,7 @@ pub enum Token {
     Switch,
     Case,
     Default,
+    Asm,
 
     // Identifiers and literals
     Identifier(String),
@@ -166,6 +167,7 @@ impl fmt::Display for Token {
             Token::Switch => write!(f, "switch"),
             Token::Case => write!(f, "case"),
             Token::Default => write!(f, "default"),
+            Token::Asm => write!(f, "asm"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
@@ -574,6 +576,8 @@ impl Lexer {
             "switch" => Token::Switch,
             "case" => Token::Case,
             "default" => Token::Default,
+            "asm" => Token::Asm,
+            "__asm__" => Token::Asm,  // GCC variant
             _ => Token::Identifier(ident),
         };
 

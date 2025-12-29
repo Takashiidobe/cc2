@@ -236,6 +236,11 @@ impl CodeGenerator {
                 self.emit(&format!("    jmp {}", label));
                 Ok(())
             }
+            AstNode::InlineAsm(asm_code) => {
+                // Emit the inline assembly code directly
+                self.emit(&format!("    {}", asm_code));
+                Ok(())
+            }
             AstNode::SwitchStatement { expr, body } => {
                 // Evaluate switch expression
                 self.generate_node(expr)?;

@@ -387,6 +387,7 @@ impl Parser {
             Token::Switch => self.parse_switch_statement(),
             Token::Case => self.parse_case(),
             Token::Default => self.parse_default(),
+            Token::Asm => self.parse_inline_asm(),
             Token::Unsigned
             | Token::Int
             | Token::Char
@@ -663,6 +664,22 @@ impl Parser {
         self.expect(Token::Default)?;
         self.expect(Token::Colon)?;
         Ok(AstNode::Default)
+    }
+
+    fn parse_inline_asm(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Asm)?;
+        self.expect(Token::OpenParen)?;
+
+        let asm_code = match self.current_token() {
+            Token::StringLiteral(s) => s.clone(),
+            _ => return Err(format!("Expected string literal in asm statement, got {:?}", self.current_token())),
+        };
+        self.advance();
+
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(AstNode::InlineAsm(asm_code))
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {
