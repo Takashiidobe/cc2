@@ -738,7 +738,23 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {
-        self.parse_assignment()
+        self.parse_comma()
+    }
+
+    fn parse_comma(&mut self) -> Result<AstNode, String> {
+        let mut left = self.parse_assignment()?;
+
+        while self.current_token() == &Token::Comma {
+            self.advance();
+            let right = self.parse_assignment()?;
+            left = AstNode::BinaryOp {
+                op: BinOp::Comma,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
     }
 
     fn parse_assignment(&mut self) -> Result<AstNode, String> {
@@ -1212,7 +1228,9 @@ impl Parser {
         }
 
         loop {
-            args.push(self.parse_expression()?);
+            // Use parse_assignment instead of parse_expression to avoid
+            // parsing commas as comma operators (commas are argument separators here)
+            args.push(self.parse_assignment()?);
 
             if self.current_token() == &Token::Comma {
                 self.advance();
@@ -1282,7 +1300,8 @@ impl Parser {
             if self.current_token() == &Token::OpenBrace {
                 values.push(self.parse_array_initializer()?);
             } else {
-                values.push(self.parse_expression()?);
+                // Use parse_assignment to avoid parsing commas as comma operators
+                values.push(self.parse_assignment()?);
             }
 
             if self.current_token() == &Token::Comma {
@@ -1376,7 +1395,8 @@ impl Parser {
                 // Nested struct/union initialization
                 self.parse_struct_initializer()?
             } else {
-                self.parse_expression()?
+                // Use parse_assignment to avoid parsing commas as comma operators
+                self.parse_assignment()?
             };
             fields.push(StructInitField { field_name, value });
 

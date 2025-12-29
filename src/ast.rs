@@ -142,6 +142,7 @@ pub enum BinOp {
     NotEqual,
     LogicalAnd,
     LogicalOr,
+    Comma,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

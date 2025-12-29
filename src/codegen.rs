@@ -734,6 +734,12 @@ impl CodeGenerator {
             }
             AstNode::BinaryOp { op, left, right } => {
                 match op {
+                    BinOp::Comma => {
+                        // Evaluate left, discard result
+                        self.generate_node(left)?;
+                        // Evaluate right, keep result
+                        self.generate_node(right)?;
+                    }
                     BinOp::LogicalAnd => {
                         let end_label = self.next_label();
                         let false_label = self.next_label();
@@ -1026,7 +1032,7 @@ impl CodeGenerator {
                                     self.emit("    movzbq %al, %rax");
                                 }
                             }
-                            BinOp::Add | BinOp::Subtract | BinOp::LogicalAnd | BinOp::LogicalOr => {
+                            BinOp::Add | BinOp::Subtract | BinOp::LogicalAnd | BinOp::LogicalOr | BinOp::Comma => {
                                 unreachable!()
                             }
                         }
@@ -2699,6 +2705,10 @@ impl CodeGenerator {
                     | BinOp::NotEqual
                     | BinOp::LogicalAnd
                     | BinOp::LogicalOr => Ok(Type::Int),
+                    BinOp::Comma => {
+                        // Comma operator returns the type of the right expression
+                        self.expr_type(right)
+                    }
                 }
             }
             AstNode::TernaryOp {
