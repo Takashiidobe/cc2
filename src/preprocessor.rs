@@ -336,6 +336,8 @@ impl Preprocessor {
             "endif" => Err(format!("Unexpected #endif at line {}", line_num + 1)),
             "else" => Err(format!("Unexpected #else at line {}", line_num + 1)),
             "elif" => Err(format!("Unexpected #elif at line {}", line_num + 1)),
+            "error" => self.process_error(after_hash, line_num),
+            "warning" => self.process_warning(after_hash, line_num),
             "pragma" => {
                 // Ignore pragma directives for now
                 Ok((line_num + 1, String::new()))
@@ -691,6 +693,41 @@ impl Preprocessor {
         }
 
         self.macros.remove(&name);
+        Ok((line_num + 1, String::new()))
+    }
+
+    /// Process #error directive
+    fn process_error(
+        &mut self,
+        directive: &str,
+        line_num: usize,
+    ) -> Result<(usize, String), String> {
+        // directive is like "error message text"
+        let after_error = directive.trim_start();
+        if !after_error.starts_with("error") {
+            return Err(format!("Invalid error directive at line {}", line_num + 1));
+        }
+
+        let message = after_error[5..].trim(); // Skip "error"
+        Err(format!("#error at line {}: {}", line_num + 1, message))
+    }
+
+    /// Process #warning directive
+    fn process_warning(
+        &mut self,
+        directive: &str,
+        line_num: usize,
+    ) -> Result<(usize, String), String> {
+        // directive is like "warning message text"
+        let after_warning = directive.trim_start();
+        if !after_warning.starts_with("warning") {
+            return Err(format!("Invalid warning directive at line {}", line_num + 1));
+        }
+
+        let message = after_warning[7..].trim(); // Skip "warning"
+        // For warnings, we could print to stderr and continue, but for now we'll just ignore them
+        // TODO: Actually emit warnings to stderr
+        eprintln!("warning: #warning at line {}: {}", line_num + 1, message);
         Ok((line_num + 1, String::new()))
     }
 
