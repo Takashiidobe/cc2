@@ -1468,10 +1468,29 @@ impl Parser {
             };
             self.advance();
             let field_type = self.parse_array_type_suffix(field_type)?;
+
+            // Check for bit-field syntax (: width)
+            let bit_width = if self.current_token() == &Token::Colon {
+                self.advance();
+                match self.current_token() {
+                    Token::IntLiteral(width, _) if *width > 0 => {
+                        let w = *width as u32;
+                        self.advance();
+                        Some(w)
+                    }
+                    _ => {
+                        return Err("Bit-field width must be a positive integer literal".to_string());
+                    }
+                }
+            } else {
+                None
+            };
+
             self.expect(Token::Semicolon)?;
             fields.push(StructField {
                 name: field_name,
                 field_type,
+                bit_width,
             });
         }
 
@@ -1575,10 +1594,29 @@ impl Parser {
             };
             self.advance();
             let field_type = self.parse_array_type_suffix(field_type)?;
+
+            // Check for bit-field syntax (: width)
+            let bit_width = if self.current_token() == &Token::Colon {
+                self.advance();
+                match self.current_token() {
+                    Token::IntLiteral(width, _) if *width > 0 => {
+                        let w = *width as u32;
+                        self.advance();
+                        Some(w)
+                    }
+                    _ => {
+                        return Err("Bit-field width must be a positive integer literal".to_string());
+                    }
+                }
+            } else {
+                None
+            };
+
             self.expect(Token::Semicolon)?;
             fields.push(StructField {
                 name: field_name,
                 field_type,
+                bit_width,
             });
         }
 
