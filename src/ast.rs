@@ -64,6 +64,10 @@ pub enum AstNode {
         name: String,
         args: Vec<AstNode>,
     },
+    IndirectCall {
+        target: Box<AstNode>,
+        args: Vec<AstNode>,
+    },
     BinaryOp {
         op: BinOp,
         left: Box<AstNode>,
@@ -258,6 +262,7 @@ impl fmt::Display for AstNode {
             AstNode::Assignment { .. } => write!(f, "Assignment"),
             AstNode::Variable(name) => write!(f, "Variable({})", name),
             AstNode::FunctionCall { name, .. } => write!(f, "FunctionCall({})", name),
+            AstNode::IndirectCall { .. } => write!(f, "IndirectCall"),
             AstNode::BinaryOp { op, .. } => write!(f, "BinaryOp({:?})", op),
             AstNode::TernaryOp { .. } => write!(f, "TernaryOp"),
             AstNode::UnaryOp { op, .. } => write!(f, "UnaryOp({:?})", op),

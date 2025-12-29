@@ -757,6 +757,74 @@ impl CodeGenerator {
 
                 Ok(())
             }
+            AstNode::IndirectCall { target, args } => {
+                let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+                let arg_regs_xmm = [
+                    "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
+                ];
+
+                // Evaluate the function pointer target and save it in r11
+                self.generate_node(target)?;
+                self.emit("    movq %rax, %r11");
+
+                // Track which arguments are floats and their position within their type class
+                let mut int_counter = 0;
+                let mut float_counter = 0;
+                let mut arg_info: Vec<(bool, usize)> = Vec::new(); // (is_float, index_within_type)
+
+                for arg in args.iter() {
+                    let arg_type = self.expr_type(arg)?;
+                    if self.is_float_type(&arg_type) {
+                        arg_info.push((true, float_counter));
+                        float_counter += 1;
+                    } else {
+                        arg_info.push((false, int_counter));
+                        int_counter += 1;
+                    }
+                }
+
+                // Generate all arguments and push to stack
+                for (arg, (is_float, _)) in args.iter().zip(arg_info.iter()) {
+                    self.generate_node(arg)?;
+                    if *is_float {
+                        self.emit("    subq $8, %rsp");
+                        self.emit("    movsd %xmm0, (%rsp)");
+                    } else {
+                        self.emit("    pushq %rax");
+                    }
+                }
+
+                // Pop/move arguments: register args go into registers, stack args stay on stack
+                let mut stack_args_count = 0;
+                for (is_float, idx) in arg_info.iter().rev() {
+                    if *is_float {
+                        if *idx < arg_regs_xmm.len() {
+                            self.emit(&format!("    movsd (%rsp), {}", arg_regs_xmm[*idx]));
+                            self.emit("    addq $8, %rsp");
+                        } else {
+                            // This argument stays on stack
+                            stack_args_count += 1;
+                        }
+                    } else {
+                        if *idx < arg_regs.len() {
+                            self.emit(&format!("    popq {}", arg_regs[*idx]));
+                        } else {
+                            // This argument stays on stack
+                            stack_args_count += 1;
+                        }
+                    }
+                }
+
+                // Call through the function pointer
+                self.emit("    call *%r11");
+
+                // Clean up stack arguments if any
+                if stack_args_count > 0 {
+                    self.emit(&format!("    addq ${}, %rsp", stack_args_count * 8));
+                }
+
+                Ok(())
+            }
             AstNode::BinaryOp { op, left, right } => {
                 match op {
                     BinOp::Comma => {
@@ -1291,16 +1359,43 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::AddressOf(expr) => {
-                self.generate_lvalue(expr)?;
-                Ok(())
+                // Special case: taking address of a function
+                if let AstNode::Variable(name) = &**expr {
+                    // Check if this is a local/global variable or a function
+                    let is_variable = self.symbol_table.get_variable(name).is_some()
+                        || self.global_variables.contains_key(name);
+
+                    if is_variable {
+                        // Regular variable - use lvalue
+                        self.generate_lvalue(expr)?;
+                    } else {
+                        // Assume it's a function name - load its address
+                        self.emit(&format!("    leaq {}(%rip), %rax", name));
+                    }
+                    Ok(())
+                } else {
+                    self.generate_lvalue(expr)?;
+                    Ok(())
+                }
             }
             AstNode::Dereference(expr) => {
                 self.generate_node(expr)?;
                 let operand_type = self.expr_type(expr)?;
                 let pointee_type = match operand_type {
                     Type::Pointer(pointee) => *pointee,
+                    Type::FunctionPointer { .. } => {
+                        // Function pointers are already addresses - dereferencing is a no-op
+                        return Ok(());
+                    }
                     _ => return Err("Cannot dereference non-pointer type".to_string()),
                 };
+
+                // Check if pointee is a function pointer - if so, don't dereference
+                if matches!(pointee_type, Type::FunctionPointer { .. }) {
+                    // The address is already in %rax, no dereference needed
+                    return Ok(());
+                }
+
                 if matches!(pointee_type, Type::Int) {
                     self.emit("    movslq (%rax), %rax");
                 } else if matches!(pointee_type, Type::UInt) {
@@ -2634,11 +2729,17 @@ impl CodeGenerator {
                     return Ok(global.var_type.clone());
                 }
 
-                let symbol = self
-                    .symbol_table
-                    .get_variable(name)
-                    .ok_or_else(|| format!("Undefined variable: {}", name))?;
-                Ok(symbol.symbol_type.clone())
+                // Check if it's a local variable
+                if let Some(symbol) = self.symbol_table.get_variable(name) {
+                    return Ok(symbol.symbol_type.clone());
+                }
+
+                // Assume it's a function name - return a generic function pointer type
+                // For now, assume functions return int (can be improved later)
+                Ok(Type::FunctionPointer {
+                    return_type: Box::new(Type::Int),
+                    param_types: vec![],
+                })
             }
             AstNode::AddressOf(inner) => {
                 let inner_type = self.expr_type(inner)?;
@@ -2764,7 +2865,7 @@ impl CodeGenerator {
             | AstNode::PrefixDecrement(operand)
             | AstNode::PostfixIncrement(operand)
             | AstNode::PostfixDecrement(operand) => self.expr_type(operand),
-            AstNode::FunctionCall { .. } => Ok(Type::Int),
+            AstNode::FunctionCall { .. } | AstNode::IndirectCall { .. } => Ok(Type::Int),
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)

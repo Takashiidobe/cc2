@@ -1172,9 +1172,14 @@ impl Parser {
                     let args = self.parse_arguments()?;
                     self.expect(Token::CloseParen)?;
                     if let AstNode::Variable(name) = expr {
+                        // Direct function call
                         expr = AstNode::FunctionCall { name, args };
                     } else {
-                        return Err("Function call target must be an identifier".to_string());
+                        // Indirect function call (through function pointer)
+                        expr = AstNode::IndirectCall {
+                            target: Box::new(expr),
+                            args,
+                        };
                     }
                 }
                 Token::OpenBracket => {
