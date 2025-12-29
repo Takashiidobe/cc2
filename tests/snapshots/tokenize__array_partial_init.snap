@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "int at 1:1\nIdentifier(main) at 1:5\n( at 1:9\n) at 1:10\n{ at 1:12\nint at 2:5\nIdentifier(arr) at 2:9\n[ at 2:12\nIntLiteral(5) at 2:13\n] at 2:14\n= at 2:16\n{ at 2:18\nIntLiteral(1) at 2:19\n, at 2:20\nIntLiteral(2) at 2:22\n} at 2:23\n; at 2:24\nreturn at 3:5\nIdentifier(arr) at 3:12\n[ at 3:15\nIntLiteral(0) at 3:16\n] at 3:17\n+ at 3:19\nIdentifier(arr) at 3:21\n[ at 3:24\nIntLiteral(1) at 3:25\n] at 3:26\n+ at 3:28\nIdentifier(arr) at 3:30\n[ at 3:33\nIntLiteral(2) at 3:34\n] at 3:35\n+ at 3:37\nIdentifier(arr) at 3:39\n[ at 3:42\nIntLiteral(3) at 3:43\n] at 3:44\n+ at 3:46\nIdentifier(arr) at 3:48\n[ at 3:51\nIntLiteral(4) at 3:52\n] at 3:53\n; at 3:54\n} at 4:1\nEOF at 5:1\n"
+stdout: "int at 1:1\nIdentifier(main) at 1:5\n( at 1:9\n) at 1:10\n{ at 1:12\nint at 2:5\nIdentifier(arr) at 2:9\n[ at 2:12\nIntLiteral(5, None) at 2:13\n] at 2:14\n= at 2:16\n{ at 2:18\nIntLiteral(1, None) at 2:19\n, at 2:20\nIntLiteral(2, None) at 2:22\n} at 2:23\n; at 2:24\nreturn at 3:5\nIdentifier(arr) at 3:12\n[ at 3:15\nIntLiteral(0, None) at 3:16\n] at 3:17\n+ at 3:19\nIdentifier(arr) at 3:21\n[ at 3:24\nIntLiteral(1, None) at 3:25\n] at 3:26\n+ at 3:28\nIdentifier(arr) at 3:30\n[ at 3:33\nIntLiteral(2, None) at 3:34\n] at 3:35\n+ at 3:37\nIdentifier(arr) at 3:39\n[ at 3:42\nIntLiteral(3, None) at 3:43\n] at 3:44\n+ at 3:46\nIdentifier(arr) at 3:48\n[ at 3:51\nIntLiteral(4, None) at 3:52\n] at 3:53\n; at 3:54\n} at 4:1\nEOF at 5:1\n"
 stderr: ""
 status: 0

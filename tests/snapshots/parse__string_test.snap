@@ -1,0 +1,7 @@
+---
+source: tests/parse.rs
+expression: "&result"
+---
+stdout: "Program\n  TypedefDef(size_t)\n  Function(memcpy)\n  Function(memmove)\n  Function(memcmp)\n  Function(memset)\n  Function(memchr)\n  Function(strcpy)\n  Function(strncpy)\n  Function(strcat)\n  Function(strncat)\n  Function(strcmp)\n  Function(strncmp)\n  Function(strcoll)\n  Function(strxfrm)\n  Function(strchr)\n  Function(strrchr)\n  Function(strspn)\n  Function(strcspn)\n  Function(strpbrk)\n  Function(strstr)\n  Function(strtok)\n  Function(strlen)\n  Function(strerror)\n  Function(main)\n\n"
+stderr: ""
+status: 0

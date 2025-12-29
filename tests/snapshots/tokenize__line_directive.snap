@@ -1,0 +1,7 @@
+---
+source: tests/tokenize.rs
+expression: "&result"
+---
+stdout: "int at 3:1\nIdentifier(a) at 3:5\n= at 3:7\nIntLiteral(3, None) at 3:9\n; at 3:10\nint at 5:1\nIdentifier(b) at 5:5\n= at 5:7\nIntLiteral(100, None) at 5:9\n; at 5:12\nint at 6:1\nIdentifier(c) at 6:5\n= at 6:7\nIntLiteral(101, None) at 6:9\n; at 6:12\nint at 8:1\nIdentifier(d) at 8:5\n= at 8:7\nIntLiteral(200, None) at 8:9\n; at 8:12\nint at 10:1\nIdentifier(main) at 10:5\n( at 10:9\n) at 10:10\n{ at 10:12\nif at 12:5\n( at 12:8\nIdentifier(a) at 12:9\n!= at 12:11\nIntLiteral(3, None) at 12:14\n) at 12:15\nreturn at 12:17\nIntLiteral(1, None) at 12:24\n; at 12:25\nif at 13:5\n( at 13:8\nIdentifier(b) at 13:9\n!= at 13:11\nIntLiteral(100, None) at 13:14\n) at 13:17\nreturn at 13:19\nIntLiteral(2, None) at 13:26\n; at 13:27\nif at 14:5\n( at 14:8\nIdentifier(c) at 14:9\n!= at 14:11\nIntLiteral(101, None) at 14:14\n) at 14:17\nreturn at 14:19\nIntLiteral(3, None) at 14:26\n; at 14:27\nif at 15:5\n( at 15:8\nIdentifier(d) at 15:9\n!= at 15:11\nIntLiteral(200, None) at 15:14\n) at 15:17\nreturn at 15:19\nIntLiteral(4, None) at 15:26\n; at 15:27\nreturn at 16:5\nIntLiteral(0, None) at 16:12\n; at 16:13\n} at 17:1\nEOF at 18:1\n"
+stderr: ""
+status: 0

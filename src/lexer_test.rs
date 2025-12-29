@@ -13,7 +13,7 @@ mod lexer_tests {
         assert_eq!(tokens[3].token, Token::CloseParen);
         assert_eq!(tokens[4].token, Token::OpenBrace);
         assert_eq!(tokens[5].token, Token::Return);
-        assert_eq!(tokens[6].token, Token::IntLiteral(42));
+        assert_eq!(tokens[6].token, Token::IntLiteral(42, IntSuffix::None));
         assert_eq!(tokens[7].token, Token::Semicolon);
         assert_eq!(tokens[8].token, Token::CloseBrace);
         assert_eq!(tokens[9].token, Token::Eof);

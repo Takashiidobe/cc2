@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "typedef at 2:1\nint at 2:9\n* at 2:12\nIdentifier(intptr) at 2:14\n; at 2:20\nint at 4:1\nIdentifier(main) at 4:5\n( at 4:9\n) at 4:10\n{ at 4:12\nint at 5:5\nIdentifier(value) at 5:9\n= at 5:15\nIntLiteral(55) at 5:17\n; at 5:19\nIdentifier(intptr) at 6:5\nIdentifier(p) at 6:12\n= at 6:14\n& at 6:16\nIdentifier(value) at 6:17\n; at 6:22\nreturn at 7:5\n* at 7:12\nIdentifier(p) at 7:13\n; at 7:14\n} at 8:1\nEOF at 9:1\n"
+stdout: "typedef at 2:1\nint at 2:9\n* at 2:12\nIdentifier(intptr) at 2:14\n; at 2:20\nint at 4:1\nIdentifier(main) at 4:5\n( at 4:9\n) at 4:10\n{ at 4:12\nint at 5:5\nIdentifier(value) at 5:9\n= at 5:15\nIntLiteral(55, None) at 5:17\n; at 5:19\nIdentifier(intptr) at 6:5\nIdentifier(p) at 6:12\n= at 6:14\n& at 6:16\nIdentifier(value) at 6:17\n; at 6:22\nreturn at 7:5\n* at 7:12\nIdentifier(p) at 7:13\n; at 7:14\n} at 8:1\nEOF at 9:1\n"
 stderr: ""
 status: 0

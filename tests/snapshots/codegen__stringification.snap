@@ -1,0 +1,6 @@
+---
+source: tests/codegen.rs
+expression: "&mine"
+---
+stdout: "hello\nhello world\n123\n1 + 2\n"
+status: 0

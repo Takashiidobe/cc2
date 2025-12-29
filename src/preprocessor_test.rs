@@ -8,7 +8,7 @@ mod tests {
     #[test]
     fn test_preprocessor_creation() {
         let pp = Preprocessor::new();
-        assert_eq!(pp.macros.len(), 0);
+        assert_eq!(pp.macros.len(), 5); // Predefined macros: __STDC__, __STDC_VERSION__, __STDC_HOSTED__, __DATE__, __TIME__
         assert_eq!(pp.include_paths.len(), 0); // User include paths start empty
         assert!(pp.system_include_paths.len() >= 2); // Default system paths
     }
@@ -16,7 +16,7 @@ mod tests {
     #[test]
     fn test_preprocessor_creation_no_std() {
         let pp = Preprocessor::new_no_std();
-        assert_eq!(pp.macros.len(), 0);
+        assert_eq!(pp.macros.len(), 5); // Predefined macros are added even with nostdinc
         assert_eq!(pp.include_paths.len(), 0);
         assert_eq!(pp.system_include_paths.len(), 0); // No default paths with nostdinc
     }

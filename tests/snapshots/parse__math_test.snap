@@ -1,0 +1,7 @@
+---
+source: tests/parse.rs
+expression: "&result"
+---
+stdout: "Program\n  Function(sin)\n  Function(cos)\n  Function(tan)\n  Function(asin)\n  Function(acos)\n  Function(atan)\n  Function(atan2)\n  Function(sinh)\n  Function(cosh)\n  Function(tanh)\n  Function(exp)\n  Function(log)\n  Function(log10)\n  Function(pow)\n  Function(sqrt)\n  Function(ceil)\n  Function(floor)\n  Function(fabs)\n  Function(ldexp)\n  Function(frexp)\n  Function(modf)\n  Function(fmod)\n  Function(main)\n\n"
+stderr: ""
+status: 0

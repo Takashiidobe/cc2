@@ -1,0 +1,7 @@
+---
+source: tests/parse.rs
+expression: "&result"
+---
+stdout: "Program\n  VarDecl(a)\n  VarDecl(b)\n  VarDecl(c)\n  VarDecl(d)\n  Function(main)\n\n"
+stderr: ""
+status: 0

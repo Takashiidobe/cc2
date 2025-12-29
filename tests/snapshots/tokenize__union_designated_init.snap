@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "union at 3:1\nIdentifier(Value) at 3:7\n{ at 3:13\nint at 4:5\nIdentifier(i) at 4:9\n; at 4:10\nchar at 5:5\nIdentifier(c) at 5:10\n; at 5:11\n} at 6:1\n; at 6:2\nint at 8:1\nIdentifier(main) at 8:5\n( at 8:9\n) at 8:10\n{ at 8:12\nunion at 9:5\nIdentifier(Value) at 9:11\nIdentifier(v) at 9:17\n= at 9:19\n{ at 9:21\n. at 9:22\nIdentifier(i) at 9:23\n= at 9:25\nIntLiteral(42) at 9:27\n} at 9:29\n; at 9:30\nreturn at 10:5\nIdentifier(v) at 10:12\n. at 10:13\nIdentifier(i) at 10:14\n; at 10:15\n} at 11:1\nEOF at 12:1\n"
+stdout: "union at 3:1\nIdentifier(Value) at 3:7\n{ at 3:13\nint at 4:5\nIdentifier(i) at 4:9\n; at 4:10\nchar at 5:5\nIdentifier(c) at 5:10\n; at 5:11\n} at 6:1\n; at 6:2\nint at 8:1\nIdentifier(main) at 8:5\n( at 8:9\n) at 8:10\n{ at 8:12\nunion at 9:5\nIdentifier(Value) at 9:11\nIdentifier(v) at 9:17\n= at 9:19\n{ at 9:21\n. at 9:22\nIdentifier(i) at 9:23\n= at 9:25\nIntLiteral(42, None) at 9:27\n} at 9:29\n; at 9:30\nreturn at 10:5\nIdentifier(v) at 10:12\n. at 10:13\nIdentifier(i) at 10:14\n; at 10:15\n} at 11:1\nEOF at 12:1\n"
 stderr: ""
 status: 0

@@ -11,6 +11,8 @@ use std::{
 fn compile(src: &Path, exe: &Path) -> io::Result<Output> {
     let mut cmd = StdCommand::new("clang");
     cmd.arg("-o").arg(exe).arg(src);
+    // Use our custom include directory and skip system includes to avoid conflicts
+    cmd.arg("-nostdinc").arg("-I").arg("include");
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output()
 }
 

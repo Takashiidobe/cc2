@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "int at 4:1\nIdentifier(main) at 4:5\n( at 4:9\n) at 4:10\n{ at 4:12\nint at 5:5\nIdentifier(i) at 5:9\n= at 5:11\nIntLiteral(0) at 5:13\n; at 5:14\nint at 6:5\nIdentifier(sum) at 6:9\n= at 6:13\nIntLiteral(0) at 6:15\n; at 6:16\nwhile at 8:5\n( at 8:11\nIdentifier(i) at 8:12\n< at 8:14\nIntLiteral(5) at 8:16\n) at 8:17\n{ at 8:19\nIdentifier(i) at 9:9\n++ at 9:10\n; at 9:12\nif at 10:9\n( at 10:12\nIdentifier(i) at 10:13\n== at 10:15\nIntLiteral(3) at 10:18\n) at 10:19\n{ at 10:21\ncontinue at 11:13\n; at 11:21\n} at 12:9\nIdentifier(sum) at 13:9\n+= at 13:13\nIdentifier(i) at 13:16\n; at 13:17\n} at 14:5\nreturn at 17:5\nIdentifier(sum) at 17:12\n; at 17:15\n} at 18:1\nEOF at 19:1\n"
+stdout: "int at 4:1\nIdentifier(main) at 4:5\n( at 4:9\n) at 4:10\n{ at 4:12\nint at 5:5\nIdentifier(i) at 5:9\n= at 5:11\nIntLiteral(0, None) at 5:13\n; at 5:14\nint at 6:5\nIdentifier(sum) at 6:9\n= at 6:13\nIntLiteral(0, None) at 6:15\n; at 6:16\nwhile at 8:5\n( at 8:11\nIdentifier(i) at 8:12\n< at 8:14\nIntLiteral(5, None) at 8:16\n) at 8:17\n{ at 8:19\nIdentifier(i) at 9:9\n++ at 9:10\n; at 9:12\nif at 10:9\n( at 10:12\nIdentifier(i) at 10:13\n== at 10:15\nIntLiteral(3, None) at 10:18\n) at 10:19\n{ at 10:21\ncontinue at 11:13\n; at 11:21\n} at 12:9\nIdentifier(sum) at 13:9\n+= at 13:13\nIdentifier(i) at 13:16\n; at 13:17\n} at 14:5\nreturn at 17:5\nIdentifier(sum) at 17:12\n; at 17:15\n} at 18:1\nEOF at 19:1\n"
 stderr: ""
 status: 0

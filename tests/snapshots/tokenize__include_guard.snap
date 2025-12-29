@@ -2,6 +2,6 @@
 source: tests/tokenize.rs
 expression: "&result"
 ---
-stdout: "int at 3:1\nIdentifier(get_value) at 3:5\n( at 3:14\n) at 3:15\n{ at 3:17\nreturn at 4:5\nIntLiteral(42) at 4:12\n; at 4:14\n} at 5:1\nint at 8:1\nIdentifier(main) at 8:5\n( at 8:9\n) at 8:10\n{ at 8:12\nreturn at 9:5\nIdentifier(get_value) at 9:12\n( at 9:21\n) at 9:22\n; at 9:23\n} at 10:1\nEOF at 11:1\n"
+stdout: "int at 3:1\nIdentifier(get_value) at 3:5\n( at 3:14\n) at 3:15\n{ at 3:17\nreturn at 4:5\nIntLiteral(42, None) at 4:12\n; at 4:14\n} at 5:1\nint at 8:1\nIdentifier(main) at 8:5\n( at 8:9\n) at 8:10\n{ at 8:12\nreturn at 9:5\nIdentifier(get_value) at 9:12\n( at 9:21\n) at 9:22\n; at 9:23\n} at 10:1\nEOF at 11:1\n"
 stderr: ""
 status: 0

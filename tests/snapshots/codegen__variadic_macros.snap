@@ -1,0 +1,6 @@
+---
+source: tests/codegen.rs
+expression: "&mine"
+---
+stdout: "10 20 30\n42\n5\n15\n30\n"
+status: 0
