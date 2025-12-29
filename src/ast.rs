@@ -104,6 +104,8 @@ pub enum AstNode {
     IntLiteral(i64),
     StringLiteral(String),
     CharLiteral(i64),
+    Label(String),
+    Goto(String),
     Break,
     Continue,
 }
@@ -254,6 +256,8 @@ impl fmt::Display for AstNode {
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             AstNode::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
             AstNode::CharLiteral(c) => write!(f, "CharLiteral({})", c),
+            AstNode::Label(name) => write!(f, "Label({})", name),
+            AstNode::Goto(name) => write!(f, "Goto({})", name),
             AstNode::Break => write!(f, "Break"),
             AstNode::Continue => write!(f, "Continue"),
         }

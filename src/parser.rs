@@ -383,6 +383,7 @@ impl Parser {
             Token::For => self.parse_for_loop(),
             Token::Break => self.parse_break(),
             Token::Continue => self.parse_continue(),
+            Token::Goto => self.parse_goto(),
             Token::Unsigned
             | Token::Int
             | Token::Char
@@ -398,6 +399,13 @@ impl Parser {
             Token::Identifier(name) if self.type_aliases.contains_key(name) => {
                 // This is a typedef'd type, parse as variable declaration
                 self.parse_var_decl()
+            }
+            Token::Identifier(name) if matches!(self.peek(1), Some(&Token::Colon)) => {
+                // This is a label
+                let label_name = name.clone();
+                self.advance(); // consume identifier
+                self.advance(); // consume colon
+                Ok(AstNode::Label(label_name))
             }
             _ => {
                 let expr = self.parse_expression()?;
@@ -605,6 +613,17 @@ impl Parser {
         self.expect(Token::Continue)?;
         self.expect(Token::Semicolon)?;
         Ok(AstNode::Continue)
+    }
+
+    fn parse_goto(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Goto)?;
+        let label = match self.current_token() {
+            Token::Identifier(s) => s.clone(),
+            _ => return Err(format!("Expected label name after goto, got {:?}", self.current_token())),
+        };
+        self.advance();
+        self.expect(Token::Semicolon)?;
+        Ok(AstNode::Goto(label))
     }
 
     fn parse_expression(&mut self) -> Result<AstNode, String> {

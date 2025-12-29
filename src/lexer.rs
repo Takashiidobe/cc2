@@ -64,6 +64,7 @@ pub enum Token {
     Const,
     Volatile,
     Typedef,
+    Goto,
 
     // Identifiers and literals
     Identifier(String),
@@ -156,6 +157,7 @@ impl fmt::Display for Token {
             Token::Const => write!(f, "const"),
             Token::Volatile => write!(f, "volatile"),
             Token::Typedef => write!(f, "typedef"),
+            Token::Goto => write!(f, "goto"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
@@ -559,6 +561,7 @@ impl Lexer {
             "const" => Token::Const,
             "volatile" => Token::Volatile,
             "typedef" => Token::Typedef,
+            "goto" => Token::Goto,
             _ => Token::Identifier(ident),
         };
 

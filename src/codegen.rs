@@ -228,6 +228,14 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
+            AstNode::Label(name) => {
+                self.emit(&format!("{}:", name));
+                Ok(())
+            }
+            AstNode::Goto(label) => {
+                self.emit(&format!("    jmp {}", label));
+                Ok(())
+            }
             AstNode::Break => {
                 if let Some(ctx) = self.loop_stack.last() {
                     self.emit(&format!("    jmp {}", ctx.break_label));
