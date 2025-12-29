@@ -1817,6 +1817,30 @@ impl CodeGenerator {
                 Ok(())
             }
 
+            // Float to integer conversions
+            (Type::Float | Type::Double, Type::Int | Type::UInt | Type::Long | Type::ULong | Type::Char | Type::UChar | Type::Short | Type::UShort) => {
+                // Convert float (in xmm0) to int (in rax)
+                self.emit("    cvttsd2si %xmm0, %rax");
+                // Now convert based on target integer size
+                self.convert_type(&Type::Long, to)?;
+                Ok(())
+            }
+
+            // Integer to float conversions
+            (Type::Int | Type::UInt | Type::Long | Type::ULong | Type::Char | Type::UChar | Type::Short | Type::UShort, Type::Float | Type::Double) => {
+                // First convert to 64-bit integer in rax if needed
+                let from_size = self.type_size(from)?;
+                if from_size < 8 {
+                    self.convert_type(from, &Type::Long)?;
+                }
+                // Convert int (in rax) to double (in xmm0)
+                self.emit("    cvtsi2sd %rax, %xmm0");
+                Ok(())
+            }
+
+            // Float to float (no conversion needed, both use xmm0)
+            (Type::Float, Type::Double) | (Type::Double, Type::Float) => Ok(()),
+
             // Integer conversions
             _ => {
                 let from_size = self.type_size(from)?;
