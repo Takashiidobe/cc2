@@ -36,6 +36,7 @@ pub struct CodeGenerator {
     function_return_types: HashMap<String, Type>,
     function_param_types: HashMap<String, Vec<Type>>, // Function parameter types
     stack_depth: i32, // Number of values currently pushed on stack (for alloca adjustment)
+    #[allow(dead_code)]
     alloca_adjustment: i32, // Total bytes alloca has moved %rsp down since last push
 }
 
@@ -644,7 +645,9 @@ impl CodeGenerator {
 
                 let var_size = self.type_size(&actual_var_type)?;
                 // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-                let var_align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(&actual_var_type).unwrap_or(1));
+                let var_align = alignment
+                    .map(|a| a as i32)
+                    .unwrap_or_else(|| self.stack_alignment(&actual_var_type).unwrap_or(1));
 
                 // Check if variable already exists (e.g., from statement expression pre-registration)
                 let offset = if let Some(existing) = self.symbol_table.get_variable(name) {
@@ -687,7 +690,9 @@ impl CodeGenerator {
                             }
                             _ => {
                                 // For statement expressions, generate code first to populate symbol table
-                                let init_type = if let AstNode::StmtExpr { stmts, result } = init_expr.as_ref() {
+                                let init_type = if let AstNode::StmtExpr { stmts, result } =
+                                    init_expr.as_ref()
+                                {
                                     // Pre-register struct/union definitions for type inference
                                     for stmt in stmts {
                                         if let AstNode::StructDef { name, fields } = stmt {
@@ -886,8 +891,8 @@ impl CodeGenerator {
                     self.generate_node(&args[0])?;
 
                     // Align size to 16 bytes (x86-64 ABI requirement)
-                    self.emit("    addq $15, %rax");     // Round up
-                    self.emit("    andq $-16, %rax");    // Align to 16 bytes
+                    self.emit("    addq $15, %rax"); // Round up
+                    self.emit("    andq $-16, %rax"); // Align to 16 bytes
 
                     // Save size in %rcx
                     self.emit("    movq %rax, %rcx");
@@ -956,16 +961,44 @@ impl CodeGenerator {
                             }
                             // Register variables with their alignment
                             // Use add_or_replace to allow statement expressions to shadow variables
-                            else if let AstNode::VarDecl { name, var_type, alignment, .. } = stmt {
+                            else if let AstNode::VarDecl {
+                                name,
+                                var_type,
+                                alignment,
+                                ..
+                            } = stmt
+                            {
                                 let size = self.type_size(var_type).unwrap_or(0);
-                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
-                                let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
+                                let align = alignment
+                                    .map(|a| a as i32)
+                                    .unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
+                                let _ = self.symbol_table.add_or_replace_variable_with_layout(
+                                    name.clone(),
+                                    var_type.clone(),
+                                    size,
+                                    align,
+                                );
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
-                                    if let AstNode::VarDecl { name, var_type, alignment, .. } = decl {
+                                    if let AstNode::VarDecl {
+                                        name,
+                                        var_type,
+                                        alignment,
+                                        ..
+                                    } = decl
+                                    {
                                         let size = self.type_size(var_type).unwrap_or(0);
-                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
-                                        let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
+                                        let align =
+                                            alignment.map(|a| a as i32).unwrap_or_else(|| {
+                                                self.stack_alignment(var_type).unwrap_or(1)
+                                            });
+                                        let _ =
+                                            self.symbol_table.add_or_replace_variable_with_layout(
+                                                name.clone(),
+                                                var_type.clone(),
+                                                size,
+                                                align,
+                                            );
                                     }
                                 }
                             }
@@ -976,7 +1009,9 @@ impl CodeGenerator {
 
                     // Check if we have parameter type information for this function
                     let arg_index = args.iter().position(|a| std::ptr::eq(a, arg)).unwrap();
-                    let expected_param_type = self.function_param_types.get(name)
+                    let expected_param_type = self
+                        .function_param_types
+                        .get(name)
                         .and_then(|params| params.get(arg_index));
 
                     // Use expected parameter type if available, otherwise use argument type
@@ -1005,7 +1040,9 @@ impl CodeGenerator {
 
                     // Convert to expected parameter type if needed
                     let arg_type = self.expr_type(arg)?;
-                    let expected_type = self.function_param_types.get(name)
+                    let expected_type = self
+                        .function_param_types
+                        .get(name)
                         .and_then(|params| params.get(i))
                         .cloned();
                     if let Some(ref expected) = expected_type {
@@ -1075,16 +1112,44 @@ impl CodeGenerator {
                             }
                             // Register variables with their alignment
                             // Use add_or_replace to allow statement expressions to shadow variables
-                            else if let AstNode::VarDecl { name, var_type, alignment, .. } = stmt {
+                            else if let AstNode::VarDecl {
+                                name,
+                                var_type,
+                                alignment,
+                                ..
+                            } = stmt
+                            {
                                 let size = self.type_size(var_type).unwrap_or(0);
-                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
-                                let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
+                                let align = alignment
+                                    .map(|a| a as i32)
+                                    .unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
+                                let _ = self.symbol_table.add_or_replace_variable_with_layout(
+                                    name.clone(),
+                                    var_type.clone(),
+                                    size,
+                                    align,
+                                );
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
-                                    if let AstNode::VarDecl { name, var_type, alignment, .. } = decl {
+                                    if let AstNode::VarDecl {
+                                        name,
+                                        var_type,
+                                        alignment,
+                                        ..
+                                    } = decl
+                                    {
                                         let size = self.type_size(var_type).unwrap_or(0);
-                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
-                                        let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
+                                        let align =
+                                            alignment.map(|a| a as i32).unwrap_or_else(|| {
+                                                self.stack_alignment(var_type).unwrap_or(1)
+                                            });
+                                        let _ =
+                                            self.symbol_table.add_or_replace_variable_with_layout(
+                                                name.clone(),
+                                                var_type.clone(),
+                                                size,
+                                                align,
+                                            );
                                     }
                                 }
                             }
@@ -2088,12 +2153,13 @@ impl CodeGenerator {
     ) -> Result<(), String> {
         // Check if we need to swap for reverse indexing (e.g., 2[x])
         let array_type = self.expr_type(array)?;
-        let (actual_array, actual_index) = if matches!(array_type, Type::Array(_, _) | Type::Pointer(_)) {
-            (array, index)
-        } else {
-            // Reverse indexing: swap array and index
-            (index, array)
-        };
+        let (actual_array, actual_index) =
+            if matches!(array_type, Type::Array(_, _) | Type::Pointer(_)) {
+                (array, index)
+            } else {
+                // Reverse indexing: swap array and index
+                (index, array)
+            };
 
         let elem_size = self.array_element_size(actual_array)?;
 
@@ -2564,9 +2630,7 @@ impl CodeGenerator {
             }
             // Array to pointer decay - nested arrays to simple pointer (e.g., int[2][3] to int*)
             // This is technically a type mismatch but commonly allowed in C
-            (Type::Array(_, _), Type::Pointer(_)) => {
-                Ok(())
-            }
+            (Type::Array(_, _), Type::Pointer(_)) => Ok(()),
             // Pointer to pointer - no conversion needed
             (Type::Pointer(_), Type::Pointer(_)) => Ok(()),
 
@@ -2760,7 +2824,10 @@ impl CodeGenerator {
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
             // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-            let field_align = field.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
+            let field_align = field
+                .alignment
+                .map(|a| a as i32)
+                .unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
@@ -2825,7 +2892,10 @@ impl CodeGenerator {
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
             // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-            let field_align = field.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
+            let field_align = field
+                .alignment
+                .map(|a| a as i32)
+                .unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
@@ -3242,14 +3312,18 @@ impl CodeGenerator {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
                 if let AstNode::Function {
-                    name, return_type, params, ..
+                    name,
+                    return_type,
+                    params,
+                    ..
                 } = item
                 {
                     self.function_return_types
                         .insert(name.clone(), return_type.clone());
 
                     // Collect parameter types
-                    let param_types: Vec<Type> = params.iter()
+                    let param_types: Vec<Type> = params
+                        .iter()
                         .map(|param| param.param_type.clone())
                         .collect();
                     self.function_param_types.insert(name.clone(), param_types);
@@ -3333,15 +3407,150 @@ impl CodeGenerator {
     }
 
     fn collect_enum_constants(&mut self, node: &AstNode) -> Result<(), String> {
-        if let AstNode::Program(nodes) = node {
-            for item in nodes {
-                if let AstNode::EnumDef { enumerators, .. } = item {
-                    for enumerator in enumerators {
-                        if let Some(value) = enumerator.value {
-                            self.enum_constants.insert(enumerator.name.clone(), value);
-                        }
+        match node {
+            AstNode::Program(nodes) => {
+                for item in nodes {
+                    self.collect_enum_constants(item)?;
+                }
+            }
+            AstNode::EnumDef { enumerators, .. } => {
+                for enumerator in enumerators {
+                    if let Some(value) = enumerator.value {
+                        self.enum_constants.insert(enumerator.name.clone(), value);
                     }
                 }
+            }
+            AstNode::Function {
+                body: Some(body_node),
+                ..
+            } => {
+                self.collect_enum_constants(body_node)?;
+            }
+            AstNode::Block(stmts) => {
+                for stmt in stmts {
+                    self.collect_enum_constants(stmt)?;
+                }
+            }
+            AstNode::StmtExpr { stmts, result } => {
+                for stmt in stmts {
+                    self.collect_enum_constants(stmt)?;
+                }
+                self.collect_enum_constants(result)?;
+            }
+            // Recursively walk all other node types that contain expressions
+            AstNode::Return(Some(expr)) => self.collect_enum_constants(expr)?,
+            AstNode::IfStatement {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.collect_enum_constants(condition)?;
+                self.collect_enum_constants(then_branch)?;
+                if let Some(e) = else_branch {
+                    self.collect_enum_constants(e)?;
+                }
+            }
+            AstNode::WhileLoop { condition, body } => {
+                self.collect_enum_constants(condition)?;
+                self.collect_enum_constants(body)?;
+            }
+            AstNode::DoWhileLoop { body, condition } => {
+                self.collect_enum_constants(body)?;
+                self.collect_enum_constants(condition)?;
+            }
+            AstNode::ForLoop {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
+                if let Some(i) = init {
+                    self.collect_enum_constants(i)?;
+                }
+                if let Some(c) = condition {
+                    self.collect_enum_constants(c)?;
+                }
+                if let Some(inc) = increment {
+                    self.collect_enum_constants(inc)?;
+                }
+                self.collect_enum_constants(body)?;
+            }
+            AstNode::VarDecl {
+                init: Some(init), ..
+            } => {
+                self.collect_enum_constants(init)?;
+            }
+            AstNode::Assignment { target, value } => {
+                self.collect_enum_constants(target)?;
+                self.collect_enum_constants(value)?;
+            }
+            AstNode::FunctionCall { args, .. } | AstNode::IndirectCall { args, .. } => {
+                for arg in args {
+                    self.collect_enum_constants(arg)?;
+                }
+            }
+            AstNode::BinaryOp { left, right, .. } => {
+                self.collect_enum_constants(left)?;
+                self.collect_enum_constants(right)?;
+            }
+            AstNode::TernaryOp {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                self.collect_enum_constants(condition)?;
+                self.collect_enum_constants(true_expr)?;
+                self.collect_enum_constants(false_expr)?;
+            }
+            AstNode::UnaryOp { operand, .. } => {
+                self.collect_enum_constants(operand)?;
+            }
+            AstNode::PrefixIncrement(e)
+            | AstNode::PrefixDecrement(e)
+            | AstNode::PostfixIncrement(e)
+            | AstNode::PostfixDecrement(e)
+            | AstNode::AddressOf(e)
+            | AstNode::Dereference(e) => {
+                self.collect_enum_constants(e)?;
+            }
+            AstNode::ArrayIndex { array, index } => {
+                self.collect_enum_constants(array)?;
+                self.collect_enum_constants(index)?;
+            }
+            AstNode::ArrayInit(exprs) => {
+                for expr in exprs {
+                    self.collect_enum_constants(expr)?;
+                }
+            }
+            AstNode::StructInit(fields) => {
+                for field in fields {
+                    self.collect_enum_constants(&field.value)?;
+                }
+            }
+            AstNode::MemberAccess { base, .. } => {
+                self.collect_enum_constants(base)?;
+            }
+            AstNode::Cast { expr, .. } => {
+                self.collect_enum_constants(expr)?;
+            }
+            AstNode::SwitchStatement { expr, body } => {
+                self.collect_enum_constants(expr)?;
+                for stmt in body {
+                    self.collect_enum_constants(stmt)?;
+                }
+            }
+            AstNode::SizeOfExpr(e) | AstNode::AlignOfExpr(e) => {
+                self.collect_enum_constants(e)?;
+            }
+            AstNode::VaStart { ap, last_param } => {
+                self.collect_enum_constants(ap)?;
+                self.collect_enum_constants(last_param)?;
+            }
+            AstNode::VaArg { ap, .. } | AstNode::VaEnd(ap) => {
+                self.collect_enum_constants(ap)?;
+            }
+            _ => {
+                // Literals, variables, labels, and other leaf nodes
             }
         }
         Ok(())
@@ -3547,16 +3756,22 @@ impl CodeGenerator {
                                 (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
                                 (Type::Long, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
                                 _ => {
-                                    eprintln!("DEBUG: Invalid pointer addition - left: {:?}, right: {:?}", left_type, right_type);
+                                    eprintln!(
+                                        "DEBUG: Invalid pointer addition - left: {:?}, right: {:?}",
+                                        left_type, right_type
+                                    );
                                     Err("Invalid operands for pointer addition".to_string())
-                                },
+                                }
                             }
                         } else if self.is_float_type(&left_type) || self.is_float_type(&right_type)
                         {
                             Ok(Type::Double)
                         } else {
                             if integer_type.is_none() {
-                                eprintln!("DEBUG: No integer type - left: {:?}, right: {:?}", left_type, right_type);
+                                eprintln!(
+                                    "DEBUG: No integer type - left: {:?}, right: {:?}",
+                                    left_type, right_type
+                                );
                             }
                             integer_type
                                 .clone()
@@ -3568,18 +3783,35 @@ impl CodeGenerator {
                             || matches!(right_type, Type::Pointer(_))
                         {
                             match (&left_type, &right_type) {
-                                (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee.clone())),
-                                (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee.clone())),
+                                (Type::Pointer(pointee), Type::Int) => {
+                                    Ok(Type::Pointer(pointee.clone()))
+                                }
+                                (Type::Pointer(pointee), Type::UInt) => {
+                                    Ok(Type::Pointer(pointee.clone()))
+                                }
                                 (Type::Pointer(pointee), Type::UShort) => {
                                     Ok(Type::Pointer(pointee.clone()))
                                 }
-                                (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee.clone())),
-                                (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee.clone())),
-                                (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee.clone())),
-                                (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee.clone())),
-                                (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee.clone())),
+                                (Type::Pointer(pointee), Type::UChar) => {
+                                    Ok(Type::Pointer(pointee.clone()))
+                                }
+                                (Type::Pointer(pointee), Type::Char) => {
+                                    Ok(Type::Pointer(pointee.clone()))
+                                }
+                                (Type::Pointer(pointee), Type::ULong) => {
+                                    Ok(Type::Pointer(pointee.clone()))
+                                }
+                                (Type::Pointer(pointee), Type::Short) => {
+                                    Ok(Type::Pointer(pointee.clone()))
+                                }
+                                (Type::Pointer(pointee), Type::Long) => {
+                                    Ok(Type::Pointer(pointee.clone()))
+                                }
                                 (Type::Pointer(_), Type::Pointer(_)) => Ok(Type::Int),
-                                _ => Err(format!("Invalid operands for pointer subtraction: {:?} - {:?}", left_type, right_type)),
+                                _ => Err(format!(
+                                    "Invalid operands for pointer subtraction: {:?} - {:?}",
+                                    left_type, right_type
+                                )),
                             }
                         } else if self.is_float_type(&left_type) || self.is_float_type(&right_type)
                         {
@@ -3765,7 +3997,10 @@ impl CodeGenerator {
             for (name, global) in &uninitialized {
                 let size = self.type_size(&global.var_type)?;
                 // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-                let align = global.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&global.var_type).unwrap_or(1));
+                let align = global
+                    .alignment
+                    .map(|a| a as i32)
+                    .unwrap_or_else(|| self.type_alignment(&global.var_type).unwrap_or(1));
                 self.emit(&format!("    .align {}", align));
                 // Only emit .globl for non-static variables (static has internal linkage)
                 if !global.is_static {
@@ -3781,7 +4016,10 @@ impl CodeGenerator {
             self.emit("    .data");
             for (name, global) in &initialized {
                 // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-                let align = global.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&global.var_type).unwrap_or(1));
+                let align = global
+                    .alignment
+                    .map(|a| a as i32)
+                    .unwrap_or_else(|| self.type_alignment(&global.var_type).unwrap_or(1));
                 self.emit(&format!("    .align {}", align));
                 // Only emit .globl for non-static variables (static has internal linkage)
                 if !global.is_static {

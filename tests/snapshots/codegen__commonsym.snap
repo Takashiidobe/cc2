@@ -2,5 +2,5 @@
 source: tests/codegen.rs
 expression: "&mine"
 ---
-stdout: "5 => 5\ny => 7 expected but got 0\n"
+stdout: "x => 5\ny => 7 expected but got 0\n"
 status: 1

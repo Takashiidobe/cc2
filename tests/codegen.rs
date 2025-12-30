@@ -84,7 +84,7 @@ fn run_case(path: &Path) -> datatest_stable::Result<()> {
     assert_yaml_snapshot!(stem.to_string(), &mine);
 
     // Skip reference comparison for chibicc tests - they expect chibicc behavior, not clang behavior
-    let is_chibicc_test = path.to_str().map_or(false, |s| s.contains("chibicc"));
+    let is_chibicc_test = path.to_str().is_some_and(|s| s.contains("chibicc"));
 
     if !is_chibicc_test {
         let compile_out_ref = compile(path, &exe_ref)?;

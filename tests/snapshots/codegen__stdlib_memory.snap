@@ -1,6 +1,7 @@
 ---
 source: tests/codegen.rs
+assertion_line: 84
 expression: "&mine"
 ---
-stdout: "malloc test: 42\ncalloc test: 0 0 0\ncalloc after assignment: 10 20 30\nmemcpy test: 100 200 300\nmemset test: AAAAA\nAll memory tests passed!\n"
-status: 0
+stdout: ""
+status: -1

@@ -8,6 +8,7 @@ pub struct Parser {
     type_aliases: std::collections::HashMap<String, Type>,
     struct_defs: std::collections::HashMap<String, Vec<StructField>>,
     union_defs: std::collections::HashMap<String, Vec<StructField>>,
+    anon_counter: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -28,6 +29,7 @@ impl Parser {
             type_aliases: std::collections::HashMap::new(),
             struct_defs: std::collections::HashMap::new(),
             union_defs: std::collections::HashMap::new(),
+            anon_counter: 0,
         }
     }
 
@@ -62,17 +64,23 @@ impl Parser {
 
         // Add anonymous struct/union definitions to the AST
         for (name, fields) in &self.struct_defs {
-            items.insert(0, AstNode::StructDef {
-                name: name.clone(),
-                fields: fields.clone(),
-            });
+            items.insert(
+                0,
+                AstNode::StructDef {
+                    name: name.clone(),
+                    fields: fields.clone(),
+                },
+            );
         }
 
         for (name, fields) in &self.union_defs {
-            items.insert(0, AstNode::UnionDef {
-                name: name.clone(),
-                fields: fields.clone(),
-            });
+            items.insert(
+                0,
+                AstNode::UnionDef {
+                    name: name.clone(),
+                    fields: fields.clone(),
+                },
+            );
         }
 
         Ok(AstNode::Program(items))
@@ -612,17 +620,32 @@ impl Parser {
             }
             Token::Enum => {
                 self.advance();
-                let name = match self.current_token() {
-                    Token::Identifier(s) => s.clone(),
-                    _ => {
-                        return Err(format!(
-                            "Expected enum name, got {:?}",
-                            self.current_token()
-                        ));
+                // Check if this is an inline definition (enum { ... }) or a reference (enum Name)
+                if self.current_token() == &Token::OpenBrace {
+                    // Inline anonymous enum definition
+                    // Back up one token to let parse_enum_definition_impl handle it
+                    self.position -= 1;
+                    let enum_def = self.parse_enum_definition_impl(false)?;
+                    // Extract the enum name from the definition
+                    if let AstNode::EnumDef { name, .. } = enum_def {
+                        Type::Enum(name)
+                    } else {
+                        unreachable!()
                     }
-                };
-                self.advance();
-                Type::Enum(name)
+                } else {
+                    // Named enum reference
+                    let name = match self.current_token() {
+                        Token::Identifier(s) => s.clone(),
+                        _ => {
+                            return Err(format!(
+                                "Expected enum name, got {:?}",
+                                self.current_token()
+                            ));
+                        }
+                    };
+                    self.advance();
+                    Type::Enum(name)
+                }
             }
             Token::Identifier(name) => {
                 // Check if this is a typedef'd type
@@ -911,10 +934,11 @@ impl Parser {
                 self.parse_union_definition()
             }
             Token::Enum
-                if matches!(self.peek(1), Some(&Token::Identifier(_)))
-                    && matches!(self.peek(2), Some(&Token::OpenBrace)) =>
+                if matches!(self.peek(1), Some(&Token::OpenBrace))
+                    || (matches!(self.peek(1), Some(&Token::Identifier(_)))
+                        && matches!(self.peek(2), Some(&Token::OpenBrace))) =>
             {
-                // enum E { ... }; - enum definition
+                // enum E { ... }; or enum { ... }; - enum definition
                 self.parse_enum_definition()
             }
             Token::Unsigned
@@ -2079,6 +2103,36 @@ impl Parser {
         }
 
         self.expect(Token::CloseBrace)?;
+
+        // Check if there's a variable declaration after the struct (e.g., struct { ... } x;)
+        if matches!(self.current_token(), Token::Identifier(_)) {
+            // This is a variable declaration with inline struct definition
+            let var_name = match self.current_token() {
+                Token::Identifier(s) => s.clone(),
+                _ => unreachable!(),
+            };
+            self.advance();
+            self.expect(Token::Semicolon)?;
+
+            // Create the struct definition and variable declaration as a block
+            let struct_type = Type::Struct(name.clone());
+            return Ok(AstNode::Block(vec![
+                AstNode::StructDef { name, fields },
+                AstNode::VarDecl {
+                    name: var_name,
+                    var_type: struct_type,
+                    init: None,
+                    is_extern: false,
+                    is_static: false,
+                    is_auto: false,
+                    is_register: false,
+                    is_const: false,
+                    is_volatile: false,
+                    alignment: None,
+                },
+            ]));
+        }
+
         self.expect(Token::Semicolon)?;
 
         Ok(AstNode::StructDef { name, fields })
@@ -2227,23 +2281,59 @@ impl Parser {
         }
 
         self.expect(Token::CloseBrace)?;
+
+        // Check if there's a variable declaration after the union (e.g., union { ... } x;)
+        if matches!(self.current_token(), Token::Identifier(_)) {
+            // This is a variable declaration with inline union definition
+            let var_name = match self.current_token() {
+                Token::Identifier(s) => s.clone(),
+                _ => unreachable!(),
+            };
+            self.advance();
+            self.expect(Token::Semicolon)?;
+
+            // Create the union definition and variable declaration as a block
+            let union_type = Type::Union(name.clone());
+            return Ok(AstNode::Block(vec![
+                AstNode::UnionDef { name, fields },
+                AstNode::VarDecl {
+                    name: var_name,
+                    var_type: union_type,
+                    init: None,
+                    is_extern: false,
+                    is_static: false,
+                    is_auto: false,
+                    is_register: false,
+                    is_const: false,
+                    is_volatile: false,
+                    alignment: None,
+                },
+            ]));
+        }
+
         self.expect(Token::Semicolon)?;
 
         Ok(AstNode::UnionDef { name, fields })
     }
 
-    fn parse_enum_definition(&mut self) -> Result<AstNode, String> {
+    fn parse_enum_definition_impl(&mut self, expect_semicolon: bool) -> Result<AstNode, String> {
         self.expect(Token::Enum)?;
-        let name = match self.current_token() {
-            Token::Identifier(s) => s.clone(),
-            _ => {
-                return Err(format!(
-                    "Expected enum name, got {:?}",
-                    self.current_token()
-                ));
-            }
+
+        // Check if this is an anonymous enum or named enum
+        let name = if matches!(self.current_token(), Token::Identifier(_)) {
+            let n = match self.current_token() {
+                Token::Identifier(s) => s.clone(),
+                _ => unreachable!(),
+            };
+            self.advance();
+            n
+        } else {
+            // Anonymous enum - generate unique name
+            let anon_name = format!("__anon_enum_{}", self.anon_counter);
+            self.anon_counter += 1;
+            anon_name
         };
-        self.advance();
+
         self.expect(Token::OpenBrace)?;
 
         let mut enumerators = Vec::new();
@@ -2294,9 +2384,45 @@ impl Parser {
         }
 
         self.expect(Token::CloseBrace)?;
-        self.expect(Token::Semicolon)?;
+
+        // Check if there's a variable declaration after the enum (e.g., enum { ... } x;)
+        if expect_semicolon && matches!(self.current_token(), Token::Identifier(_)) {
+            // This is a variable declaration with inline enum definition
+            let var_name = match self.current_token() {
+                Token::Identifier(s) => s.clone(),
+                _ => unreachable!(),
+            };
+            self.advance();
+            self.expect(Token::Semicolon)?;
+
+            // Create the enum definition and variable declaration as a block
+            let enum_type = Type::Enum(name.clone());
+            return Ok(AstNode::Block(vec![
+                AstNode::EnumDef { name, enumerators },
+                AstNode::VarDecl {
+                    name: var_name,
+                    var_type: enum_type,
+                    init: None,
+                    is_extern: false,
+                    is_static: false,
+                    is_auto: false,
+                    is_register: false,
+                    is_const: false,
+                    is_volatile: false,
+                    alignment: None,
+                },
+            ]));
+        }
+
+        if expect_semicolon {
+            self.expect(Token::Semicolon)?;
+        }
 
         Ok(AstNode::EnumDef { name, enumerators })
+    }
+
+    fn parse_enum_definition(&mut self) -> Result<AstNode, String> {
+        self.parse_enum_definition_impl(true)
     }
 
     fn parse_sizeof(&mut self) -> Result<AstNode, String> {
@@ -2445,9 +2571,13 @@ impl Parser {
     }
 
     fn is_enum_definition(&self) -> bool {
-        matches!(self.current_token(), Token::Enum)
-            && matches!(self.peek(1), Some(Token::Identifier(_)))
-            && matches!(self.peek(2), Some(Token::OpenBrace))
+        if !matches!(self.current_token(), Token::Enum) {
+            return false;
+        }
+        // Either: enum Name { or enum {
+        matches!(self.peek(1), Some(Token::OpenBrace))
+            || (matches!(self.peek(1), Some(Token::Identifier(_)))
+                && matches!(self.peek(2), Some(Token::OpenBrace)))
     }
 
     fn is_type_start(&self, token: Option<&Token>) -> bool {
