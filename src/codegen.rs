@@ -2273,7 +2273,7 @@ impl CodeGenerator {
     }
 
     fn is_float_type(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Float | Type::Double)
+        matches!(ty, Type::Float | Type::Double | Type::LongDouble)
     }
 
     fn are_float_operands(&self, left: &AstNode, right: &AstNode) -> bool {
@@ -2417,6 +2417,7 @@ impl CodeGenerator {
             Type::ULong => Ok(8),
             Type::Float => Ok(4),
             Type::Double => Ok(8),
+            Type::LongDouble => Ok(16),
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(0),
             Type::VaList => Ok(24), // Size of __va_list_tag in System V AMD64 ABI
@@ -2451,6 +2452,7 @@ impl CodeGenerator {
             Type::ULong => Ok(8),
             Type::Float => Ok(4),
             Type::Double => Ok(8),
+            Type::LongDouble => Ok(16),
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(1),
             Type::VaList => Ok(8), // Alignment of __va_list_tag in System V AMD64 ABI

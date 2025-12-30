@@ -215,6 +215,7 @@ pub enum Type {
     ULong,
     Float,
     Double,
+    LongDouble,
     Void,
     Pointer(Box<Type>),
     Array(Box<Type>, usize),
@@ -241,6 +242,7 @@ impl Type {
             Type::ULong => 8,
             Type::Float => 4,
             Type::Double => 8,
+            Type::LongDouble => 16,  // x86-64 long double is 16 bytes
             Type::Pointer(_) | Type::FunctionPointer { .. } => 8,
             Type::Array(elem, len) => elem.size() * (*len as i32),
             Type::Void | Type::Struct(_) | Type::Union(_) => 0,

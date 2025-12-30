@@ -420,7 +420,10 @@ impl Parser {
             }
             Token::Long => {
                 self.advance();
-                if self.current_token() == &Token::Long {
+                if self.current_token() == &Token::Double {
+                    self.advance();
+                    Type::LongDouble
+                } else if self.current_token() == &Token::Long {
                     self.advance();
                     if self.current_token() == &Token::Int {
                         self.advance();
