@@ -2068,7 +2068,19 @@ impl CodeGenerator {
                     .ok_or_else(|| format!("Undefined variable: {}", name))?;
                 self.element_size_from_type(&symbol.symbol_type)
             }
-            _ => Ok(None),
+            AstNode::AddressOf(inner) => {
+                // &x has pointer type, so get the element size of what it points to
+                let ty = self.expr_type(inner)?;
+                let ptr_ty = Type::Pointer(Box::new(ty));
+                self.element_size_from_type(&ptr_ty)
+            }
+            _ => {
+                // For other expressions, try to get the type and check if it's a pointer
+                match self.expr_type(node) {
+                    Ok(ty) => self.element_size_from_type(&ty),
+                    Err(_) => Ok(None),
+                }
+            }
         }
     }
 
@@ -3279,26 +3291,26 @@ impl CodeGenerator {
                         if matches!(left_type, Type::Pointer(_))
                             || matches!(right_type, Type::Pointer(_))
                         {
-                            match (left_type, right_type) {
-                                (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee)),
-                                (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee)),
+                            match (&left_type, &right_type) {
+                                (Type::Pointer(pointee), Type::Int) => Ok(Type::Pointer(pointee.clone())),
+                                (Type::Pointer(pointee), Type::UInt) => Ok(Type::Pointer(pointee.clone())),
                                 (Type::Pointer(pointee), Type::UShort) => {
-                                    Ok(Type::Pointer(pointee))
+                                    Ok(Type::Pointer(pointee.clone()))
                                 }
-                                (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee)),
-                                (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee)),
-                                (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee)),
-                                (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee)),
-                                (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
+                                (Type::Pointer(pointee), Type::UChar) => Ok(Type::Pointer(pointee.clone())),
+                                (Type::Pointer(pointee), Type::Char) => Ok(Type::Pointer(pointee.clone())),
+                                (Type::Pointer(pointee), Type::ULong) => Ok(Type::Pointer(pointee.clone())),
+                                (Type::Pointer(pointee), Type::Short) => Ok(Type::Pointer(pointee.clone())),
+                                (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee.clone())),
                                 (Type::Pointer(_), Type::Pointer(_)) => Ok(Type::Int),
-                                _ => Err("Invalid operands for pointer subtraction".to_string()),
+                                _ => Err(format!("Invalid operands for pointer subtraction: {:?} - {:?}", left_type, right_type)),
                             }
                         } else if self.is_float_type(&left_type) || self.is_float_type(&right_type)
                         {
                             Ok(Type::Double)
                         } else {
                             integer_type.ok_or_else(|| {
-                                "Invalid operands for pointer subtraction".to_string()
+                                format!("Invalid operands for subtraction (not pointers or floats): {:?} - {:?}", left_type, right_type)
                             })
                         }
                     }

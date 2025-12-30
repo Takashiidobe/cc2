@@ -60,6 +60,37 @@ impl Parser {
             }
         }
 
+        // Add anonymous struct/union definitions to the AST
+        for (name, members) in &self.struct_defs {
+            let fields: Vec<StructField> = members
+                .iter()
+                .map(|(field_name, field_type)| StructField {
+                    name: field_name.clone(),
+                    field_type: field_type.clone(),
+                    bit_width: None,
+                })
+                .collect();
+            items.insert(0, AstNode::StructDef {
+                name: name.clone(),
+                fields,
+            });
+        }
+
+        for (name, members) in &self.union_defs {
+            let fields: Vec<StructField> = members
+                .iter()
+                .map(|(field_name, field_type)| StructField {
+                    name: field_name.clone(),
+                    field_type: field_type.clone(),
+                    bit_width: None,
+                })
+                .collect();
+            items.insert(0, AstNode::UnionDef {
+                name: name.clone(),
+                fields,
+            });
+        }
+
         Ok(AstNode::Program(items))
     }
 
@@ -379,7 +410,7 @@ impl Parser {
                             if self.current_token() == &Token::Int {
                                 self.advance();
                             }
-                            Type::ULong  // unsigned long long maps to Type::ULong (64-bit)
+                            Type::ULong // unsigned long long maps to Type::ULong (64-bit)
                         } else if self.current_token() == &Token::Int {
                             self.advance();
                             Type::ULong
@@ -408,7 +439,7 @@ impl Parser {
                     if self.current_token() == &Token::Int {
                         self.advance();
                     }
-                    Type::Long  // long long maps to Type::Long (64-bit)
+                    Type::Long // long long maps to Type::Long (64-bit)
                 } else if self.current_token() == &Token::Int {
                     self.advance();
                     Type::Long
@@ -450,8 +481,12 @@ impl Parser {
                     }
                     Token::OpenBrace => {
                         // Anonymous struct - generate a unique name and parse definition
-                        static ANON_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-                        let name = format!("__anon_struct_{}", ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                        static ANON_COUNTER: std::sync::atomic::AtomicUsize =
+                            std::sync::atomic::AtomicUsize::new(0);
+                        let name = format!(
+                            "__anon_struct_{}",
+                            ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                        );
 
                         // Parse struct definition
                         self.expect(Token::OpenBrace)?;
@@ -461,7 +496,8 @@ impl Parser {
                             let _alignment = if matches!(self.current_token(), Token::Alignas) {
                                 self.advance();
                                 self.expect(Token::OpenParen)?;
-                                let align_value = if self.is_type_start(Some(self.current_token())) {
+                                let align_value = if self.is_type_start(Some(self.current_token()))
+                                {
                                     let ty = self.parse_type()?;
                                     self.type_alignment_value(&ty)?
                                 } else {
@@ -477,7 +513,8 @@ impl Parser {
 
                             // Parse all declarators (can have multiple like "char x, y;")
                             loop {
-                                let (member_type, member_name) = self.parse_declarator(base_type.clone())?;
+                                let (member_type, member_name) =
+                                    self.parse_declarator(base_type.clone())?;
                                 members.push((member_name, member_type));
 
                                 if self.current_token() == &Token::Comma {
@@ -514,8 +551,12 @@ impl Parser {
                     }
                     Token::OpenBrace => {
                         // Anonymous union - generate a unique name and parse definition
-                        static ANON_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-                        let name = format!("__anon_union_{}", ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                        static ANON_COUNTER: std::sync::atomic::AtomicUsize =
+                            std::sync::atomic::AtomicUsize::new(0);
+                        let name = format!(
+                            "__anon_union_{}",
+                            ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                        );
 
                         // Parse union definition
                         self.expect(Token::OpenBrace)?;
@@ -525,7 +566,8 @@ impl Parser {
                             let _alignment = if matches!(self.current_token(), Token::Alignas) {
                                 self.advance();
                                 self.expect(Token::OpenParen)?;
-                                let align_value = if self.is_type_start(Some(self.current_token())) {
+                                let align_value = if self.is_type_start(Some(self.current_token()))
+                                {
                                     let ty = self.parse_type()?;
                                     self.type_alignment_value(&ty)?
                                 } else {
@@ -541,7 +583,8 @@ impl Parser {
 
                             // Parse all declarators (can have multiple like "char x, y;")
                             loop {
-                                let (member_type, member_name) = self.parse_declarator(base_type.clone())?;
+                                let (member_type, member_name) =
+                                    self.parse_declarator(base_type.clone())?;
                                 members.push((member_name, member_type));
 
                                 if self.current_token() == &Token::Comma {
@@ -854,15 +897,24 @@ impl Parser {
             Token::Case => self.parse_case(),
             Token::Default => self.parse_default(),
             Token::Asm => self.parse_inline_asm(),
-            Token::Struct if matches!(self.peek(1), Some(&Token::Identifier(_))) && matches!(self.peek(2), Some(&Token::OpenBrace)) => {
+            Token::Struct
+                if matches!(self.peek(1), Some(&Token::Identifier(_)))
+                    && matches!(self.peek(2), Some(&Token::OpenBrace)) =>
+            {
                 // struct T { ... }; - struct definition
                 self.parse_struct_definition()
             }
-            Token::Union if matches!(self.peek(1), Some(&Token::Identifier(_))) && matches!(self.peek(2), Some(&Token::OpenBrace)) => {
+            Token::Union
+                if matches!(self.peek(1), Some(&Token::Identifier(_)))
+                    && matches!(self.peek(2), Some(&Token::OpenBrace)) =>
+            {
                 // union U { ... }; - union definition
                 self.parse_union_definition()
             }
-            Token::Enum if matches!(self.peek(1), Some(&Token::Identifier(_))) && matches!(self.peek(2), Some(&Token::OpenBrace)) => {
+            Token::Enum
+                if matches!(self.peek(1), Some(&Token::Identifier(_)))
+                    && matches!(self.peek(2), Some(&Token::OpenBrace)) =>
+            {
                 // enum E { ... }; - enum definition
                 self.parse_enum_definition()
             }
@@ -1746,7 +1798,8 @@ impl Parser {
                     self.expect(Token::CloseParen)?;
 
                     // Statement expressions must have a result expression
-                    let result = last_expr.ok_or("Statement expression must have a result expression")?;
+                    let result =
+                        last_expr.ok_or("Statement expression must have a result expression")?;
                     AstNode::StmtExpr {
                         stmts,
                         result: Box::new(result),
