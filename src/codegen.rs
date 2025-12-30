@@ -3377,7 +3377,8 @@ impl CodeGenerator {
             AstNode::WideStringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Int))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
-            AstNode::VaStart { .. } => Ok(Type::Void),   // va_start returns void
+            AstNode::SizeOfType(_) | AstNode::SizeOfExpr(_) => Ok(Type::ULong),
+            AstNode::VaStart { .. } => Ok(Type::Void), // va_start returns void
             AstNode::VaArg { arg_type, .. } => Ok(arg_type.clone()), // va_arg returns the specified type
             AstNode::VaEnd(_) => Ok(Type::Void),                     // va_end returns void
             _ => Err("Unsupported expression in sizeof".to_string()),
