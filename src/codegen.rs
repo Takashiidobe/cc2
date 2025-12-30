@@ -631,12 +631,18 @@ impl CodeGenerator {
 
                 let var_size = self.type_size(&actual_var_type)?;
                 let var_align = self.type_alignment(&actual_var_type)?;
-                let offset = self.symbol_table.add_variable_with_layout(
-                    name.clone(),
-                    actual_var_type.clone(),
-                    var_size,
-                    var_align,
-                )?;
+
+                // Check if variable already exists (e.g., from statement expression pre-registration)
+                let offset = if let Some(existing) = self.symbol_table.get_variable(name) {
+                    existing.stack_offset
+                } else {
+                    self.symbol_table.add_variable_with_layout(
+                        name.clone(),
+                        actual_var_type.clone(),
+                        var_size,
+                        var_align,
+                    )?
+                };
 
                 if let Some(init_expr) = init {
                     if var_type.is_array() {
@@ -666,8 +672,22 @@ impl CodeGenerator {
                                 self.emit_union_init(union_name, values, offset)?;
                             }
                             _ => {
-                                let init_type = self.expr_type(init_expr)?;
-                                self.generate_node(init_expr)?;
+                                // For statement expressions, generate code first to populate symbol table
+                                let init_type = if let AstNode::StmtExpr { stmts, result } = init_expr.as_ref() {
+                                    // Generate statements which adds variables to symbol table
+                                    for stmt in stmts {
+                                        self.generate_node(stmt)?;
+                                    }
+                                    // Now we can infer the type of the result
+                                    let result_type = self.expr_type(result)?;
+                                    // Generate the result expression
+                                    self.generate_node(result)?;
+                                    result_type
+                                } else {
+                                    let init_type = self.expr_type(init_expr)?;
+                                    self.generate_node(init_expr)?;
+                                    init_type
+                                };
                                 self.convert_type(&init_type, var_type)?;
                                 if matches!(var_type, Type::Float) {
                                     self.emit("    cvtsd2ss %xmm0, %xmm0");
@@ -865,6 +885,21 @@ impl CodeGenerator {
                 let mut arg_info: Vec<(bool, usize)> = Vec::new(); // (is_float, index_within_type)
 
                 for arg in args.iter() {
+                    // For statement expressions, pre-generate statements to populate symbol table
+                    if let AstNode::StmtExpr { stmts, .. } = arg {
+                        for stmt in stmts {
+                            if let AstNode::VarDecl { name, var_type, .. } = stmt {
+                                let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                            } else if let AstNode::Block(decls) = stmt {
+                                for decl in decls {
+                                    if let AstNode::VarDecl { name, var_type, .. } = decl {
+                                        let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let arg_type = self.expr_type(arg)?;
                     if self.is_float_type(&arg_type) {
                         arg_info.push((true, float_counter));
@@ -877,7 +912,15 @@ impl CodeGenerator {
 
                 // Generate all arguments and push to stack
                 for (arg, (is_float, _)) in args.iter().zip(arg_info.iter()) {
-                    self.generate_node(arg)?;
+                    // For statement expressions, generate inline (statements already added to symbol table above)
+                    if let AstNode::StmtExpr { stmts, result } = arg {
+                        for stmt in stmts {
+                            self.generate_node(stmt)?;
+                        }
+                        self.generate_node(result)?;
+                    } else {
+                        self.generate_node(arg)?;
+                    }
                     if *is_float {
                         self.emit("    subq $8, %rsp");
                         self.emit("    movsd %xmm0, (%rsp)");
@@ -930,6 +973,21 @@ impl CodeGenerator {
                 let mut arg_info: Vec<(bool, usize)> = Vec::new(); // (is_float, index_within_type)
 
                 for arg in args.iter() {
+                    // For statement expressions, pre-generate statements to populate symbol table
+                    if let AstNode::StmtExpr { stmts, .. } = arg {
+                        for stmt in stmts {
+                            if let AstNode::VarDecl { name, var_type, .. } = stmt {
+                                let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                            } else if let AstNode::Block(decls) = stmt {
+                                for decl in decls {
+                                    if let AstNode::VarDecl { name, var_type, .. } = decl {
+                                        let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let arg_type = self.expr_type(arg)?;
                     if self.is_float_type(&arg_type) {
                         arg_info.push((true, float_counter));
@@ -942,7 +1000,15 @@ impl CodeGenerator {
 
                 // Generate all arguments and push to stack
                 for (arg, (is_float, _)) in args.iter().zip(arg_info.iter()) {
-                    self.generate_node(arg)?;
+                    // For statement expressions, generate inline (statements already added to symbol table above)
+                    if let AstNode::StmtExpr { stmts, result } = arg {
+                        for stmt in stmts {
+                            self.generate_node(stmt)?;
+                        }
+                        self.generate_node(result)?;
+                    } else {
+                        self.generate_node(arg)?;
+                    }
                     if *is_float {
                         self.emit("    subq $8, %rsp");
                         self.emit("    movsd %xmm0, (%rsp)");
@@ -1833,7 +1899,7 @@ impl CodeGenerator {
             }
             AstNode::StmtExpr { stmts, result } => {
                 // Generate code for all statements
-                for stmt in stmts {
+                for stmt in stmts.iter() {
                     self.generate_node(stmt)?;
                 }
                 // Generate code for the result expression
