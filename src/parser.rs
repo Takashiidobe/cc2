@@ -457,13 +457,37 @@ impl Parser {
                         self.expect(Token::OpenBrace)?;
                         let mut members = Vec::new();
                         while self.current_token() != &Token::CloseBrace {
-                            let member_type = self.parse_type()?;
-                            let member_name = match self.current_token() {
-                                Token::Identifier(s) => s.clone(),
-                                _ => return Err(format!("Expected member name, got {:?}", self.current_token())),
+                            // Parse _Alignas if present (TODO: actually use this value)
+                            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+                                self.advance();
+                                self.expect(Token::OpenParen)?;
+                                let align_value = if self.is_type_start(Some(self.current_token())) {
+                                    let ty = self.parse_type()?;
+                                    self.type_alignment_value(&ty)?
+                                } else {
+                                    self.parse_constant_expr()?
+                                };
+                                self.expect(Token::CloseParen)?;
+                                Some(align_value)
+                            } else {
+                                None
                             };
-                            self.advance();
-                            members.push((member_name, member_type));
+
+                            let base_type = self.parse_type()?;
+
+                            // Parse all declarators (can have multiple like "char x, y;")
+                            loop {
+                                let (member_type, member_name) = self.parse_declarator(base_type.clone())?;
+                                members.push((member_name, member_type));
+
+                                if self.current_token() == &Token::Comma {
+                                    self.advance();
+                                    continue;
+                                } else {
+                                    break;
+                                }
+                            }
+
                             self.expect(Token::Semicolon)?;
                         }
                         self.expect(Token::CloseBrace)?;
@@ -497,13 +521,37 @@ impl Parser {
                         self.expect(Token::OpenBrace)?;
                         let mut members = Vec::new();
                         while self.current_token() != &Token::CloseBrace {
-                            let member_type = self.parse_type()?;
-                            let member_name = match self.current_token() {
-                                Token::Identifier(s) => s.clone(),
-                                _ => return Err(format!("Expected member name, got {:?}", self.current_token())),
+                            // Parse _Alignas if present (TODO: actually use this value)
+                            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+                                self.advance();
+                                self.expect(Token::OpenParen)?;
+                                let align_value = if self.is_type_start(Some(self.current_token())) {
+                                    let ty = self.parse_type()?;
+                                    self.type_alignment_value(&ty)?
+                                } else {
+                                    self.parse_constant_expr()?
+                                };
+                                self.expect(Token::CloseParen)?;
+                                Some(align_value)
+                            } else {
+                                None
                             };
-                            self.advance();
-                            members.push((member_name, member_type));
+
+                            let base_type = self.parse_type()?;
+
+                            // Parse all declarators (can have multiple like "char x, y;")
+                            loop {
+                                let (member_type, member_name) = self.parse_declarator(base_type.clone())?;
+                                members.push((member_name, member_type));
+
+                                if self.current_token() == &Token::Comma {
+                                    self.advance();
+                                    continue;
+                                } else {
+                                    break;
+                                }
+                            }
+
                             self.expect(Token::Semicolon)?;
                         }
                         self.expect(Token::CloseBrace)?;
@@ -806,6 +854,18 @@ impl Parser {
             Token::Case => self.parse_case(),
             Token::Default => self.parse_default(),
             Token::Asm => self.parse_inline_asm(),
+            Token::Struct if matches!(self.peek(1), Some(&Token::Identifier(_))) && matches!(self.peek(2), Some(&Token::OpenBrace)) => {
+                // struct T { ... }; - struct definition
+                self.parse_struct_definition()
+            }
+            Token::Union if matches!(self.peek(1), Some(&Token::Identifier(_))) && matches!(self.peek(2), Some(&Token::OpenBrace)) => {
+                // union U { ... }; - union definition
+                self.parse_union_definition()
+            }
+            Token::Enum if matches!(self.peek(1), Some(&Token::Identifier(_))) && matches!(self.peek(2), Some(&Token::OpenBrace)) => {
+                // enum E { ... }; - enum definition
+                self.parse_enum_definition()
+            }
             Token::Unsigned
             | Token::Int
             | Token::Char
@@ -1903,6 +1963,22 @@ impl Parser {
 
         let mut fields = Vec::new();
         while self.current_token() != &Token::CloseBrace {
+            // Parse _Alignas if present (TODO: actually use this value)
+            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let align_value = if self.is_type_start(Some(self.current_token())) {
+                    let ty = self.parse_type()?;
+                    self.type_alignment_value(&ty)?
+                } else {
+                    self.parse_constant_expr()?
+                };
+                self.expect(Token::CloseParen)?;
+                Some(align_value)
+            } else {
+                None
+            };
+
             let field_type = self.parse_type()?;
             let (field_type, field_name) = self.parse_declarator(field_type)?;
 
@@ -2021,6 +2097,22 @@ impl Parser {
 
         let mut fields = Vec::new();
         while self.current_token() != &Token::CloseBrace {
+            // Parse _Alignas if present (TODO: actually use this value)
+            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let align_value = if self.is_type_start(Some(self.current_token())) {
+                    let ty = self.parse_type()?;
+                    self.type_alignment_value(&ty)?
+                } else {
+                    self.parse_constant_expr()?
+                };
+                self.expect(Token::CloseParen)?;
+                Some(align_value)
+            } else {
+                None
+            };
+
             let field_type = self.parse_type()?;
             let (field_type, field_name) = self.parse_declarator(field_type)?;
 
