@@ -1,0 +1,6 @@
+---
+source: tests/codegen.rs
+expression: "&mine"
+---
+stdout: "_Alignof(char) => 1\n_Alignof(short) => 2\n_Alignof(int) => 4\n_Alignof(long) => 8\n_Alignof(long long) => 8\n_Alignof(char[3]) => 1\n_Alignof(int[3]) => 4\n_Alignof(struct {char a; char b;}[2]) => 1\n_Alignof(struct {char a; long b;}[2]) => 8\n({ _Alignas(char) char 1, ({ _Alignas(char) char x, y; &y-&x; }); &({ _Alignas(char) char x, y; &y-&x; })-&1; }) => 1 expected but got -1\n"
+status: 1
