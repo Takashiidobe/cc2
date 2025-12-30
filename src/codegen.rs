@@ -674,6 +674,14 @@ impl CodeGenerator {
                             _ => {
                                 // For statement expressions, generate code first to populate symbol table
                                 let init_type = if let AstNode::StmtExpr { stmts, result } = init_expr.as_ref() {
+                                    // Pre-register struct/union definitions for type inference
+                                    for stmt in stmts {
+                                        if let AstNode::StructDef { name, fields } = stmt {
+                                            self.register_struct_layout(name, fields)?;
+                                        } else if let AstNode::UnionDef { name, fields } = stmt {
+                                            self.register_union_layout(name, fields)?;
+                                        }
+                                    }
                                     // Generate statements which adds variables to symbol table
                                     for stmt in stmts {
                                         self.generate_node(stmt)?;
@@ -885,10 +893,17 @@ impl CodeGenerator {
                 let mut arg_info: Vec<(bool, usize)> = Vec::new(); // (is_float, index_within_type)
 
                 for arg in args.iter() {
-                    // For statement expressions, pre-generate statements to populate symbol table
+                    // For statement expressions, pre-register types and variables for type inference
                     if let AstNode::StmtExpr { stmts, .. } = arg {
                         for stmt in stmts {
-                            if let AstNode::VarDecl { name, var_type, .. } = stmt {
+                            // Register struct/union definitions
+                            if let AstNode::StructDef { name, fields } = stmt {
+                                let _ = self.register_struct_layout(name, fields);
+                            } else if let AstNode::UnionDef { name, fields } = stmt {
+                                let _ = self.register_union_layout(name, fields);
+                            }
+                            // Register variables
+                            else if let AstNode::VarDecl { name, var_type, .. } = stmt {
                                 let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
@@ -973,10 +988,17 @@ impl CodeGenerator {
                 let mut arg_info: Vec<(bool, usize)> = Vec::new(); // (is_float, index_within_type)
 
                 for arg in args.iter() {
-                    // For statement expressions, pre-generate statements to populate symbol table
+                    // For statement expressions, pre-register types and variables for type inference
                     if let AstNode::StmtExpr { stmts, .. } = arg {
                         for stmt in stmts {
-                            if let AstNode::VarDecl { name, var_type, .. } = stmt {
+                            // Register struct/union definitions
+                            if let AstNode::StructDef { name, fields } = stmt {
+                                let _ = self.register_struct_layout(name, fields);
+                            } else if let AstNode::UnionDef { name, fields } = stmt {
+                                let _ = self.register_union_layout(name, fields);
+                            }
+                            // Register variables
+                            else if let AstNode::VarDecl { name, var_type, .. } = stmt {
                                 let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
