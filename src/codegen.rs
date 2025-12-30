@@ -2529,7 +2529,7 @@ impl CodeGenerator {
 
             // Float to integer conversions
             (
-                Type::Float | Type::Double,
+                Type::Float | Type::Double | Type::LongDouble,
                 Type::Int
                 | Type::UInt
                 | Type::Long
@@ -2556,7 +2556,7 @@ impl CodeGenerator {
                 | Type::UChar
                 | Type::Short
                 | Type::UShort,
-                Type::Float | Type::Double,
+                Type::Float | Type::Double | Type::LongDouble,
             ) => {
                 // First convert to 64-bit integer in rax if needed
                 let from_size = self.type_size(from)?;
@@ -2569,7 +2569,15 @@ impl CodeGenerator {
             }
 
             // Float to float (no conversion needed, both use xmm0)
-            (Type::Float, Type::Double) | (Type::Double, Type::Float) => Ok(()),
+            (Type::Float, Type::Double)
+            | (Type::Double, Type::Float)
+            | (Type::Float, Type::LongDouble)
+            | (Type::LongDouble, Type::Float)
+            | (Type::Double, Type::LongDouble)
+            | (Type::LongDouble, Type::Double) => Ok(()),
+
+            // Cast to void (discard result)
+            (_, Type::Void) => Ok(()),
 
             // Integer conversions
             _ => {
