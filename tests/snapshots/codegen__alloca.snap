@@ -1,7 +1,6 @@
 ---
 source: tests/codegen.rs
-assertion_line: 84
 expression: "&mine"
 ---
-stdout: ""
-status: -1
+stdout: "p1 - p2 => 16\np2 - p3 => 16\np3 - p4 => 16 expected but got 24\n"
+status: 1

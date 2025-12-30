@@ -19,6 +19,17 @@ impl SymbolTable {
         SymbolTable::default()
     }
 
+    pub fn reserve_stack_space(&mut self, size: i32, align: i32) {
+        let size = size.max(0);
+        let align = align.max(1);
+
+        self.next_offset -= size;
+        let misalignment = (-self.next_offset) % align;
+        if misalignment != 0 {
+            self.next_offset -= align - misalignment;
+        }
+    }
+
     pub fn add_variable(&mut self, name: String, var_type: Type) -> Result<i32, String> {
         let size = var_type.size();
         let align = align_for_size(size);

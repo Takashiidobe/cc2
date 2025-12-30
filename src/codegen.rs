@@ -155,6 +155,7 @@ impl CodeGenerator {
                 };
 
                 self.symbol_table = SymbolTable::new();
+                self.symbol_table.reserve_stack_space(8, 8);
 
                 let param_regs_64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
                 let param_regs_32 = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"];
@@ -315,13 +316,14 @@ impl CodeGenerator {
                 self.output = saved_output;
 
                 // Now emit function with correct stack allocation
-                let stack_size = align_to(self.symbol_table.get_stack_size(), 16);
+                let stack_size = align_to(self.symbol_table.get_stack_size(), 16) - 8;
                 self.emit(&format!("    .globl {}", name));
                 self.emit(&format!("{}:", name));
                 self.emit("    pushq %rbp");
                 self.emit("    movq %rsp, %rbp");
+                self.emit("    pushq %r12");
                 // Initialize alloca adjustment tracker (used when alloca is called in expressions)
-                self.emit("    xorq %r11, %r11");
+                self.emit("    xorq %r12, %r12");
                 if stack_size > 0 {
                     self.emit(&format!("    subq ${}, %rsp", stack_size));
                 }
@@ -331,9 +333,8 @@ impl CodeGenerator {
 
                 // Emit end label and epilogue
                 self.emit(&format!("{}:", end_label));
-                if stack_size > 0 {
-                    self.emit("    movq %rbp, %rsp");
-                }
+                self.emit("    movq -8(%rbp), %r12");
+                self.emit("    movq %rbp, %rsp");
                 self.emit("    popq %rbp");
                 self.emit("    ret");
 
@@ -897,10 +898,10 @@ impl CodeGenerator {
                     // Save size in %rcx
                     self.emit("    movq %rax, %rcx");
 
-                    // Track the alloca adjustment in %r11 for subsequent popq operations
+                    // Track the alloca adjustment in %r12 for subsequent popq operations
                     // This allows popq to find pushed values even after %rsp has moved
                     if self.stack_depth > 0 {
-                        self.emit("    addq %rcx, %r11");
+                        self.emit("    addq %rcx, %r12");
                     }
 
                     // Allocate on stack by subtracting from %rsp
@@ -3954,11 +3955,11 @@ impl CodeGenerator {
     /// Pops into the specified register (e.g., "%rax" or "%rcx")
     fn emit_pop(&mut self, register: &str) {
         // Read the pushed value from its location (which may have moved due to alloca)
-        self.emit(&format!("    movq (%rsp,%r11,1), {}", register));
+        self.emit(&format!("    movq (%rsp,%r12,1), {}", register));
         // Pop always adds 8 to undo the push, regardless of alloca
         self.emit("    addq $8, %rsp");
         // Clear the alloca adjustment tracker
-        self.emit("    xorq %r11, %r11");
+        self.emit("    xorq %r12, %r12");
         self.stack_depth -= 1;
     }
 
