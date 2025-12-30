@@ -4,10 +4,13 @@
 /* sig_atomic_t type */
 typedef int sig_atomic_t;
 
+/* Signal handler type */
+typedef void (*__sighandler_t)(int);
+
 /* Signal handler values */
-#define SIG_DFL ((void *)0)
-#define SIG_IGN ((void *)1)
-#define SIG_ERR ((void *)-1)
+#define SIG_DFL ((__sighandler_t)0)
+#define SIG_IGN ((__sighandler_t)1)
+#define SIG_ERR ((__sighandler_t)-1)
 
 /* Signals */
 #define SIGABRT 6
@@ -19,7 +22,6 @@ typedef int sig_atomic_t;
 
 /* Signal functions */
 extern int raise(int sig);
-/* NOTE: function pointer types are not fully supported yet; use void* for now. */
-extern void *signal(int sig, void *handler);
+extern __sighandler_t signal(int sig, __sighandler_t handler);
 
 #endif /* _SIGNAL_H */

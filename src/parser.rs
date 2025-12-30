@@ -112,18 +112,7 @@ impl Parser {
             is_const,
             is_volatile,
         };
-
-        let name = match self.current_token() {
-            Token::Identifier(s) => s.clone(),
-            _ => {
-                return Err(format!(
-                    "Expected identifier, got {:?} at {}",
-                    self.current_token(),
-                    self.current_location()
-                ));
-            }
-        };
-        self.advance();
+        let (var_type, name) = self.parse_declarator(var_type)?;
 
         // Check what follows to determine if it's a function or variable
         match self.current_token() {
@@ -219,20 +208,9 @@ impl Parser {
         // Consume 'typedef' token
         self.expect(Token::Typedef)?;
 
-        // Parse the target type
+        // Parse the target type and declarator
         let target_type = self.parse_type()?;
-
-        // Parse the alias name
-        let name = match self.current_token() {
-            Token::Identifier(s) => s.clone(),
-            _ => {
-                return Err(format!(
-                    "Expected identifier after typedef, got {:?}",
-                    self.current_token()
-                ));
-            }
-        };
-        self.advance();
+        let (target_type, name) = self.parse_declarator(target_type)?;
 
         // Expect semicolon
         self.expect(Token::Semicolon)?;
@@ -370,6 +348,162 @@ impl Parser {
         Ok(ty)
     }
 
+    fn parse_declarator(&mut self, base_type: Type) -> Result<(Type, String), String> {
+        if self.current_token() == &Token::OpenParen {
+            let saved_pos = self.position;
+            self.advance();
+            if self.current_token() == &Token::Star {
+                let mut pointer_depth = 0;
+                while self.current_token() == &Token::Star {
+                    self.advance();
+                    pointer_depth += 1;
+                }
+
+                let name = match self.current_token() {
+                    Token::Identifier(s) => s.clone(),
+                    _ => {
+                        return Err(
+                            "Expected identifier in function pointer declarator".to_string()
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(Token::CloseParen)?;
+                if self.current_token() != &Token::OpenParen {
+                    return Err("Expected '(' after function pointer declarator".to_string());
+                }
+                self.advance();
+                let param_types = self.parse_param_type_list()?;
+                self.expect(Token::CloseParen)?;
+
+                let mut decl_type = Type::FunctionPointer {
+                    return_type: Box::new(base_type),
+                    param_types,
+                };
+                for _ in 1..pointer_depth {
+                    decl_type = Type::Pointer(Box::new(decl_type));
+                }
+                return Ok((decl_type, name));
+            }
+            self.position = saved_pos;
+        }
+
+        let name = match self.current_token() {
+            Token::Identifier(s) => s.clone(),
+            _ => {
+                return Err(format!(
+                    "Expected identifier, got {:?} at {}",
+                    self.current_token(),
+                    self.current_location()
+                ));
+            }
+        };
+        self.advance();
+        let decl_type = self.parse_array_type_suffix(base_type)?;
+        Ok((decl_type, name))
+    }
+
+    fn parse_param_declarator(
+        &mut self,
+        base_type: Type,
+    ) -> Result<(Type, Option<String>), String> {
+        if self.current_token() == &Token::OpenParen {
+            let saved_pos = self.position;
+            self.advance();
+            if self.current_token() == &Token::Star {
+                let mut pointer_depth = 0;
+                while self.current_token() == &Token::Star {
+                    self.advance();
+                    pointer_depth += 1;
+                }
+
+                let name = match self.current_token() {
+                    Token::Identifier(s) => {
+                        let name = s.clone();
+                        self.advance();
+                        Some(name)
+                    }
+                    Token::CloseParen => None,
+                    _ => {
+                        return Err(
+                            "Expected parameter name or ')' in function pointer declarator"
+                                .to_string(),
+                        );
+                    }
+                };
+                self.expect(Token::CloseParen)?;
+                if self.current_token() != &Token::OpenParen {
+                    return Err("Expected '(' after function pointer declarator".to_string());
+                }
+                self.advance();
+                let param_types = self.parse_param_type_list()?;
+                self.expect(Token::CloseParen)?;
+
+                let mut decl_type = Type::FunctionPointer {
+                    return_type: Box::new(base_type),
+                    param_types,
+                };
+                for _ in 1..pointer_depth {
+                    decl_type = Type::Pointer(Box::new(decl_type));
+                }
+                return Ok((decl_type, name));
+            }
+            self.position = saved_pos;
+        }
+
+        if let Token::Identifier(s) = self.current_token() {
+            let name = s.clone();
+            self.advance();
+            let decl_type = self.parse_array_type_suffix(base_type)?;
+            return Ok((decl_type, Some(name)));
+        }
+
+        Ok((base_type, None))
+    }
+
+    fn parse_param_type_list(&mut self) -> Result<Vec<Type>, String> {
+        let mut params = Vec::new();
+
+        if self.current_token() == &Token::CloseParen {
+            return Ok(params);
+        }
+
+        // Check for single 'void' parameter (means no parameters in C)
+        if self.current_token() == &Token::Void {
+            let saved_pos = self.position;
+            self.advance();
+            let next_is_close_paren = self.current_token() == &Token::CloseParen;
+            self.position = saved_pos;
+
+            if next_is_close_paren {
+                self.advance(); // Skip 'void'
+                return Ok(params);
+            }
+        }
+
+        loop {
+            if self.current_token() == &Token::Ellipsis {
+                return Err("Variadic function pointer types are not supported".to_string());
+            }
+
+            while matches!(self.current_token(), Token::Const | Token::Volatile) {
+                self.advance();
+            }
+
+            let param_type = self.parse_type()?;
+            let (param_type, _name) = self.parse_param_declarator(param_type)?;
+            params.push(param_type);
+
+            if self.current_token() == &Token::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(params)
+    }
+
     fn parse_parameters(&mut self) -> Result<(Vec<Parameter>, bool), String> {
         let mut params = Vec::new();
         let mut is_variadic = false;
@@ -409,17 +543,8 @@ impl Parser {
             }
 
             let param_type = self.parse_type()?;
-
-            let name = match self.current_token() {
-                Token::Identifier(s) => s.clone(),
-                _ => {
-                    return Err(format!(
-                        "Expected parameter name, got {:?}",
-                        self.current_token()
-                    ));
-                }
-            };
-            self.advance();
+            let (param_type, name) = self.parse_param_declarator(param_type)?;
+            let name = name.unwrap_or_else(|| format!("_param{}", params.len()));
 
             params.push(Parameter { name, param_type });
 
@@ -531,19 +656,7 @@ impl Parser {
         }
 
         let var_type = self.parse_type()?;
-
-        let name = match self.current_token() {
-            Token::Identifier(s) => s.clone(),
-            _ => {
-                return Err(format!(
-                    "Expected variable name, got {:?}",
-                    self.current_token()
-                ));
-            }
-        };
-        self.advance();
-
-        let var_type = self.parse_array_type_suffix(var_type)?;
+        let (var_type, name) = self.parse_declarator(var_type)?;
 
         let init = if self.current_token() == &Token::Equals {
             self.advance();
@@ -1856,20 +1969,21 @@ impl Parser {
     }
 
     fn is_type_start(&self, token: Option<&Token>) -> bool {
-        matches!(
-            token,
+        match token {
+            Some(Token::Identifier(name)) => self.type_aliases.contains_key(name),
             Some(Token::Unsigned)
-                | Some(Token::Int)
-                | Some(Token::Char)
-                | Some(Token::Struct)
-                | Some(Token::Union)
-                | Some(Token::Enum)
-                | Some(Token::Short)
-                | Some(Token::Long)
-                | Some(Token::Float)
-                | Some(Token::Double)
-                | Some(Token::Void)
-        )
+            | Some(Token::Int)
+            | Some(Token::Char)
+            | Some(Token::Struct)
+            | Some(Token::Union)
+            | Some(Token::Enum)
+            | Some(Token::Short)
+            | Some(Token::Long)
+            | Some(Token::Float)
+            | Some(Token::Double)
+            | Some(Token::Void) => true,
+            _ => false,
+        }
     }
 
     fn peek(&self, offset: usize) -> Option<&Token> {
