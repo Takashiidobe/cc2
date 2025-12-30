@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::lexer::{FloatSuffix, IntSuffix, LocatedToken, SourceLocation, Token};
+use std::collections::HashMap;
 
 pub struct Parser {
     tokens: Vec<LocatedToken>,
@@ -133,8 +134,37 @@ impl Parser {
 
     fn parse_function_rest(&mut self, return_type: Type, name: String) -> Result<AstNode, String> {
         self.expect(Token::OpenParen)?;
-        let (params, is_variadic) = self.parse_parameters()?;
+        let mut params = Vec::new();
+        let mut is_variadic = false;
+        let mut kr_param_names = None;
+
+        if self.current_token() != &Token::CloseParen {
+            let is_prototype = self.is_type_start(Some(self.current_token()))
+                || matches!(
+                    self.current_token(),
+                    Token::Const | Token::Volatile | Token::Ellipsis
+                );
+
+            if is_prototype {
+                let parsed = self.parse_parameters()?;
+                params = parsed.0;
+                is_variadic = parsed.1;
+            } else {
+                kr_param_names = Some(self.parse_kr_parameter_names()?);
+            }
+        }
+
         self.expect(Token::CloseParen)?;
+
+        if let Some(names) = kr_param_names {
+            let mut decls = HashMap::new();
+            if self.current_token() != &Token::Semicolon
+                && self.current_token() != &Token::OpenBrace
+            {
+                decls = self.parse_kr_parameter_decls(&names)?;
+            }
+            params = self.build_kr_parameters(&names, decls)?;
+        }
 
         // Check if this is a forward declaration (semicolon) or definition (body)
         let body = if self.current_token() == &Token::Semicolon {
@@ -153,6 +183,92 @@ impl Parser {
             body,
             is_variadic,
         })
+    }
+
+    fn parse_kr_parameter_names(&mut self) -> Result<Vec<String>, String> {
+        let mut names = Vec::new();
+        loop {
+            let name = match self.current_token() {
+                Token::Identifier(s) => s.clone(),
+                _ => {
+                    return Err(format!(
+                        "Expected parameter name, got {:?}",
+                        self.current_token()
+                    ));
+                }
+            };
+            if names.iter().any(|existing| existing == &name) {
+                return Err(format!("Duplicate parameter name '{}'", name));
+            }
+            self.advance();
+            names.push(name);
+
+            if self.current_token() == &Token::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(names)
+    }
+
+    fn parse_kr_parameter_decls(
+        &mut self,
+        param_names: &[String],
+    ) -> Result<HashMap<String, Type>, String> {
+        let mut decls = HashMap::new();
+
+        while self.is_type_start(Some(self.current_token()))
+            || matches!(self.current_token(), Token::Const | Token::Volatile)
+        {
+            while matches!(self.current_token(), Token::Const | Token::Volatile) {
+                self.advance();
+            }
+
+            let base_type = self.parse_type()?;
+            let (decl_type, name) = self.parse_declarator(base_type)?;
+
+            if !param_names.iter().any(|param| param == &name) {
+                return Err(format!(
+                    "K&R parameter declaration for unknown name '{}'",
+                    name
+                ));
+            }
+            if decls.contains_key(&name) {
+                return Err(format!("Duplicate K&R parameter declaration '{}'", name));
+            }
+
+            self.expect(Token::Semicolon)?;
+            decls.insert(name, decl_type);
+        }
+
+        Ok(decls)
+    }
+
+    fn build_kr_parameters(
+        &self,
+        param_names: &[String],
+        mut decls: HashMap<String, Type>,
+    ) -> Result<Vec<Parameter>, String> {
+        let mut params = Vec::new();
+
+        for name in param_names {
+            let param_type = decls.remove(name).unwrap_or(Type::Int);
+            params.push(Parameter {
+                name: name.clone(),
+                param_type,
+            });
+        }
+
+        if let Some((extra, _)) = decls.into_iter().next() {
+            return Err(format!(
+                "K&R declaration provided for extra parameter '{}'",
+                extra
+            ));
+        }
+
+        Ok(params)
     }
 
     fn parse_global_variable_with_storage(
@@ -1381,6 +1497,19 @@ impl Parser {
                 }
 
                 AstNode::StringLiteral(val)
+            }
+            Token::WideStringLiteral(s) => {
+                let mut val = s.clone();
+                self.advance();
+
+                while matches!(self.current_token(), Token::WideStringLiteral(_)) {
+                    if let Token::WideStringLiteral(next_s) = self.current_token() {
+                        val.push_str(next_s);
+                        self.advance();
+                    }
+                }
+
+                AstNode::WideStringLiteral(val)
             }
             Token::Identifier(name) => {
                 let name = name.clone();

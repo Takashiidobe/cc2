@@ -29,6 +29,7 @@ pub struct CodeGenerator {
     union_layouts: HashMap<String, StructLayout>,
     enum_constants: HashMap<String, i64>,
     string_literals: Vec<(String, String)>, // (label, string_content)
+    wide_string_literals: Vec<(String, String)>, // (label, string_content)
     float_literals: Vec<(String, f64)>,     // (label, value)
     global_variables: HashMap<String, GlobalVariable>,
     function_return_types: HashMap<String, Type>,
@@ -62,6 +63,7 @@ impl CodeGenerator {
             union_layouts: HashMap::new(),
             enum_constants: HashMap::new(),
             string_literals: Vec::new(),
+            wide_string_literals: Vec::new(),
             float_literals: Vec::new(),
             global_variables: HashMap::new(),
             function_return_types: HashMap::new(),
@@ -78,6 +80,7 @@ impl CodeGenerator {
         self.union_layouts.clear();
         self.enum_constants.clear();
         self.string_literals.clear();
+        self.wide_string_literals.clear();
         self.float_literals.clear();
         self.global_variables.clear();
         self.function_return_types.clear();
@@ -101,6 +104,7 @@ impl CodeGenerator {
 
         // Emit .rodata section with string and float literals at the end
         self.emit_string_literals();
+        self.emit_wide_string_literals();
         self.emit_float_literals();
 
         Ok(self.output.clone())
@@ -609,10 +613,14 @@ impl CodeGenerator {
                 // infer the actual size before allocating stack space
                 let actual_var_type = if let Type::Array(elem_type, 0) = var_type {
                     if let Some(init_expr) = init {
-                        if let AstNode::StringLiteral(s) = init_expr.as_ref() {
-                            Type::Array(elem_type.clone(), s.len() + 1) // +1 for null terminator
-                        } else {
-                            var_type.clone()
+                        match init_expr.as_ref() {
+                            AstNode::StringLiteral(s) => {
+                                Type::Array(elem_type.clone(), s.len() + 1)
+                            }
+                            AstNode::WideStringLiteral(s) => {
+                                Type::Array(elem_type.clone(), s.chars().count() + 1)
+                            }
+                            _ => var_type.clone(),
                         }
                     } else {
                         var_type.clone()
@@ -639,6 +647,9 @@ impl CodeGenerator {
                             AstNode::StringLiteral(s) => {
                                 // String literal initialization for char arrays
                                 self.generate_string_array_init(var_type, s, offset)?;
+                            }
+                            AstNode::WideStringLiteral(s) => {
+                                self.generate_wide_string_array_init(var_type, s, offset)?;
                             }
                             _ => {
                                 return Err(
@@ -1833,6 +1844,11 @@ impl CodeGenerator {
                 self.emit(&format!("    leaq {}(%rip), %rax", label));
                 Ok(())
             }
+            AstNode::WideStringLiteral(s) => {
+                let label = self.add_wide_string_literal(s.clone());
+                self.emit(&format!("    leaq {}(%rip), %rax", label));
+                Ok(())
+            }
         }
     }
 
@@ -2672,6 +2688,50 @@ impl CodeGenerator {
         Ok(())
     }
 
+    fn generate_wide_string_array_init(
+        &mut self,
+        array_type: &Type,
+        string: &str,
+        base_offset: i32,
+    ) -> Result<(), String> {
+        let elem_type = self.array_element_type_from_type(array_type)?;
+        let mut array_len = match array_type {
+            Type::Array(_, len) => *len,
+            _ => return Err("Expected array type".to_string()),
+        };
+
+        let char_count = string.chars().count();
+        if array_len == 0 {
+            array_len = char_count + 1;
+        }
+
+        if !matches!(elem_type, Type::Int | Type::UInt | Type::Enum(_)) {
+            return Err("Wide string literals can only initialize int arrays".to_string());
+        }
+
+        for (i, ch) in string.chars().enumerate() {
+            if i >= array_len {
+                return Err(format!(
+                    "Wide string literal has {} characters (plus null terminator), but array length is {}",
+                    char_count, array_len
+                ));
+            }
+            let elem_offset = base_offset + (i as i32) * 4;
+            self.emit(&format!("    movl ${}, {}(%rbp)", ch as u32, elem_offset));
+        }
+
+        if char_count < array_len {
+            let null_offset = base_offset + (char_count as i32) * 4;
+            self.emit(&format!("    movl $0, {}(%rbp)", null_offset));
+            for i in (char_count + 1)..array_len {
+                let elem_offset = base_offset + (i as i32) * 4;
+                self.emit(&format!("    movl $0, {}(%rbp)", elem_offset));
+            }
+        }
+
+        Ok(())
+    }
+
     fn zero_fill_element(&mut self, elem_type: &Type, offset: i32) -> Result<(), String> {
         if elem_type.is_array() {
             // For nested arrays, recursively zero-fill
@@ -3314,6 +3374,7 @@ impl CodeGenerator {
                 _ => Ok(Type::Int),
             },
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
+            AstNode::WideStringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Int))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
             AstNode::VaStart { .. } => Ok(Type::Void),   // va_start returns void
@@ -3437,6 +3498,11 @@ impl CodeGenerator {
                 self.emit(&format!("    .quad {}", label));
                 Ok(())
             }
+            AstNode::WideStringLiteral(s) => {
+                let label = self.add_wide_string_literal(s.clone());
+                self.emit(&format!("    .quad {}", label));
+                Ok(())
+            }
             AstNode::ArrayInit(values) => {
                 // Emit array initializer
                 if let Type::Array(elem_type, _) = var_type {
@@ -3480,6 +3546,18 @@ impl CodeGenerator {
         label
     }
 
+    fn add_wide_string_literal(&mut self, s: String) -> String {
+        for (label, content) in &self.wide_string_literals {
+            if content == &s {
+                return label.clone();
+            }
+        }
+
+        let label = format!(".LCW{}", self.wide_string_literals.len());
+        self.wide_string_literals.push((label.clone(), s));
+        label
+    }
+
     fn emit_string_literals(&mut self) {
         if self.string_literals.is_empty() {
             return;
@@ -3496,6 +3574,23 @@ impl CodeGenerator {
             // Escape special characters for assembly
             let escaped = self.escape_string_for_asm(content);
             self.emit(&format!("    .string \"{}\"", escaped));
+        }
+    }
+
+    fn emit_wide_string_literals(&mut self) {
+        if self.wide_string_literals.is_empty() {
+            return;
+        }
+
+        let literals = self.wide_string_literals.clone();
+        self.emit("    .section .rodata");
+        for (label, content) in &literals {
+            self.emit("    .align 4");
+            self.emit(&format!("{}:", label));
+            for ch in content.chars() {
+                self.emit(&format!("    .long {}", ch as u32));
+            }
+            self.emit("    .long 0");
         }
     }
 

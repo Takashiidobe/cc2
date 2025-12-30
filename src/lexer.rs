@@ -101,6 +101,7 @@ pub enum Token {
     IntLiteral(i64, IntSuffix),
     FloatLiteral(f64, FloatSuffix),
     StringLiteral(String),
+    WideStringLiteral(String),
     CharLiteral(i64),
 
     // Punctuation
@@ -209,6 +210,7 @@ impl fmt::Display for Token {
                 write!(f, "FloatLiteral({}, {:?})", f_val, suffix)
             }
             Token::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
+            Token::WideStringLiteral(s) => write!(f, "WideStringLiteral(L\"{}\")", s),
             Token::CharLiteral(c) => write!(f, "CharLiteral({})", c),
             Token::OpenParen => write!(f, "("),
             Token::CloseParen => write!(f, ")"),
@@ -523,6 +525,20 @@ impl Lexer {
             }
             '\'' => self.read_char_literal(location),
             '"' => self.read_string_literal(location),
+            'L' => {
+                if self.position + 1 < self.input.len() {
+                    let next = self.input[self.position + 1];
+                    if next == '"' {
+                        self.advance();
+                        return self.read_wide_string_literal(location);
+                    }
+                    if next == '\'' {
+                        self.advance();
+                        return self.read_wide_char_literal(location);
+                    }
+                }
+                self.read_identifier(location)
+            }
             _ if ch.is_ascii_digit() => self.read_number(location),
             _ if ch.is_ascii_alphabetic() || ch == '_' => self.read_identifier(location),
             _ => Err(format!("Unexpected character: '{}'", ch)),
@@ -734,6 +750,19 @@ impl Lexer {
     }
 
     fn read_string_literal(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
+        let value = self.read_string_literal_value()?;
+        Ok(LocatedToken::new(Token::StringLiteral(value), location))
+    }
+
+    fn read_wide_string_literal(
+        &mut self,
+        location: SourceLocation,
+    ) -> Result<LocatedToken, String> {
+        let value = self.read_string_literal_value()?;
+        Ok(LocatedToken::new(Token::WideStringLiteral(value), location))
+    }
+
+    fn read_string_literal_value(&mut self) -> Result<String, String> {
         self.advance(); // Skip opening quote
         let mut value = String::new();
 
@@ -756,10 +785,23 @@ impl Lexer {
         }
 
         self.advance(); // Skip closing quote
-        Ok(LocatedToken::new(Token::StringLiteral(value), location))
+        Ok(value)
     }
 
     fn read_char_literal(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
+        let value = self.read_char_literal_value()?;
+        Ok(LocatedToken::new(Token::CharLiteral(value), location))
+    }
+
+    fn read_wide_char_literal(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
+        let value = self.read_char_literal_value()?;
+        Ok(LocatedToken::new(
+            Token::IntLiteral(value, IntSuffix::None),
+            location,
+        ))
+    }
+
+    fn read_char_literal_value(&mut self) -> Result<i64, String> {
         self.advance(); // Skip opening quote
 
         if self.is_at_end() {
@@ -784,10 +826,7 @@ impl Lexer {
         }
 
         self.advance(); // Skip closing quote
-        Ok(LocatedToken::new(
-            Token::CharLiteral(value as i64),
-            location,
-        ))
+        Ok(value as i64)
     }
 
     fn parse_escape_sequence(&mut self) -> Result<char, String> {
