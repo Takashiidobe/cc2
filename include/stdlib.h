@@ -61,18 +61,16 @@ extern void free(void *ptr);
 
 /* Process control functions */
 extern void abort(void);
-/* NOTE: atexit not yet supported - requires function pointer parameters */
-/* extern int atexit(void (*func)(void)); */
+extern int atexit(void (*func)(void));
 extern void exit(int status);
 extern char *getenv(const char *name);
 extern int system(const char *string);
 
 /* Searching and sorting */
-/* NOTE: bsearch and qsort not yet supported - require function pointer parameters */
-/* extern void *bsearch(const void *key, const void *base, size_t nmemb,
-                     size_t size, int (*compar)(const void *, const void *));
+extern void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+                     int (*compar)(const void *, const void *));
 extern void qsort(void *base, size_t nmemb, size_t size,
-                  int (*compar)(const void *, const void *)); */
+                  int (*compar)(const void *, const void *));
 
 /* Integer arithmetic functions */
 extern int abs(int j);

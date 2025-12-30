@@ -1,0 +1,7 @@
+---
+source: tests/parse.rs
+expression: "&result"
+---
+stdout: "Program\n  TypedefDef(size_t)\n  TypedefDef(wchar_t)\n  StructDef(div_struct)\n  TypedefDef(div_t)\n  StructDef(ldiv_struct)\n  TypedefDef(ldiv_t)\n  Function(atof)\n  Function(atoi)\n  Function(atol)\n  Function(strtod)\n  Function(strtol)\n  Function(strtoul)\n  Function(rand)\n  Function(srand)\n  Function(calloc)\n  Function(malloc)\n  Function(realloc)\n  Function(free)\n  Function(abort)\n  Function(atexit)\n  Function(exit)\n  Function(getenv)\n  Function(system)\n  Function(bsearch)\n  Function(qsort)\n  Function(abs)\n  Function(labs)\n  Function(div)\n  Function(ldiv)\n  Function(mblen)\n  Function(mbtowc)\n  Function(wctomb)\n  Function(mbstowcs)\n  Function(wcstombs)\n  VarDecl(called)\n  Function(mark)\n  Function(compare)\n  Function(main)\n\n"
+stderr: ""
+status: 0
