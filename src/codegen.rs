@@ -786,40 +786,63 @@ impl CodeGenerator {
                     return Ok(());
                 }
 
-                let symbol = self
-                    .symbol_table
-                    .get_variable(name)
-                    .ok_or_else(|| format!("Undefined variable: {}", name))?;
-
-                if symbol.symbol_type.is_array()
-                    || matches!(symbol.symbol_type, Type::Struct(_) | Type::Union(_))
-                {
-                    self.emit(&format!("    leaq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::Int | Type::Enum(_)) {
-                    self.emit(&format!("    movslq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::UInt) {
-                    self.emit(&format!("    movl {}(%rbp), %eax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::UShort) {
-                    self.emit(&format!("    movzwq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::Short) {
-                    self.emit(&format!("    movswq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::Char) {
-                    self.emit(&format!("    movsbq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::UChar) {
-                    self.emit(&format!("    movzbq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::Long | Type::ULong) {
-                    self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
-                } else if matches!(symbol.symbol_type, Type::Float) {
-                    self.emit(&format!("    movss {}(%rbp), %xmm0", symbol.stack_offset));
-                    self.emit("    cvtss2sd %xmm0, %xmm0");
-                } else if matches!(symbol.symbol_type, Type::Double) {
-                    self.emit(&format!("    movsd {}(%rbp), %xmm0", symbol.stack_offset));
-                } else {
-                    self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
+                if let Some(symbol) = self.symbol_table.get_variable(name) {
+                    if symbol.symbol_type.is_array()
+                        || matches!(symbol.symbol_type, Type::Struct(_) | Type::Union(_))
+                    {
+                        self.emit(&format!("    leaq {}(%rbp), %rax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::Int | Type::Enum(_)) {
+                        self.emit(&format!("    movslq {}(%rbp), %rax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::UInt) {
+                        self.emit(&format!("    movl {}(%rbp), %eax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::UShort) {
+                        self.emit(&format!("    movzwq {}(%rbp), %rax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::Short) {
+                        self.emit(&format!("    movswq {}(%rbp), %rax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::Char) {
+                        self.emit(&format!("    movsbq {}(%rbp), %rax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::UChar) {
+                        self.emit(&format!("    movzbq {}(%rbp), %rax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::Long | Type::ULong) {
+                        self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
+                    } else if matches!(symbol.symbol_type, Type::Float) {
+                        self.emit(&format!("    movss {}(%rbp), %xmm0", symbol.stack_offset));
+                        self.emit("    cvtss2sd %xmm0, %xmm0");
+                    } else if matches!(symbol.symbol_type, Type::Double) {
+                        self.emit(&format!("    movsd {}(%rbp), %xmm0", symbol.stack_offset));
+                    } else {
+                        self.emit(&format!("    movq {}(%rbp), %rax", symbol.stack_offset));
+                    }
+                    return Ok(());
                 }
+
+                // Treat unknown identifiers as function names (function designator decay).
+                self.emit(&format!("    leaq {}(%rip), %rax", name));
                 Ok(())
             }
             AstNode::FunctionCall { name, args } => {
+                if let Some(symbol) = self.symbol_table.get_variable(name) {
+                    if matches!(symbol.symbol_type, Type::FunctionPointer { .. }) {
+                        let target = AstNode::Variable(name.clone());
+                        return self.generate_node(&AstNode::IndirectCall {
+                            target: Box::new(target),
+                            args: args.clone(),
+                        });
+                    }
+                    return Err(format!("Cannot call non-function pointer '{}'", name));
+                }
+
+                if let Some(global) = self.global_variables.get(name) {
+                    if matches!(global.var_type, Type::FunctionPointer { .. }) {
+                        let target = AstNode::Variable(name.clone());
+                        return self.generate_node(&AstNode::IndirectCall {
+                            target: Box::new(target),
+                            args: args.clone(),
+                        });
+                    }
+                    return Err(format!("Cannot call non-function pointer '{}'", name));
+                }
+
                 let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
                 let arg_regs_xmm = [
                     "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
@@ -1510,17 +1533,11 @@ impl CodeGenerator {
                 let pointee_type = match operand_type {
                     Type::Pointer(pointee) => *pointee,
                     Type::FunctionPointer { .. } => {
-                        // Function pointers are already addresses - dereferencing is a no-op
+                        // Function pointers are already addresses - dereferencing is a no-op.
                         return Ok(());
                     }
                     _ => return Err("Cannot dereference non-pointer type".to_string()),
                 };
-
-                // Check if pointee is a function pointer - if so, don't dereference
-                if matches!(pointee_type, Type::FunctionPointer { .. }) {
-                    // The address is already in %rax, no dereference needed
-                    return Ok(());
-                }
 
                 if matches!(pointee_type, Type::Int) {
                     self.emit("    movslq (%rax), %rax");
@@ -3083,13 +3100,39 @@ impl CodeGenerator {
                 })
             }
             AstNode::AddressOf(inner) => {
+                if let AstNode::Variable(name) = &**inner {
+                    if let Some(global) = self.global_variables.get(name) {
+                        return Ok(Type::Pointer(Box::new(global.var_type.clone())));
+                    }
+                    if let Some(symbol) = self.symbol_table.get_variable(name) {
+                        return Ok(Type::Pointer(Box::new(symbol.symbol_type.clone())));
+                    }
+
+                    let return_type = self
+                        .function_return_types
+                        .get(name)
+                        .cloned()
+                        .unwrap_or(Type::Int);
+                    return Ok(Type::FunctionPointer {
+                        return_type: Box::new(return_type),
+                        param_types: vec![],
+                    });
+                }
+
                 let inner_type = self.expr_type(inner)?;
+                if matches!(inner.as_ref(), AstNode::Dereference(_))
+                    && matches!(inner_type, Type::FunctionPointer { .. })
+                {
+                    return Ok(inner_type);
+                }
+
                 Ok(Type::Pointer(Box::new(inner_type)))
             }
             AstNode::Dereference(inner) => {
                 let inner_type = self.expr_type(inner)?;
                 match inner_type {
                     Type::Pointer(pointee) => Ok(*pointee),
+                    Type::FunctionPointer { .. } => Ok(inner_type),
                     _ => Err("Cannot dereference non-pointer type".to_string()),
                 }
             }
@@ -3250,6 +3293,16 @@ impl CodeGenerator {
             | AstNode::PostfixIncrement(operand)
             | AstNode::PostfixDecrement(operand) => self.expr_type(operand),
             AstNode::FunctionCall { name, .. } => {
+                if let Some(symbol) = self.symbol_table.get_variable(name)
+                    && let Type::FunctionPointer { return_type, .. } = &symbol.symbol_type
+                {
+                    return Ok(*return_type.clone());
+                }
+                if let Some(global) = self.global_variables.get(name)
+                    && let Type::FunctionPointer { return_type, .. } = &global.var_type
+                {
+                    return Ok(*return_type.clone());
+                }
                 if let Some(return_type) = self.function_return_types.get(name) {
                     Ok(return_type.clone())
                 } else {

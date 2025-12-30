@@ -1599,17 +1599,7 @@ impl Parser {
         let mut fields = Vec::new();
         while self.current_token() != &Token::CloseBrace {
             let field_type = self.parse_type()?;
-            let field_name = match self.current_token() {
-                Token::Identifier(s) => s.clone(),
-                _ => {
-                    return Err(format!(
-                        "Expected field name, got {:?}",
-                        self.current_token()
-                    ));
-                }
-            };
-            self.advance();
-            let field_type = self.parse_array_type_suffix(field_type)?;
+            let (field_type, field_name) = self.parse_declarator(field_type)?;
 
             // Check for bit-field syntax (: width)
             let bit_width = if self.current_token() == &Token::Colon {
@@ -1727,17 +1717,7 @@ impl Parser {
         let mut fields = Vec::new();
         while self.current_token() != &Token::CloseBrace {
             let field_type = self.parse_type()?;
-            let field_name = match self.current_token() {
-                Token::Identifier(s) => s.clone(),
-                _ => {
-                    return Err(format!(
-                        "Expected field name, got {:?}",
-                        self.current_token()
-                    ));
-                }
-            };
-            self.advance();
-            let field_type = self.parse_array_type_suffix(field_type)?;
+            let (field_type, field_name) = self.parse_declarator(field_type)?;
 
             // Check for bit-field syntax (: width)
             let bit_width = if self.current_token() == &Token::Colon {

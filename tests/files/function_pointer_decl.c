@@ -7,13 +7,13 @@ int sub(int a, int b) {
 }
 
 int main() {
-    int (*op)(int, int) = &add;
+    int (*op)(int, int) = add;
 
-    if ((*op)(3, 4) != 7) {
+    if (op(3, 4) != 7) {
         return 1;
     }
 
-    op = &sub;
+    op = sub;
     if ((*op)(10, 4) != 6) {
         return 1;
     }
