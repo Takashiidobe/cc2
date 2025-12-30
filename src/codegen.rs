@@ -696,10 +696,20 @@ impl CodeGenerator {
                                 {
                                     // Pre-register struct/union definitions for type inference
                                     for stmt in stmts {
-                                        if let AstNode::StructDef { name, fields } = stmt {
-                                            self.register_struct_layout(name, fields)?;
-                                        } else if let AstNode::UnionDef { name, fields } = stmt {
-                                            self.register_union_layout(name, fields)?;
+                                        if let AstNode::StructDef {
+                                            name,
+                                            fields,
+                                            attributes,
+                                        } = stmt
+                                        {
+                                            self.register_struct_layout(name, fields, attributes)?;
+                                        } else if let AstNode::UnionDef {
+                                            name,
+                                            fields,
+                                            attributes,
+                                        } = stmt
+                                        {
+                                            self.register_union_layout(name, fields, attributes)?;
                                         }
                                     }
                                     // Generate statements which adds variables to symbol table
@@ -955,10 +965,20 @@ impl CodeGenerator {
                     if let AstNode::StmtExpr { stmts, .. } = arg {
                         for stmt in stmts {
                             // Register struct/union definitions
-                            if let AstNode::StructDef { name, fields } = stmt {
-                                let _ = self.register_struct_layout(name, fields);
-                            } else if let AstNode::UnionDef { name, fields } = stmt {
-                                let _ = self.register_union_layout(name, fields);
+                            if let AstNode::StructDef {
+                                name,
+                                fields,
+                                attributes,
+                            } = stmt
+                            {
+                                let _ = self.register_struct_layout(name, fields, attributes);
+                            } else if let AstNode::UnionDef {
+                                name,
+                                fields,
+                                attributes,
+                            } = stmt
+                            {
+                                let _ = self.register_union_layout(name, fields, attributes);
                             }
                             // Register variables with their alignment
                             // Use add_or_replace to allow statement expressions to shadow variables
@@ -1106,10 +1126,20 @@ impl CodeGenerator {
                     if let AstNode::StmtExpr { stmts, .. } = arg {
                         for stmt in stmts {
                             // Register struct/union definitions
-                            if let AstNode::StructDef { name, fields } = stmt {
-                                let _ = self.register_struct_layout(name, fields);
-                            } else if let AstNode::UnionDef { name, fields } = stmt {
-                                let _ = self.register_union_layout(name, fields);
+                            if let AstNode::StructDef {
+                                name,
+                                fields,
+                                attributes,
+                            } = stmt
+                            {
+                                let _ = self.register_struct_layout(name, fields, attributes);
+                            } else if let AstNode::UnionDef {
+                                name,
+                                fields,
+                                attributes,
+                            } = stmt
+                            {
+                                let _ = self.register_union_layout(name, fields, attributes);
                             }
                             // Register variables with their alignment
                             // Use add_or_replace to allow statement expressions to shadow variables
@@ -2789,7 +2819,12 @@ impl CodeGenerator {
         }
     }
 
-    fn register_struct_layout(&mut self, name: &str, fields: &[StructField]) -> Result<(), String> {
+    fn register_struct_layout(
+        &mut self,
+        name: &str,
+        fields: &[StructField],
+        attributes: &TypeAttributes,
+    ) -> Result<(), String> {
         // Check if struct already exists
         if let Some(existing_layout) = self.struct_layouts.get(name) {
             // If existing is complete (has fields), error
@@ -2807,12 +2842,16 @@ impl CodeGenerator {
 
         // If this is a forward declaration (no fields), register with empty layout
         if fields.is_empty() {
+            let mut alignment = 1;
+            if let Some(explicit) = attributes.alignment {
+                alignment = alignment.max(explicit as i32);
+            }
             self.struct_layouts.insert(
                 name.to_string(),
                 StructLayout {
                     fields: HashMap::new(),
                     size: 0,
-                    alignment: 1,
+                    alignment,
                 },
             );
             return Ok(());
@@ -2825,10 +2864,13 @@ impl CodeGenerator {
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
             // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-            let field_align = field
-                .alignment
-                .map(|a| a as i32)
-                .unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
+            let field_align = field.alignment.map(|a| a as i32).unwrap_or_else(|| {
+                if attributes.packed {
+                    1
+                } else {
+                    self.type_alignment(&field.field_type).unwrap_or(1)
+                }
+            });
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
@@ -2842,6 +2884,9 @@ impl CodeGenerator {
                 },
             );
             offset += field_size;
+        }
+        if let Some(explicit) = attributes.alignment {
+            max_align = max_align.max(explicit as i32);
         }
         let size = align_to(offset, max_align);
 
@@ -2857,7 +2902,12 @@ impl CodeGenerator {
         Ok(())
     }
 
-    fn register_union_layout(&mut self, name: &str, fields: &[StructField]) -> Result<(), String> {
+    fn register_union_layout(
+        &mut self,
+        name: &str,
+        fields: &[StructField],
+        attributes: &TypeAttributes,
+    ) -> Result<(), String> {
         // Check if union already exists
         if let Some(existing_layout) = self.union_layouts.get(name) {
             // If existing is complete (has fields), error
@@ -2875,12 +2925,16 @@ impl CodeGenerator {
 
         // If this is a forward declaration (no fields), register with empty layout
         if fields.is_empty() {
+            let mut alignment = 1;
+            if let Some(explicit) = attributes.alignment {
+                alignment = alignment.max(explicit as i32);
+            }
             self.union_layouts.insert(
                 name.to_string(),
                 StructLayout {
                     fields: HashMap::new(),
                     size: 0,
-                    alignment: 1,
+                    alignment,
                 },
             );
             return Ok(());
@@ -2893,10 +2947,13 @@ impl CodeGenerator {
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
             // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-            let field_align = field
-                .alignment
-                .map(|a| a as i32)
-                .unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
+            let field_align = field.alignment.map(|a| a as i32).unwrap_or_else(|| {
+                if attributes.packed {
+                    1
+                } else {
+                    self.type_alignment(&field.field_type).unwrap_or(1)
+                }
+            });
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
@@ -2910,6 +2967,9 @@ impl CodeGenerator {
                     offset: 0,
                 },
             );
+        }
+        if let Some(explicit) = attributes.alignment {
+            max_align = max_align.max(explicit as i32);
         }
         let size = align_to(max_size, max_align);
 
@@ -3255,8 +3315,13 @@ impl CodeGenerator {
     fn collect_struct_layouts(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
-                if let AstNode::StructDef { name, fields } = item {
-                    self.register_struct_layout(name, fields)?;
+                if let AstNode::StructDef {
+                    name,
+                    fields,
+                    attributes,
+                } = item
+                {
+                    self.register_struct_layout(name, fields, attributes)?;
                 }
             }
         }
@@ -3266,8 +3331,13 @@ impl CodeGenerator {
     fn collect_union_layouts(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
-                if let AstNode::UnionDef { name, fields } = item {
-                    self.register_union_layout(name, fields)?;
+                if let AstNode::UnionDef {
+                    name,
+                    fields,
+                    attributes,
+                } = item
+                {
+                    self.register_union_layout(name, fields, attributes)?;
                 }
             }
         }
@@ -3562,34 +3632,20 @@ impl CodeGenerator {
         base: &AstNode,
         through_pointer: bool,
     ) -> Result<(String, bool), String> {
-        match base {
-            AstNode::Variable(name) => {
-                // Check if it's a global variable first
-                let symbol_type = if let Some(global) = self.global_variables.get(name) {
-                    global.var_type.clone()
-                } else {
-                    self.symbol_table
-                        .get_variable(name)
-                        .ok_or_else(|| format!("Undefined variable: {}", name))?
-                        .symbol_type
-                        .clone()
-                };
-                match (symbol_type, through_pointer) {
-                    (Type::Struct(name), false) | (Type::Union(name), false) => {
-                        self.generate_lvalue(base)?;
-                        Ok((name, true))
-                    }
-                    (Type::Pointer(pointee), true) => match pointee.as_ref() {
-                        Type::Struct(name) | Type::Union(name) => {
-                            self.generate_node(base)?;
-                            Ok((name.clone(), true))
-                        }
-                        _ => Err("Pointer does not target a struct/union".to_string()),
-                    },
-                    _ => Err("Member access base is not a struct/union".to_string()),
-                }
+        let base_type = self.expr_type(base)?;
+        match (base_type, through_pointer) {
+            (Type::Struct(name), false) | (Type::Union(name), false) => {
+                self.generate_lvalue(base)?;
+                Ok((name, true))
             }
-            _ => Err("Unsupported member access base".to_string()),
+            (Type::Pointer(pointee), true) => match pointee.as_ref() {
+                Type::Struct(name) | Type::Union(name) => {
+                    self.generate_node(base)?;
+                    Ok((name.clone(), true))
+                }
+                _ => Err("Pointer does not target a struct/union".to_string()),
+            },
+            _ => Err("Member access base is not a struct/union".to_string()),
         }
     }
 

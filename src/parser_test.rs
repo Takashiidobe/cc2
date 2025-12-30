@@ -334,7 +334,7 @@ mod parser_tests {
         match ast {
             AstNode::Program(nodes) => {
                 match &nodes[0] {
-                    AstNode::StructDef { name, fields } => {
+                    AstNode::StructDef { name, fields, .. } => {
                         assert_eq!(name, "Point");
                         assert_eq!(fields.len(), 2);
                         assert_eq!(fields[0].name, "x");

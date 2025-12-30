@@ -223,6 +223,7 @@ mod codegen_tests {
                         alignment: None,
                     },
                 ],
+                attributes: TypeAttributes::default(),
             },
             AstNode::Function {
                 name: "main".to_string(),
@@ -260,6 +261,7 @@ mod codegen_tests {
                         alignment: None,
                     },
                 ],
+                attributes: TypeAttributes::default(),
             },
             AstNode::Function {
                 name: "main".to_string(),

@@ -6,9 +6,15 @@ pub struct Parser {
     tokens: Vec<LocatedToken>,
     position: usize,
     type_aliases: std::collections::HashMap<String, Type>,
-    struct_defs: std::collections::HashMap<String, Vec<StructField>>,
-    union_defs: std::collections::HashMap<String, Vec<StructField>>,
+    struct_defs: std::collections::HashMap<String, AggregateDef>,
+    union_defs: std::collections::HashMap<String, AggregateDef>,
     anon_counter: usize,
+}
+
+#[derive(Clone)]
+struct AggregateDef {
+    fields: Vec<StructField>,
+    attributes: TypeAttributes,
 }
 
 #[derive(Clone, Copy)]
@@ -63,22 +69,24 @@ impl Parser {
         }
 
         // Add anonymous struct/union definitions to the AST
-        for (name, fields) in &self.struct_defs {
+        for (name, def) in &self.struct_defs {
             items.insert(
                 0,
                 AstNode::StructDef {
                     name: name.clone(),
-                    fields: fields.clone(),
+                    fields: def.fields.clone(),
+                    attributes: def.attributes.clone(),
                 },
             );
         }
 
-        for (name, fields) in &self.union_defs {
+        for (name, def) in &self.union_defs {
             items.insert(
                 0,
                 AstNode::UnionDef {
                     name: name.clone(),
-                    fields: fields.clone(),
+                    fields: def.fields.clone(),
+                    attributes: def.attributes.clone(),
                 },
             );
         }
@@ -470,152 +478,96 @@ impl Parser {
             }
             Token::Struct => {
                 self.advance();
-                match self.current_token() {
-                    Token::Identifier(s) => {
-                        let name = s.clone();
-                        self.advance();
-                        Type::Struct(name)
-                    }
-                    Token::OpenBrace => {
-                        // Anonymous struct - generate a unique name and parse definition
+                let mut attributes = self.parse_type_attributes()?;
+                let mut name = None;
+
+                if let Token::Identifier(s) = self.current_token() {
+                    name = Some(s.clone());
+                    self.advance();
+                    let name_attrs = self.parse_type_attributes()?;
+                    attributes.merge(name_attrs);
+                }
+
+                if self.current_token() == &Token::OpenBrace {
+                    let name = name.unwrap_or_else(|| {
                         static ANON_COUNTER: std::sync::atomic::AtomicUsize =
                             std::sync::atomic::AtomicUsize::new(0);
-                        let name = format!(
+                        format!(
                             "__anon_struct_{}",
                             ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-                        );
+                        )
+                    });
 
-                        // Parse struct definition
-                        self.expect(Token::OpenBrace)?;
-                        let mut members = Vec::new();
-                        while self.current_token() != &Token::CloseBrace {
-                            // Parse _Alignas if present
-                            let alignment = if matches!(self.current_token(), Token::Alignas) {
-                                self.advance();
-                                self.expect(Token::OpenParen)?;
-                                let align_value = if self.is_type_start(Some(self.current_token()))
-                                {
-                                    let ty = self.parse_type()?;
-                                    self.type_alignment_value(&ty)?
-                                } else {
-                                    self.parse_constant_expr()?
-                                };
-                                self.expect(Token::CloseParen)?;
-                                Some(align_value)
-                            } else {
-                                None
-                            };
+                    self.expect(Token::OpenBrace)?;
+                    let members = self.parse_struct_fields()?;
+                    self.expect(Token::CloseBrace)?;
 
-                            let base_type = self.parse_type()?;
+                    let trailing_attrs = self.parse_type_attributes()?;
+                    attributes.merge(trailing_attrs);
 
-                            // Parse all declarators (can have multiple like "char x, y;")
-                            loop {
-                                let (member_type, member_name) =
-                                    self.parse_declarator(base_type.clone())?;
-                                members.push(StructField {
-                                    name: member_name,
-                                    field_type: member_type,
-                                    bit_width: None,
-                                    alignment,
-                                });
+                    self.struct_defs.insert(
+                        name.clone(),
+                        AggregateDef {
+                            fields: members,
+                            attributes: attributes.clone(),
+                        },
+                    );
 
-                                if self.current_token() == &Token::Comma {
-                                    self.advance();
-                                    continue;
-                                } else {
-                                    break;
-                                }
-                            }
-
-                            self.expect(Token::Semicolon)?;
-                        }
-                        self.expect(Token::CloseBrace)?;
-
-                        // Register the struct
-                        self.struct_defs.insert(name.clone(), members);
-                        Type::Struct(name)
-                    }
-                    _ => {
-                        return Err(format!(
-                            "Expected struct name or {{, got {:?}",
-                            self.current_token()
-                        ));
-                    }
+                    Type::Struct(name)
+                } else if let Some(name) = name {
+                    Type::Struct(name)
+                } else {
+                    return Err(format!(
+                        "Expected struct name or {{, got {:?}",
+                        self.current_token()
+                    ));
                 }
             }
             Token::Union => {
                 self.advance();
-                match self.current_token() {
-                    Token::Identifier(s) => {
-                        let name = s.clone();
-                        self.advance();
-                        Type::Union(name)
-                    }
-                    Token::OpenBrace => {
-                        // Anonymous union - generate a unique name and parse definition
+                let mut attributes = self.parse_type_attributes()?;
+                let mut name = None;
+
+                if let Token::Identifier(s) = self.current_token() {
+                    name = Some(s.clone());
+                    self.advance();
+                    let name_attrs = self.parse_type_attributes()?;
+                    attributes.merge(name_attrs);
+                }
+
+                if self.current_token() == &Token::OpenBrace {
+                    let name = name.unwrap_or_else(|| {
                         static ANON_COUNTER: std::sync::atomic::AtomicUsize =
                             std::sync::atomic::AtomicUsize::new(0);
-                        let name = format!(
+                        format!(
                             "__anon_union_{}",
                             ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-                        );
+                        )
+                    });
 
-                        // Parse union definition
-                        self.expect(Token::OpenBrace)?;
-                        let mut members = Vec::new();
-                        while self.current_token() != &Token::CloseBrace {
-                            // Parse _Alignas if present
-                            let alignment = if matches!(self.current_token(), Token::Alignas) {
-                                self.advance();
-                                self.expect(Token::OpenParen)?;
-                                let align_value = if self.is_type_start(Some(self.current_token()))
-                                {
-                                    let ty = self.parse_type()?;
-                                    self.type_alignment_value(&ty)?
-                                } else {
-                                    self.parse_constant_expr()?
-                                };
-                                self.expect(Token::CloseParen)?;
-                                Some(align_value)
-                            } else {
-                                None
-                            };
+                    self.expect(Token::OpenBrace)?;
+                    let members = self.parse_struct_fields()?;
+                    self.expect(Token::CloseBrace)?;
 
-                            let base_type = self.parse_type()?;
+                    let trailing_attrs = self.parse_type_attributes()?;
+                    attributes.merge(trailing_attrs);
 
-                            // Parse all declarators (can have multiple like "char x, y;")
-                            loop {
-                                let (member_type, member_name) =
-                                    self.parse_declarator(base_type.clone())?;
-                                members.push(StructField {
-                                    name: member_name,
-                                    field_type: member_type,
-                                    bit_width: None,
-                                    alignment,
-                                });
+                    self.union_defs.insert(
+                        name.clone(),
+                        AggregateDef {
+                            fields: members,
+                            attributes: attributes.clone(),
+                        },
+                    );
 
-                                if self.current_token() == &Token::Comma {
-                                    self.advance();
-                                    continue;
-                                } else {
-                                    break;
-                                }
-                            }
-
-                            self.expect(Token::Semicolon)?;
-                        }
-                        self.expect(Token::CloseBrace)?;
-
-                        // Register the union
-                        self.union_defs.insert(name.clone(), members);
-                        Type::Union(name)
-                    }
-                    _ => {
-                        return Err(format!(
-                            "Expected union name or {{, got {:?}",
-                            self.current_token()
-                        ));
-                    }
+                    Type::Union(name)
+                } else if let Some(name) = name {
+                    Type::Union(name)
+                } else {
+                    return Err(format!(
+                        "Expected union name or {{, got {:?}",
+                        self.current_token()
+                    ));
                 }
             }
             Token::Enum => {
@@ -665,6 +617,130 @@ impl Parser {
         }
 
         Ok(ty)
+    }
+
+    fn parse_type_attributes(&mut self) -> Result<TypeAttributes, String> {
+        let mut attributes = TypeAttributes::default();
+
+        loop {
+            let is_attribute =
+                matches!(self.current_token(), Token::Identifier(name) if name == "__attribute__");
+            if !is_attribute {
+                break;
+            }
+
+            self.advance();
+            self.expect(Token::OpenParen)?;
+            self.expect(Token::OpenParen)?;
+
+            if self.current_token() != &Token::CloseParen {
+                loop {
+                    let name = match self.current_token() {
+                        Token::Identifier(name) => name.clone(),
+                        _ => {
+                            return Err(format!(
+                                "Expected attribute name, got {:?}",
+                                self.current_token()
+                            ));
+                        }
+                    };
+                    self.advance();
+
+                    match name.as_str() {
+                        "packed" => {
+                            attributes.packed = true;
+                        }
+                        "aligned" => {
+                            if self.current_token() == &Token::OpenParen {
+                                self.advance();
+                                let align_value = self.parse_constant_expr()?;
+                                self.expect(Token::CloseParen)?;
+                                attributes.merge(TypeAttributes {
+                                    packed: false,
+                                    alignment: Some(align_value),
+                                });
+                            }
+                        }
+                        _ => {
+                            return Err(format!("Unsupported __attribute__ '{}'", name));
+                        }
+                    }
+
+                    if self.current_token() == &Token::Comma {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            self.expect(Token::CloseParen)?;
+            self.expect(Token::CloseParen)?;
+        }
+
+        Ok(attributes)
+    }
+
+    fn parse_struct_fields(&mut self) -> Result<Vec<StructField>, String> {
+        let mut fields = Vec::new();
+
+        while self.current_token() != &Token::CloseBrace {
+            let alignment = if matches!(self.current_token(), Token::Alignas) {
+                self.advance();
+                self.expect(Token::OpenParen)?;
+                let align_value = if self.is_type_start(Some(self.current_token())) {
+                    let ty = self.parse_type()?;
+                    self.type_alignment_value(&ty)?
+                } else {
+                    self.parse_constant_expr()?
+                };
+                self.expect(Token::CloseParen)?;
+                Some(align_value)
+            } else {
+                None
+            };
+
+            let base_type = self.parse_type()?;
+
+            loop {
+                let (field_type, field_name) = self.parse_declarator(base_type.clone())?;
+
+                let bit_width = if self.current_token() == &Token::Colon {
+                    self.advance();
+                    match self.current_token() {
+                        Token::IntLiteral(width, _) if *width > 0 => {
+                            let w = *width as u32;
+                            self.advance();
+                            Some(w)
+                        }
+                        _ => {
+                            return Err(
+                                "Bit-field width must be a positive integer literal".to_string()
+                            );
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                fields.push(StructField {
+                    name: field_name,
+                    field_type,
+                    bit_width,
+                    alignment,
+                });
+
+                if self.current_token() == &Token::Comma {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+
+            self.expect(Token::Semicolon)?;
+        }
+
+        Ok(fields)
     }
 
     fn parse_declarator(&mut self, base_type: Type) -> Result<(Type, String), String> {
@@ -919,6 +995,7 @@ impl Parser {
             Token::Case => self.parse_case(),
             Token::Default => self.parse_default(),
             Token::Asm => self.parse_inline_asm(),
+            Token::Typedef => self.parse_typedef(),
             Token::Struct
                 if matches!(self.peek(1), Some(&Token::Identifier(_)))
                     && matches!(self.peek(2), Some(&Token::OpenBrace)) =>
@@ -2030,6 +2107,7 @@ impl Parser {
 
     fn parse_struct_definition(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Struct)?;
+        let mut attributes = self.parse_type_attributes()?;
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
             _ => {
@@ -2040,6 +2118,8 @@ impl Parser {
             }
         };
         self.advance();
+        let name_attrs = self.parse_type_attributes()?;
+        attributes.merge(name_attrs);
 
         // Check for forward declaration (struct Foo;) vs definition (struct Foo { ... };)
         if self.current_token() == &Token::Semicolon {
@@ -2048,74 +2128,15 @@ impl Parser {
             return Ok(AstNode::StructDef {
                 name,
                 fields: Vec::new(), // Empty fields indicates incomplete type
+                attributes,
             });
         }
 
         self.expect(Token::OpenBrace)?;
-
-        let mut fields = Vec::new();
-        while self.current_token() != &Token::CloseBrace {
-            // Parse _Alignas if present
-            let alignment = if matches!(self.current_token(), Token::Alignas) {
-                self.advance();
-                self.expect(Token::OpenParen)?;
-                let align_value = if self.is_type_start(Some(self.current_token())) {
-                    let ty = self.parse_type()?;
-                    self.type_alignment_value(&ty)?
-                } else {
-                    self.parse_constant_expr()?
-                };
-                self.expect(Token::CloseParen)?;
-                Some(align_value)
-            } else {
-                None
-            };
-
-            let base_type = self.parse_type()?;
-
-            // Parse all declarators for this field (e.g., "char x, y, z;")
-            loop {
-                let (field_type, field_name) = self.parse_declarator(base_type.clone())?;
-
-                // Check for bit-field syntax (: width)
-                let bit_width = if self.current_token() == &Token::Colon {
-                    self.advance();
-                    match self.current_token() {
-                        Token::IntLiteral(width, _) if *width > 0 => {
-                            let w = *width as u32;
-                            self.advance();
-                            Some(w)
-                        }
-                        _ => {
-                            return Err(
-                                "Bit-field width must be a positive integer literal".to_string()
-                            );
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                fields.push(StructField {
-                    name: field_name,
-                    field_type,
-                    bit_width,
-                    alignment,
-                });
-
-                // Check if there are more declarators (comma-separated)
-                if self.current_token() == &Token::Comma {
-                    self.advance();
-                    // Continue loop to parse next declarator
-                } else {
-                    break;
-                }
-            }
-
-            self.expect(Token::Semicolon)?;
-        }
-
+        let fields = self.parse_struct_fields()?;
         self.expect(Token::CloseBrace)?;
+        let trailing_attrs = self.parse_type_attributes()?;
+        attributes.merge(trailing_attrs);
 
         // Check if there's a variable declaration after the struct (e.g., struct { ... } x;)
         if matches!(self.current_token(), Token::Identifier(_)) {
@@ -2130,7 +2151,11 @@ impl Parser {
             // Create the struct definition and variable declaration as a block
             let struct_type = Type::Struct(name.clone());
             return Ok(AstNode::Block(vec![
-                AstNode::StructDef { name, fields },
+                AstNode::StructDef {
+                    name,
+                    fields,
+                    attributes: attributes.clone(),
+                },
                 AstNode::VarDecl {
                     name: var_name,
                     var_type: struct_type,
@@ -2148,7 +2173,11 @@ impl Parser {
 
         self.expect(Token::Semicolon)?;
 
-        Ok(AstNode::StructDef { name, fields })
+        Ok(AstNode::StructDef {
+            name,
+            fields,
+            attributes,
+        })
     }
 
     fn parse_struct_initializer(&mut self) -> Result<AstNode, String> {
@@ -2208,6 +2237,7 @@ impl Parser {
 
     fn parse_union_definition(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Union)?;
+        let mut attributes = self.parse_type_attributes()?;
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
             _ => {
@@ -2218,6 +2248,8 @@ impl Parser {
             }
         };
         self.advance();
+        let name_attrs = self.parse_type_attributes()?;
+        attributes.merge(name_attrs);
 
         // Check for forward declaration (union Foo;) vs definition (union Foo { ... };)
         if self.current_token() == &Token::Semicolon {
@@ -2226,74 +2258,15 @@ impl Parser {
             return Ok(AstNode::UnionDef {
                 name,
                 fields: Vec::new(), // Empty fields indicates incomplete type
+                attributes,
             });
         }
 
         self.expect(Token::OpenBrace)?;
-
-        let mut fields = Vec::new();
-        while self.current_token() != &Token::CloseBrace {
-            // Parse _Alignas if present
-            let alignment = if matches!(self.current_token(), Token::Alignas) {
-                self.advance();
-                self.expect(Token::OpenParen)?;
-                let align_value = if self.is_type_start(Some(self.current_token())) {
-                    let ty = self.parse_type()?;
-                    self.type_alignment_value(&ty)?
-                } else {
-                    self.parse_constant_expr()?
-                };
-                self.expect(Token::CloseParen)?;
-                Some(align_value)
-            } else {
-                None
-            };
-
-            let base_type = self.parse_type()?;
-
-            // Parse all declarators for this field (e.g., "char x, y, z;")
-            loop {
-                let (field_type, field_name) = self.parse_declarator(base_type.clone())?;
-
-                // Check for bit-field syntax (: width)
-                let bit_width = if self.current_token() == &Token::Colon {
-                    self.advance();
-                    match self.current_token() {
-                        Token::IntLiteral(width, _) if *width > 0 => {
-                            let w = *width as u32;
-                            self.advance();
-                            Some(w)
-                        }
-                        _ => {
-                            return Err(
-                                "Bit-field width must be a positive integer literal".to_string()
-                            );
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                fields.push(StructField {
-                    name: field_name,
-                    field_type,
-                    bit_width,
-                    alignment,
-                });
-
-                // Check if there are more declarators (comma-separated)
-                if self.current_token() == &Token::Comma {
-                    self.advance();
-                    // Continue loop to parse next declarator
-                } else {
-                    break;
-                }
-            }
-
-            self.expect(Token::Semicolon)?;
-        }
-
+        let fields = self.parse_struct_fields()?;
         self.expect(Token::CloseBrace)?;
+        let trailing_attrs = self.parse_type_attributes()?;
+        attributes.merge(trailing_attrs);
 
         // Check if there's a variable declaration after the union (e.g., union { ... } x;)
         if matches!(self.current_token(), Token::Identifier(_)) {
@@ -2308,7 +2281,11 @@ impl Parser {
             // Create the union definition and variable declaration as a block
             let union_type = Type::Union(name.clone());
             return Ok(AstNode::Block(vec![
-                AstNode::UnionDef { name, fields },
+                AstNode::UnionDef {
+                    name,
+                    fields,
+                    attributes: attributes.clone(),
+                },
                 AstNode::VarDecl {
                     name: var_name,
                     var_type: union_type,
@@ -2326,7 +2303,11 @@ impl Parser {
 
         self.expect(Token::Semicolon)?;
 
-        Ok(AstNode::UnionDef { name, fields })
+        Ok(AstNode::UnionDef {
+            name,
+            fields,
+            attributes,
+        })
     }
 
     fn parse_enum_definition_impl(&mut self, expect_semicolon: bool) -> Result<AstNode, String> {
@@ -2616,18 +2597,91 @@ impl Parser {
     }
 
     fn parse_constant_expr(&mut self) -> Result<i64, String> {
-        // For now, just parse integer literals
-        // TODO: Support full constant expressions
-        match self.current_token() {
-            Token::IntLiteral(value, _) => {
-                let val = *value;
-                self.advance();
-                Ok(val)
+        let expr = self.parse_ternary()?;
+        self.eval_constant_expr(&expr)
+    }
+
+    fn eval_constant_expr(&self, expr: &AstNode) -> Result<i64, String> {
+        match expr {
+            AstNode::IntLiteral(value) => Ok(*value),
+            AstNode::CharLiteral(value) => Ok(*value),
+            AstNode::UnaryOp { op, operand } => {
+                let value = self.eval_constant_expr(operand)?;
+                match op {
+                    UnaryOp::Plus => Ok(value),
+                    UnaryOp::Negate => Ok(-value),
+                    UnaryOp::BitNot => Ok(!value),
+                    UnaryOp::LogicalNot => Ok((value == 0) as i64),
+                }
             }
-            _ => Err(format!(
-                "Expected constant expression, got {:?}",
-                self.current_token()
-            )),
+            AstNode::BinaryOp { op, left, right } => {
+                let left = self.eval_constant_expr(left)?;
+                let right = self.eval_constant_expr(right)?;
+                match op {
+                    BinOp::Add => Ok(left + right),
+                    BinOp::Subtract => Ok(left - right),
+                    BinOp::Multiply => Ok(left * right),
+                    BinOp::Divide => {
+                        if right == 0 {
+                            Err("Division by zero in constant expression".to_string())
+                        } else {
+                            Ok(left / right)
+                        }
+                    }
+                    BinOp::Modulo => {
+                        if right == 0 {
+                            Err("Modulo by zero in constant expression".to_string())
+                        } else {
+                            Ok(left % right)
+                        }
+                    }
+                    BinOp::BitAnd => Ok(left & right),
+                    BinOp::BitOr => Ok(left | right),
+                    BinOp::BitXor => Ok(left ^ right),
+                    BinOp::ShiftLeft => {
+                        if right < 0 {
+                            Err("Negative shift in constant expression".to_string())
+                        } else {
+                            let shift = u32::try_from(right).map_err(|_| {
+                                "Shift too large in constant expression".to_string()
+                            })?;
+                            Ok(left << shift)
+                        }
+                    }
+                    BinOp::ShiftRight => {
+                        if right < 0 {
+                            Err("Negative shift in constant expression".to_string())
+                        } else {
+                            let shift = u32::try_from(right).map_err(|_| {
+                                "Shift too large in constant expression".to_string()
+                            })?;
+                            Ok(left >> shift)
+                        }
+                    }
+                    BinOp::Less => Ok((left < right) as i64),
+                    BinOp::Greater => Ok((left > right) as i64),
+                    BinOp::LessEqual => Ok((left <= right) as i64),
+                    BinOp::GreaterEqual => Ok((left >= right) as i64),
+                    BinOp::EqualEqual => Ok((left == right) as i64),
+                    BinOp::NotEqual => Ok((left != right) as i64),
+                    BinOp::LogicalAnd => Ok(((left != 0) && (right != 0)) as i64),
+                    BinOp::LogicalOr => Ok(((left != 0) || (right != 0)) as i64),
+                    BinOp::Comma => Ok(right),
+                }
+            }
+            AstNode::TernaryOp {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                if self.eval_constant_expr(condition)? != 0 {
+                    self.eval_constant_expr(true_expr)
+                } else {
+                    self.eval_constant_expr(false_expr)
+                }
+            }
+            AstNode::Cast { expr, .. } => self.eval_constant_expr(expr),
+            _ => Err("Unsupported constant expression".to_string()),
         }
     }
 

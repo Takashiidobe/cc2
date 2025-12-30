@@ -34,6 +34,7 @@ pub enum AstNode {
     StructDef {
         name: String,
         fields: Vec<StructField>,
+        attributes: TypeAttributes,
     },
     EnumDef {
         name: String,
@@ -42,6 +43,7 @@ pub enum AstNode {
     UnionDef {
         name: String,
         fields: Vec<StructField>,
+        attributes: TypeAttributes,
     },
     TypedefDef {
         name: String,
@@ -181,6 +183,27 @@ pub enum UnaryOp {
 pub struct Parameter {
     pub name: String,
     pub param_type: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TypeAttributes {
+    pub packed: bool,
+    pub alignment: Option<i64>,
+}
+
+impl TypeAttributes {
+    pub fn merge(&mut self, other: TypeAttributes) {
+        if other.packed {
+            self.packed = true;
+        }
+        if let Some(alignment) = other.alignment {
+            self.alignment = Some(
+                self.alignment
+                    .map(|current| current.max(alignment))
+                    .unwrap_or(alignment),
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
