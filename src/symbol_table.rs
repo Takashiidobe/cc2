@@ -56,6 +56,32 @@ impl SymbolTable {
         Ok(offset)
     }
 
+    /// Add or replace a variable, allocating a new stack offset even if it exists
+    /// Used for statement expressions that may shadow variables
+    pub fn add_or_replace_variable_with_layout(
+        &mut self,
+        name: String,
+        var_type: Type,
+        size: i32,
+        align: i32,
+    ) -> i32 {
+        let size = size.max(0);
+        let align = align.max(1);
+        let pad = (align - ((-self.next_offset) % align)) % align;
+        self.next_offset -= pad;
+        self.next_offset -= size;
+        let offset = self.next_offset;
+        self.symbols.insert(
+            name.clone(),
+            Symbol {
+                name,
+                symbol_type: var_type,
+                stack_offset: offset,
+            },
+        );
+        offset
+    }
+
     pub fn get_variable(&self, name: &str) -> Option<&Symbol> {
         self.symbols.get(name)
     }

@@ -86,6 +86,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::VarDecl {
                     name: "p".to_string(),
@@ -99,6 +100,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
                     AstNode::Variable("p".to_string()),
@@ -135,6 +137,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::ArrayIndex {
                     array: Box::new(AstNode::Variable("a".to_string())),
@@ -168,6 +171,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::VarDecl {
                     name: "p".to_string(),
@@ -181,6 +185,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Dereference(Box::new(
                     AstNode::BinaryOp {
@@ -287,6 +292,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("c".to_string())))),
             ]))),
@@ -317,6 +323,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("u".to_string())))),
             ]))),
@@ -348,6 +355,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("s".to_string())))),
             ]))),
@@ -378,6 +386,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::Variable("l".to_string())))),
             ]))),
@@ -408,6 +417,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::VarDecl {
                     name: "l".to_string(),
@@ -419,6 +429,7 @@ mod codegen_tests {
                     is_register: false,
                     is_const: false,
                     is_volatile: false,
+                    alignment: None,
                 },
                 AstNode::Return(Some(Box::new(AstNode::BinaryOp {
                     op: BinOp::Add,

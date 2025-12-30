@@ -1849,8 +1849,57 @@ impl Preprocessor {
     fn find_next_identifier<'a>(&self, text: &'a str) -> Option<(&'a str, &'a str, &'a str)> {
         let mut start_idx = None;
         let mut end_idx = None;
+        let mut in_string = false;
+        let mut in_char = false;
+        let mut escaped = false;
+        let mut skip_to = 0;
 
         for (i, ch) in text.char_indices() {
+            // Skip characters we've already processed
+            if i < skip_to {
+                continue;
+            }
+
+            // Handle escape sequences
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' && (in_string || in_char) {
+                escaped = true;
+                continue;
+            }
+
+            // Handle string literals
+            if ch == '"' && !in_char {
+                if !in_string && start_idx.is_none() {
+                    in_string = true;
+                    skip_to = i + 1;
+                } else if in_string {
+                    in_string = false;
+                    skip_to = i + 1;
+                }
+                continue;
+            }
+
+            // Handle character literals
+            if ch == '\'' && !in_string {
+                if !in_char && start_idx.is_none() {
+                    in_char = true;
+                    skip_to = i + 1;
+                } else if in_char {
+                    in_char = false;
+                    skip_to = i + 1;
+                }
+                continue;
+            }
+
+            // Don't process identifiers inside strings or chars
+            if in_string || in_char {
+                continue;
+            }
+
+            // Normal identifier processing
             if ch.is_alphabetic() || ch == '_' {
                 if start_idx.is_none() {
                     start_idx = Some(i);

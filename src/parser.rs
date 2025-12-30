@@ -141,8 +141,8 @@ impl Parser {
 
         let var_type = self.parse_type()?;
 
-        // Parse _Alignas if present (TODO: actually use this value)
-        let _alignment = if matches!(self.current_token(), Token::Alignas) {
+        // Parse _Alignas if present
+        let alignment = if matches!(self.current_token(), Token::Alignas) {
             self.advance();
             self.expect(Token::OpenParen)?;
             // _Alignas can take either a type or a constant expression
@@ -176,7 +176,7 @@ impl Parser {
             }
             Token::Semicolon | Token::Equals | Token::OpenBracket => {
                 // It's a global variable
-                self.parse_global_variable_with_storage(var_type, name, storage)
+                self.parse_global_variable_with_storage(var_type, name, storage, alignment)
             }
             _ => Err(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
@@ -329,6 +329,7 @@ impl Parser {
         mut var_type: Type,
         name: String,
         storage: StorageClassSpecifiers,
+        alignment: Option<i64>,
     ) -> Result<AstNode, String> {
         let StorageClassSpecifiers {
             is_extern,
@@ -370,6 +371,7 @@ impl Parser {
             is_register,
             is_const,
             is_volatile,
+            alignment,
         })
     }
 
@@ -990,8 +992,8 @@ impl Parser {
             }
         }
 
-        // Parse _Alignas if present (TODO: actually use this value)
-        let _alignment = if matches!(self.current_token(), Token::Alignas) {
+        // Parse _Alignas if present
+        let alignment = if matches!(self.current_token(), Token::Alignas) {
             self.advance();
             self.expect(Token::OpenParen)?;
             // _Alignas can take either a type or a constant expression
@@ -1039,6 +1041,7 @@ impl Parser {
                 is_register,
                 is_const,
                 is_volatile,
+                alignment,
             });
 
             // Check for more declarators
@@ -1056,6 +1059,8 @@ impl Parser {
         if decls.len() == 1 {
             Ok(decls.into_iter().next().unwrap())
         } else {
+            // Reverse the order to match GCC's stack layout (allocate in reverse declaration order)
+            decls.reverse();
             Ok(AstNode::Block(decls))
         }
     }

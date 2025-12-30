@@ -57,6 +57,7 @@ pub enum AstNode {
         is_register: bool,
         is_const: bool,
         is_volatile: bool,
+        alignment: Option<i64>,
     },
     Assignment {
         target: Box<AstNode>,

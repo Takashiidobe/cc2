@@ -590,6 +590,7 @@ impl CodeGenerator {
                 init,
                 is_extern: _,
                 is_static,
+                alignment,
                 ..
             } => {
                 // Handle static local variables differently - allocate in .data/.bss, not on stack
@@ -630,7 +631,8 @@ impl CodeGenerator {
                 };
 
                 let var_size = self.type_size(&actual_var_type)?;
-                let var_align = self.type_alignment(&actual_var_type)?;
+                // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
+                let var_align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&actual_var_type).unwrap_or(1));
 
                 // Check if variable already exists (e.g., from statement expression pre-registration)
                 let offset = if let Some(existing) = self.symbol_table.get_variable(name) {
@@ -902,13 +904,18 @@ impl CodeGenerator {
                             } else if let AstNode::UnionDef { name, fields } = stmt {
                                 let _ = self.register_union_layout(name, fields);
                             }
-                            // Register variables
-                            else if let AstNode::VarDecl { name, var_type, .. } = stmt {
-                                let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                            // Register variables with their alignment
+                            // Use add_or_replace to allow statement expressions to shadow variables
+                            else if let AstNode::VarDecl { name, var_type, alignment, .. } = stmt {
+                                let size = self.type_size(var_type).unwrap_or(0);
+                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
-                                    if let AstNode::VarDecl { name, var_type, .. } = decl {
-                                        let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                                    if let AstNode::VarDecl { name, var_type, alignment, .. } = decl {
+                                        let size = self.type_size(var_type).unwrap_or(0);
+                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                        let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                                     }
                                 }
                             }
@@ -997,13 +1004,18 @@ impl CodeGenerator {
                             } else if let AstNode::UnionDef { name, fields } = stmt {
                                 let _ = self.register_union_layout(name, fields);
                             }
-                            // Register variables
-                            else if let AstNode::VarDecl { name, var_type, .. } = stmt {
-                                let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                            // Register variables with their alignment
+                            // Use add_or_replace to allow statement expressions to shadow variables
+                            else if let AstNode::VarDecl { name, var_type, alignment, .. } = stmt {
+                                let size = self.type_size(var_type).unwrap_or(0);
+                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
-                                    if let AstNode::VarDecl { name, var_type, .. } = decl {
-                                        let _ = self.symbol_table.add_variable(name.clone(), var_type.clone());
+                                    if let AstNode::VarDecl { name, var_type, alignment, .. } = decl {
+                                        let size = self.type_size(var_type).unwrap_or(0);
+                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                        let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                                     }
                                 }
                             }
