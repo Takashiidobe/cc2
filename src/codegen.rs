@@ -34,6 +34,7 @@ pub struct CodeGenerator {
     float_literals: Vec<(String, f64)>,     // (label, value)
     global_variables: HashMap<String, GlobalVariable>,
     function_return_types: HashMap<String, Type>,
+    function_param_types: HashMap<String, Vec<Type>>, // Function parameter types
     stack_depth: i32, // Number of values currently pushed on stack (for alloca adjustment)
     alloca_adjustment: i32, // Total bytes alloca has moved %rsp down since last push
 }
@@ -70,6 +71,7 @@ impl CodeGenerator {
             float_literals: Vec::new(),
             global_variables: HashMap::new(),
             function_return_types: HashMap::new(),
+            function_param_types: HashMap::new(),
             stack_depth: 0,
             alloca_adjustment: 0,
         }
@@ -90,6 +92,7 @@ impl CodeGenerator {
         self.float_literals.clear();
         self.global_variables.clear();
         self.function_return_types.clear();
+        self.function_param_types.clear();
         self.collect_struct_layouts(ast)?;
         self.collect_union_layouts(ast)?;
         self.collect_enum_constants(ast)?;
@@ -970,7 +973,16 @@ impl CodeGenerator {
                     }
 
                     let arg_type = self.expr_type(arg)?;
-                    if self.is_float_type(&arg_type) {
+
+                    // Check if we have parameter type information for this function
+                    let arg_index = args.iter().position(|a| std::ptr::eq(a, arg)).unwrap();
+                    let expected_param_type = self.function_param_types.get(name)
+                        .and_then(|params| params.get(arg_index));
+
+                    // Use expected parameter type if available, otherwise use argument type
+                    let effective_type = expected_param_type.unwrap_or(&arg_type);
+
+                    if self.is_float_type(effective_type) {
                         arg_info.push((true, float_counter));
                         float_counter += 1;
                     } else {
@@ -980,7 +992,7 @@ impl CodeGenerator {
                 }
 
                 // Generate all arguments and push to stack
-                for (arg, (is_float, _)) in args.iter().zip(arg_info.iter()) {
+                for (i, (arg, (is_float, _))) in args.iter().zip(arg_info.iter()).enumerate() {
                     // For statement expressions, generate inline (statements already added to symbol table above)
                     if let AstNode::StmtExpr { stmts, result } = arg {
                         for stmt in stmts {
@@ -990,6 +1002,16 @@ impl CodeGenerator {
                     } else {
                         self.generate_node(arg)?;
                     }
+
+                    // Convert to expected parameter type if needed
+                    let arg_type = self.expr_type(arg)?;
+                    let expected_type = self.function_param_types.get(name)
+                        .and_then(|params| params.get(i))
+                        .cloned();
+                    if let Some(ref expected) = expected_type {
+                        self.convert_type(&arg_type, expected)?;
+                    }
+
                     if *is_float {
                         self.emit("    subq $8, %rsp");
                         self.emit("    movsd %xmm0, (%rsp)");
@@ -1691,6 +1713,7 @@ impl CodeGenerator {
                 let operand_type = self.expr_type(expr)?;
                 let pointee_type = match operand_type {
                     Type::Pointer(pointee) => *pointee,
+                    Type::Array(elem, _) => *elem, // Arrays decay to pointers
                     Type::FunctionPointer { .. } => {
                         // Function pointers are already addresses - dereferencing is a no-op.
                         return Ok(());
@@ -2063,13 +2086,22 @@ impl CodeGenerator {
         array: &AstNode,
         index: &AstNode,
     ) -> Result<(), String> {
-        let elem_size = self.array_element_size(array)?;
+        // Check if we need to swap for reverse indexing (e.g., 2[x])
+        let array_type = self.expr_type(array)?;
+        let (actual_array, actual_index) = if matches!(array_type, Type::Array(_, _) | Type::Pointer(_)) {
+            (array, index)
+        } else {
+            // Reverse indexing: swap array and index
+            (index, array)
+        };
 
-        self.generate_node(array)?;
+        let elem_size = self.array_element_size(actual_array)?;
+
+        self.generate_node(actual_array)?;
         self.emit("    pushq %rax");
         self.stack_depth += 1;
 
-        self.generate_node(index)?;
+        self.generate_node(actual_index)?;
         if elem_size != 1 {
             self.emit(&format!("    imulq ${}, %rax", elem_size));
         }
@@ -2252,13 +2284,21 @@ impl CodeGenerator {
 
     fn uses_unsigned_ops(&self, left: &AstNode, right: &AstNode) -> bool {
         match (self.expr_type(left), self.expr_type(right)) {
-            (Ok(left_ty), Ok(right_ty))
-                if self.is_integer_type(&left_ty) && self.is_integer_type(&right_ty) =>
-            {
-                matches!(
-                    self.binary_integer_type(&left_ty, &right_ty),
-                    Ok(Type::UInt | Type::ULong)
-                )
+            (Ok(left_ty), Ok(right_ty)) => {
+                // Pointers are always compared using unsigned operations
+                if matches!(left_ty, Type::Pointer(_)) || matches!(right_ty, Type::Pointer(_)) {
+                    return true;
+                }
+
+                // Integer types use unsigned ops if the result type is unsigned
+                if self.is_integer_type(&left_ty) && self.is_integer_type(&right_ty) {
+                    matches!(
+                        self.binary_integer_type(&left_ty, &right_ty),
+                        Ok(Type::UInt | Type::ULong)
+                    )
+                } else {
+                    false
+                }
             }
             _ => false,
         }
@@ -2291,14 +2331,30 @@ impl CodeGenerator {
         right: &AstNode,
         instruction: &str,
     ) -> Result<(), String> {
-        // Generate left operand (result in xmm0)
+        // Generate left operand (result in xmm0 or %rax)
         self.generate_node(left)?;
+
+        // Convert to double if needed
+        let left_type = self.expr_type(left)?;
+        if !self.is_float_type(&left_type) {
+            // Integer in %rax, convert to double in xmm0
+            self.convert_type(&left_type, &Type::Double)?;
+        }
+
         // Save xmm0 to stack
         self.emit("    subq $8, %rsp");
         self.emit("    movsd %xmm0, (%rsp)");
 
-        // Generate right operand (result in xmm0)
+        // Generate right operand (result in xmm0 or %rax)
         self.generate_node(right)?;
+
+        // Convert to double if needed
+        let right_type = self.expr_type(right)?;
+        if !self.is_float_type(&right_type) {
+            // Integer in %rax, convert to double in xmm0
+            self.convert_type(&right_type, &Type::Double)?;
+        }
+
         // Move right to xmm1
         self.emit("    movsd %xmm0, %xmm1");
 
@@ -2502,8 +2558,13 @@ impl CodeGenerator {
         let is_signed = |ty: &Type| matches!(ty, Type::Char | Type::Short | Type::Int | Type::Long);
 
         match (from, to) {
-            // Array to pointer decay
+            // Array to pointer decay - exact match
             (Type::Array(elem, _), Type::Pointer(to_elem)) if elem.as_ref() == to_elem.as_ref() => {
+                Ok(())
+            }
+            // Array to pointer decay - nested arrays to simple pointer (e.g., int[2][3] to int*)
+            // This is technically a type mismatch but commonly allowed in C
+            (Type::Array(_, _), Type::Pointer(_)) => {
                 Ok(())
             }
             // Pointer to pointer - no conversion needed
@@ -3181,11 +3242,17 @@ impl CodeGenerator {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
                 if let AstNode::Function {
-                    name, return_type, ..
+                    name, return_type, params, ..
                 } = item
                 {
                     self.function_return_types
                         .insert(name.clone(), return_type.clone());
+
+                    // Collect parameter types
+                    let param_types: Vec<Type> = params.iter()
+                        .map(|param| param.param_type.clone())
+                        .collect();
+                    self.function_param_types.insert(name.clone(), param_types);
                 }
             }
         }
@@ -3409,16 +3476,25 @@ impl CodeGenerator {
                 let inner_type = self.expr_type(inner)?;
                 match inner_type {
                     Type::Pointer(pointee) => Ok(*pointee),
+                    Type::Array(elem, _) => Ok(*elem), // Arrays decay to pointers
                     Type::FunctionPointer { .. } => Ok(inner_type),
                     _ => Err("Cannot dereference non-pointer type".to_string()),
                 }
             }
-            AstNode::ArrayIndex { array, .. } => {
+            AstNode::ArrayIndex { array, index } => {
                 let array_type = self.expr_type(array)?;
                 match array_type {
                     Type::Array(elem, _) => Ok(*elem),
                     Type::Pointer(pointee) => Ok(*pointee),
-                    _ => Err("Cannot index non-array type".to_string()),
+                    _ => {
+                        // Try reverse indexing: index[array] (e.g., 2[x])
+                        let index_type = self.expr_type(index)?;
+                        match index_type {
+                            Type::Array(elem, _) => Ok(*elem),
+                            Type::Pointer(pointee) => Ok(*pointee),
+                            _ => Err("Cannot index non-array type".to_string()),
+                        }
+                    }
                 }
             }
             AstNode::MemberAccess {
@@ -3427,8 +3503,17 @@ impl CodeGenerator {
                 through_pointer,
             } => self.member_access_type(base, member, *through_pointer),
             AstNode::BinaryOp { op, left, right } => {
-                let left_type = self.expr_type(left)?;
-                let right_type = self.expr_type(right)?;
+                let mut left_type = self.expr_type(left)?;
+                let mut right_type = self.expr_type(right)?;
+
+                // Handle array to pointer decay
+                if let Type::Array(elem, _) = left_type {
+                    left_type = Type::Pointer(elem);
+                }
+                if let Type::Array(elem, _) = right_type {
+                    right_type = Type::Pointer(elem);
+                }
+
                 let integer_type =
                     if self.is_integer_type(&left_type) && self.is_integer_type(&right_type) {
                         Some(self.binary_integer_type(&left_type, &right_type)?)
@@ -3461,12 +3546,18 @@ impl CodeGenerator {
                                 (Type::ULong, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
                                 (Type::Pointer(pointee), Type::Long) => Ok(Type::Pointer(pointee)),
                                 (Type::Long, Type::Pointer(pointee)) => Ok(Type::Pointer(pointee)),
-                                _ => Err("Invalid operands for pointer addition".to_string()),
+                                _ => {
+                                    eprintln!("DEBUG: Invalid pointer addition - left: {:?}, right: {:?}", left_type, right_type);
+                                    Err("Invalid operands for pointer addition".to_string())
+                                },
                             }
                         } else if self.is_float_type(&left_type) || self.is_float_type(&right_type)
                         {
                             Ok(Type::Double)
                         } else {
+                            if integer_type.is_none() {
+                                eprintln!("DEBUG: No integer type - left: {:?}, right: {:?}", left_type, right_type);
+                            }
                             integer_type
                                 .clone()
                                 .ok_or_else(|| "Invalid operands for pointer addition".to_string())
