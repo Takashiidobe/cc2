@@ -41,10 +41,16 @@ impl SymbolTable {
 
         let size = size.max(0);
         let align = align.max(1);
-        let pad = (align - ((-self.next_offset) % align)) % align;
-        self.next_offset -= pad;
+
+        // Subtract size first, then align the result
         self.next_offset -= size;
+        // Align down (toward more negative) to ensure the address is aligned
+        let misalignment = (-self.next_offset) % align;
+        if misalignment != 0 {
+            self.next_offset -= align - misalignment;
+        }
         let offset = self.next_offset;
+
         self.symbols.insert(
             name.clone(),
             Symbol {
@@ -67,10 +73,16 @@ impl SymbolTable {
     ) -> i32 {
         let size = size.max(0);
         let align = align.max(1);
-        let pad = (align - ((-self.next_offset) % align)) % align;
-        self.next_offset -= pad;
+
+        // Subtract size first, then align the result
         self.next_offset -= size;
+        // Align down (toward more negative) to ensure the address is aligned
+        let misalignment = (-self.next_offset) % align;
+        if misalignment != 0 {
+            self.next_offset -= align - misalignment;
+        }
         let offset = self.next_offset;
+
         self.symbols.insert(
             name.clone(),
             Symbol {

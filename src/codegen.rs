@@ -634,7 +634,7 @@ impl CodeGenerator {
 
                 let var_size = self.type_size(&actual_var_type)?;
                 // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
-                let var_align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&actual_var_type).unwrap_or(1));
+                let var_align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(&actual_var_type).unwrap_or(1));
 
                 // Check if variable already exists (e.g., from statement expression pre-registration)
                 let offset = if let Some(existing) = self.symbol_table.get_variable(name) {
@@ -910,13 +910,13 @@ impl CodeGenerator {
                             // Use add_or_replace to allow statement expressions to shadow variables
                             else if let AstNode::VarDecl { name, var_type, alignment, .. } = stmt {
                                 let size = self.type_size(var_type).unwrap_or(0);
-                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
                                 let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
                                     if let AstNode::VarDecl { name, var_type, alignment, .. } = decl {
                                         let size = self.type_size(var_type).unwrap_or(0);
-                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
                                         let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                                     }
                                 }
@@ -1010,13 +1010,13 @@ impl CodeGenerator {
                             // Use add_or_replace to allow statement expressions to shadow variables
                             else if let AstNode::VarDecl { name, var_type, alignment, .. } = stmt {
                                 let size = self.type_size(var_type).unwrap_or(0);
-                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
                                 let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                             } else if let AstNode::Block(decls) = stmt {
                                 for decl in decls {
                                     if let AstNode::VarDecl { name, var_type, alignment, .. } = decl {
                                         let size = self.type_size(var_type).unwrap_or(0);
-                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(var_type).unwrap_or(1));
+                                        let align = alignment.map(|a| a as i32).unwrap_or_else(|| self.stack_alignment(var_type).unwrap_or(1));
                                         let _ = self.symbol_table.add_or_replace_variable_with_layout(name.clone(), var_type.clone(), size, align);
                                     }
                                 }
@@ -2404,7 +2404,10 @@ impl CodeGenerator {
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(1),
             Type::VaList => Ok(8), // Alignment of __va_list_tag in System V AMD64 ABI
-            Type::Array(elem, _) => self.type_alignment(elem),
+            Type::Array(elem, _) => {
+                // _Alignof for arrays returns the element alignment
+                self.type_alignment(elem)
+            }
             Type::Struct(name) => {
                 let layout = self
                     .struct_layouts
@@ -2420,6 +2423,20 @@ impl CodeGenerator {
                 Ok(layout.alignment)
             }
             Type::Enum(_) => Ok(4),
+        }
+    }
+
+    /// Get the preferred stack allocation alignment for a type
+    /// This may differ from type_alignment for performance reasons
+    fn stack_alignment(&self, ty: &Type) -> Result<i32, String> {
+        match ty {
+            Type::Array(_elem, _) => {
+                // Arrays on stack are aligned to min(array_size, 16) for better performance
+                let array_size = self.type_size(ty)?;
+                let max_align = 16;
+                Ok(array_size.min(max_align))
+            }
+            _ => self.type_alignment(ty),
         }
     }
 

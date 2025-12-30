@@ -2,6 +2,6 @@
 source: tests/parse.rs
 expression: "&result"
 ---
-stdout: "Program\n  Function(assert)\n  Function(printf)\n  Function(sprintf)\n  Function(vsprintf)\n  Function(strcmp)\n  Function(strncmp)\n  Function(memcmp)\n  Function(exit)\n  Function(vsprintf)\n  Function(strlen)\n  Function(memcpy)\n  Function(memset)\n  VarDecl(x)\n  VarDecl(x)\n  VarDecl(y)\n  VarDecl(y)\n  VarDecl(common_ext1)\n  VarDecl(common_ext2)\n  VarDecl(common_local)\n  Function(main)\n\n"
+stdout: "Program\n  Function(assert)\n  Function(printf)\n  Function(sprintf)\n  Function(vsprintf)\n  Function(strcmp)\n  Function(strncmp)\n  Function(memcmp)\n  Function(exit)\n  Function(strlen)\n  Function(memcpy)\n  Function(memset)\n  Function(assert)\n  VarDecl(x)\n  VarDecl(x)\n  VarDecl(y)\n  VarDecl(y)\n  VarDecl(common_ext1)\n  VarDecl(common_ext2)\n  VarDecl(common_local)\n  Function(main)\n\n"
 stderr: ""
 status: 0

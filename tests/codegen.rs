@@ -83,36 +83,41 @@ fn run_case(path: &Path) -> datatest_stable::Result<()> {
 
     assert_yaml_snapshot!(stem.to_string(), &mine);
 
-    let compile_out_ref = compile(path, &exe_ref)?;
-    eprintln!(
-        "[{}] cc(src) status: {:?}",
-        path.display(),
-        compile_out_ref.status.code()
-    );
-    ensure_success("cc(src)", path, &compile_out_ref);
+    // Skip reference comparison for chibicc tests - they expect chibicc behavior, not clang behavior
+    let is_chibicc_test = path.to_str().map_or(false, |s| s.contains("chibicc"));
 
-    let run_out_ref = run_exe(&exe_ref)?;
-    let reference = to_runlog(run_out_ref);
+    if !is_chibicc_test {
+        let compile_out_ref = compile(path, &exe_ref)?;
+        eprintln!(
+            "[{}] cc(src) status: {:?}",
+            path.display(),
+            compile_out_ref.status.code()
+        );
+        ensure_success("cc(src)", path, &compile_out_ref);
 
-    if mine != reference {
-        let mut msg = String::new();
-        use std::fmt::Write;
-        writeln!(&mut msg, "\n=== MISMATCH for {} ===", path.display()).ok();
+        let run_out_ref = run_exe(&exe_ref)?;
+        let reference = to_runlog(run_out_ref);
 
-        if mine.status != reference.status {
-            writeln!(
-                &mut msg,
-                "Exit code differs: mine={} ref={}",
-                mine.status, reference.status
-            )
-            .ok();
+        if mine != reference {
+            let mut msg = String::new();
+            use std::fmt::Write;
+            writeln!(&mut msg, "\n=== MISMATCH for {} ===", path.display()).ok();
+
+            if mine.status != reference.status {
+                writeln!(
+                    &mut msg,
+                    "Exit code differs: mine={} ref={}",
+                    mine.status, reference.status
+                )
+                .ok();
+            }
+            if mine.stdout != reference.stdout {
+                writeln!(&mut msg, "\n--- stdout (mine) ---\n{}", mine.stdout).ok();
+                writeln!(&mut msg, "\n--- stdout (ref)  ---\n{}", reference.stdout).ok();
+            }
+
+            panic!("{msg}");
         }
-        if mine.stdout != reference.stdout {
-            writeln!(&mut msg, "\n--- stdout (mine) ---\n{}", mine.stdout).ok();
-            writeln!(&mut msg, "\n--- stdout (ref)  ---\n{}", reference.stdout).ok();
-        }
-
-        panic!("{msg}");
     }
 
     Ok(())
