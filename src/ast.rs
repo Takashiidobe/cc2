@@ -188,6 +188,7 @@ pub struct StructField {
     pub name: String,
     pub field_type: Type,
     pub bit_width: Option<u32>, // Some(n) for bit-fields, None for regular fields
+    pub alignment: Option<i64>,  // Explicit alignment from _Alignas
 }
 
 #[derive(Debug, Clone, PartialEq)]

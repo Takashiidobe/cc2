@@ -6,8 +6,8 @@ pub struct Parser {
     tokens: Vec<LocatedToken>,
     position: usize,
     type_aliases: std::collections::HashMap<String, Type>,
-    struct_defs: std::collections::HashMap<String, Vec<(String, Type)>>,
-    union_defs: std::collections::HashMap<String, Vec<(String, Type)>>,
+    struct_defs: std::collections::HashMap<String, Vec<StructField>>,
+    union_defs: std::collections::HashMap<String, Vec<StructField>>,
 }
 
 #[derive(Clone, Copy)]
@@ -61,33 +61,17 @@ impl Parser {
         }
 
         // Add anonymous struct/union definitions to the AST
-        for (name, members) in &self.struct_defs {
-            let fields: Vec<StructField> = members
-                .iter()
-                .map(|(field_name, field_type)| StructField {
-                    name: field_name.clone(),
-                    field_type: field_type.clone(),
-                    bit_width: None,
-                })
-                .collect();
+        for (name, fields) in &self.struct_defs {
             items.insert(0, AstNode::StructDef {
                 name: name.clone(),
-                fields,
+                fields: fields.clone(),
             });
         }
 
-        for (name, members) in &self.union_defs {
-            let fields: Vec<StructField> = members
-                .iter()
-                .map(|(field_name, field_type)| StructField {
-                    name: field_name.clone(),
-                    field_type: field_type.clone(),
-                    bit_width: None,
-                })
-                .collect();
+        for (name, fields) in &self.union_defs {
             items.insert(0, AstNode::UnionDef {
                 name: name.clone(),
-                fields,
+                fields: fields.clone(),
             });
         }
 
@@ -494,8 +478,8 @@ impl Parser {
                         self.expect(Token::OpenBrace)?;
                         let mut members = Vec::new();
                         while self.current_token() != &Token::CloseBrace {
-                            // Parse _Alignas if present (TODO: actually use this value)
-                            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+                            // Parse _Alignas if present
+                            let alignment = if matches!(self.current_token(), Token::Alignas) {
                                 self.advance();
                                 self.expect(Token::OpenParen)?;
                                 let align_value = if self.is_type_start(Some(self.current_token()))
@@ -517,7 +501,12 @@ impl Parser {
                             loop {
                                 let (member_type, member_name) =
                                     self.parse_declarator(base_type.clone())?;
-                                members.push((member_name, member_type));
+                                members.push(StructField {
+                                    name: member_name,
+                                    field_type: member_type,
+                                    bit_width: None,
+                                    alignment,
+                                });
 
                                 if self.current_token() == &Token::Comma {
                                     self.advance();
@@ -564,8 +553,8 @@ impl Parser {
                         self.expect(Token::OpenBrace)?;
                         let mut members = Vec::new();
                         while self.current_token() != &Token::CloseBrace {
-                            // Parse _Alignas if present (TODO: actually use this value)
-                            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+                            // Parse _Alignas if present
+                            let alignment = if matches!(self.current_token(), Token::Alignas) {
                                 self.advance();
                                 self.expect(Token::OpenParen)?;
                                 let align_value = if self.is_type_start(Some(self.current_token()))
@@ -587,7 +576,12 @@ impl Parser {
                             loop {
                                 let (member_type, member_name) =
                                     self.parse_declarator(base_type.clone())?;
-                                members.push((member_name, member_type));
+                                members.push(StructField {
+                                    name: member_name,
+                                    field_type: member_type,
+                                    bit_width: None,
+                                    alignment,
+                                });
 
                                 if self.current_token() == &Token::Comma {
                                     self.advance();
@@ -2021,8 +2015,8 @@ impl Parser {
 
         let mut fields = Vec::new();
         while self.current_token() != &Token::CloseBrace {
-            // Parse _Alignas if present (TODO: actually use this value)
-            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+            // Parse _Alignas if present
+            let alignment = if matches!(self.current_token(), Token::Alignas) {
                 self.advance();
                 self.expect(Token::OpenParen)?;
                 let align_value = if self.is_type_start(Some(self.current_token())) {
@@ -2037,34 +2031,48 @@ impl Parser {
                 None
             };
 
-            let field_type = self.parse_type()?;
-            let (field_type, field_name) = self.parse_declarator(field_type)?;
+            let base_type = self.parse_type()?;
 
-            // Check for bit-field syntax (: width)
-            let bit_width = if self.current_token() == &Token::Colon {
-                self.advance();
-                match self.current_token() {
-                    Token::IntLiteral(width, _) if *width > 0 => {
-                        let w = *width as u32;
-                        self.advance();
-                        Some(w)
+            // Parse all declarators for this field (e.g., "char x, y, z;")
+            loop {
+                let (field_type, field_name) = self.parse_declarator(base_type.clone())?;
+
+                // Check for bit-field syntax (: width)
+                let bit_width = if self.current_token() == &Token::Colon {
+                    self.advance();
+                    match self.current_token() {
+                        Token::IntLiteral(width, _) if *width > 0 => {
+                            let w = *width as u32;
+                            self.advance();
+                            Some(w)
+                        }
+                        _ => {
+                            return Err(
+                                "Bit-field width must be a positive integer literal".to_string()
+                            );
+                        }
                     }
-                    _ => {
-                        return Err(
-                            "Bit-field width must be a positive integer literal".to_string()
-                        );
-                    }
+                } else {
+                    None
+                };
+
+                fields.push(StructField {
+                    name: field_name,
+                    field_type,
+                    bit_width,
+                    alignment,
+                });
+
+                // Check if there are more declarators (comma-separated)
+                if self.current_token() == &Token::Comma {
+                    self.advance();
+                    // Continue loop to parse next declarator
+                } else {
+                    break;
                 }
-            } else {
-                None
-            };
+            }
 
             self.expect(Token::Semicolon)?;
-            fields.push(StructField {
-                name: field_name,
-                field_type,
-                bit_width,
-            });
         }
 
         self.expect(Token::CloseBrace)?;
@@ -2155,8 +2163,8 @@ impl Parser {
 
         let mut fields = Vec::new();
         while self.current_token() != &Token::CloseBrace {
-            // Parse _Alignas if present (TODO: actually use this value)
-            let _alignment = if matches!(self.current_token(), Token::Alignas) {
+            // Parse _Alignas if present
+            let alignment = if matches!(self.current_token(), Token::Alignas) {
                 self.advance();
                 self.expect(Token::OpenParen)?;
                 let align_value = if self.is_type_start(Some(self.current_token())) {
@@ -2171,34 +2179,48 @@ impl Parser {
                 None
             };
 
-            let field_type = self.parse_type()?;
-            let (field_type, field_name) = self.parse_declarator(field_type)?;
+            let base_type = self.parse_type()?;
 
-            // Check for bit-field syntax (: width)
-            let bit_width = if self.current_token() == &Token::Colon {
-                self.advance();
-                match self.current_token() {
-                    Token::IntLiteral(width, _) if *width > 0 => {
-                        let w = *width as u32;
-                        self.advance();
-                        Some(w)
+            // Parse all declarators for this field (e.g., "char x, y, z;")
+            loop {
+                let (field_type, field_name) = self.parse_declarator(base_type.clone())?;
+
+                // Check for bit-field syntax (: width)
+                let bit_width = if self.current_token() == &Token::Colon {
+                    self.advance();
+                    match self.current_token() {
+                        Token::IntLiteral(width, _) if *width > 0 => {
+                            let w = *width as u32;
+                            self.advance();
+                            Some(w)
+                        }
+                        _ => {
+                            return Err(
+                                "Bit-field width must be a positive integer literal".to_string()
+                            );
+                        }
                     }
-                    _ => {
-                        return Err(
-                            "Bit-field width must be a positive integer literal".to_string()
-                        );
-                    }
+                } else {
+                    None
+                };
+
+                fields.push(StructField {
+                    name: field_name,
+                    field_type,
+                    bit_width,
+                    alignment,
+                });
+
+                // Check if there are more declarators (comma-separated)
+                if self.current_token() == &Token::Comma {
+                    self.advance();
+                    // Continue loop to parse next declarator
+                } else {
+                    break;
                 }
-            } else {
-                None
-            };
+            }
 
             self.expect(Token::Semicolon)?;
-            fields.push(StructField {
-                name: field_name,
-                field_type,
-                bit_width,
-            });
         }
 
         self.expect(Token::CloseBrace)?;

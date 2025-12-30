@@ -2619,7 +2619,8 @@ impl CodeGenerator {
         let mut field_map = HashMap::new();
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
-            let field_align = self.type_alignment(&field.field_type)?;
+            // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
+            let field_align = field.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
@@ -2683,7 +2684,8 @@ impl CodeGenerator {
         let mut field_map = HashMap::new();
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
-            let field_align = self.type_alignment(&field.field_type)?;
+            // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
+            let field_align = field.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&field.field_type).unwrap_or(1));
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
