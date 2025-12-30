@@ -1649,6 +1649,17 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", size));
                 Ok(())
             }
+            AstNode::AlignOfType(ty) => {
+                let alignment = self.type_alignment(ty)?;
+                self.emit(&format!("    movq ${}, %rax", alignment));
+                Ok(())
+            }
+            AstNode::AlignOfExpr(expr) => {
+                let ty = self.expr_type(expr)?;
+                let alignment = self.type_alignment(&ty)?;
+                self.emit(&format!("    movq ${}, %rax", alignment));
+                Ok(())
+            }
             AstNode::OffsetOf {
                 struct_type,
                 member,
@@ -3378,6 +3389,7 @@ impl CodeGenerator {
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
             AstNode::SizeOfType(_) | AstNode::SizeOfExpr(_) => Ok(Type::ULong),
+            AstNode::AlignOfType(_) | AstNode::AlignOfExpr(_) => Ok(Type::ULong),
             AstNode::VaStart { .. } => Ok(Type::Void), // va_start returns void
             AstNode::VaArg { arg_type, .. } => Ok(arg_type.clone()), // va_arg returns the specified type
             AstNode::VaEnd(_) => Ok(Type::Void),                     // va_end returns void

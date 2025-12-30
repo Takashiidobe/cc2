@@ -104,6 +104,8 @@ pub enum AstNode {
     },
     SizeOfType(Type),
     SizeOfExpr(Box<AstNode>),
+    AlignOfType(Type),
+    AlignOfExpr(Box<AstNode>),
     OffsetOf {
         struct_type: Type,
         member: String,
@@ -295,6 +297,8 @@ impl fmt::Display for AstNode {
             AstNode::MemberAccess { member, .. } => write!(f, "MemberAccess({})", member),
             AstNode::SizeOfType(_) => write!(f, "SizeOfType"),
             AstNode::SizeOfExpr(_) => write!(f, "SizeOfExpr"),
+            AstNode::AlignOfType(_) => write!(f, "AlignOfType"),
+            AstNode::AlignOfExpr(_) => write!(f, "AlignOfExpr"),
             AstNode::OffsetOf { member, .. } => write!(f, "OffsetOf({})", member),
             AstNode::VaStart { .. } => write!(f, "VaStart"),
             AstNode::VaArg { .. } => write!(f, "VaArg"),

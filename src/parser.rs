@@ -6,6 +6,8 @@ pub struct Parser {
     tokens: Vec<LocatedToken>,
     position: usize,
     type_aliases: std::collections::HashMap<String, Type>,
+    struct_defs: std::collections::HashMap<String, Vec<(String, Type)>>,
+    union_defs: std::collections::HashMap<String, Vec<(String, Type)>>,
 }
 
 #[derive(Clone, Copy)]
@@ -24,6 +26,8 @@ impl Parser {
             tokens,
             position: 0,
             type_aliases: std::collections::HashMap::new(),
+            struct_defs: std::collections::HashMap::new(),
+            union_defs: std::collections::HashMap::new(),
         }
     }
 
@@ -105,6 +109,24 @@ impl Parser {
         }
 
         let var_type = self.parse_type()?;
+
+        // Parse _Alignas if present (TODO: actually use this value)
+        let _alignment = if matches!(self.current_token(), Token::Alignas) {
+            self.advance();
+            self.expect(Token::OpenParen)?;
+            // _Alignas can take either a type or a constant expression
+            let align_value = if self.is_type_start(Some(self.current_token())) {
+                let ty = self.parse_type()?;
+                self.type_alignment_value(&ty)?
+            } else {
+                self.parse_constant_expr()?
+            };
+            self.expect(Token::CloseParen)?;
+            Some(align_value)
+        } else {
+            None
+        };
+
         let storage = StorageClassSpecifiers {
             is_extern,
             is_static,
@@ -352,10 +374,18 @@ impl Parser {
                     }
                     Token::Long => {
                         self.advance();
-                        if self.current_token() == &Token::Int {
+                        if self.current_token() == &Token::Long {
                             self.advance();
+                            if self.current_token() == &Token::Int {
+                                self.advance();
+                            }
+                            Type::ULong  // unsigned long long maps to Type::ULong (64-bit)
+                        } else if self.current_token() == &Token::Int {
+                            self.advance();
+                            Type::ULong
+                        } else {
+                            Type::ULong
                         }
-                        Type::ULong
                     }
                     Token::Int => {
                         self.advance();
@@ -373,10 +403,18 @@ impl Parser {
             }
             Token::Long => {
                 self.advance();
-                if self.current_token() == &Token::Int {
+                if self.current_token() == &Token::Long {
                     self.advance();
+                    if self.current_token() == &Token::Int {
+                        self.advance();
+                    }
+                    Type::Long  // long long maps to Type::Long (64-bit)
+                } else if self.current_token() == &Token::Int {
+                    self.advance();
+                    Type::Long
+                } else {
+                    Type::Long
                 }
-                Type::Long
             }
             Token::Int => {
                 self.advance();
@@ -404,31 +442,83 @@ impl Parser {
             }
             Token::Struct => {
                 self.advance();
-                let name = match self.current_token() {
-                    Token::Identifier(s) => s.clone(),
+                match self.current_token() {
+                    Token::Identifier(s) => {
+                        let name = s.clone();
+                        self.advance();
+                        Type::Struct(name)
+                    }
+                    Token::OpenBrace => {
+                        // Anonymous struct - generate a unique name and parse definition
+                        static ANON_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                        let name = format!("__anon_struct_{}", ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+
+                        // Parse struct definition
+                        self.expect(Token::OpenBrace)?;
+                        let mut members = Vec::new();
+                        while self.current_token() != &Token::CloseBrace {
+                            let member_type = self.parse_type()?;
+                            let member_name = match self.current_token() {
+                                Token::Identifier(s) => s.clone(),
+                                _ => return Err(format!("Expected member name, got {:?}", self.current_token())),
+                            };
+                            self.advance();
+                            members.push((member_name, member_type));
+                            self.expect(Token::Semicolon)?;
+                        }
+                        self.expect(Token::CloseBrace)?;
+
+                        // Register the struct
+                        self.struct_defs.insert(name.clone(), members);
+                        Type::Struct(name)
+                    }
                     _ => {
                         return Err(format!(
-                            "Expected struct name, got {:?}",
+                            "Expected struct name or {{, got {:?}",
                             self.current_token()
                         ));
                     }
-                };
-                self.advance();
-                Type::Struct(name)
+                }
             }
             Token::Union => {
                 self.advance();
-                let name = match self.current_token() {
-                    Token::Identifier(s) => s.clone(),
+                match self.current_token() {
+                    Token::Identifier(s) => {
+                        let name = s.clone();
+                        self.advance();
+                        Type::Union(name)
+                    }
+                    Token::OpenBrace => {
+                        // Anonymous union - generate a unique name and parse definition
+                        static ANON_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                        let name = format!("__anon_union_{}", ANON_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+
+                        // Parse union definition
+                        self.expect(Token::OpenBrace)?;
+                        let mut members = Vec::new();
+                        while self.current_token() != &Token::CloseBrace {
+                            let member_type = self.parse_type()?;
+                            let member_name = match self.current_token() {
+                                Token::Identifier(s) => s.clone(),
+                                _ => return Err(format!("Expected member name, got {:?}", self.current_token())),
+                            };
+                            self.advance();
+                            members.push((member_name, member_type));
+                            self.expect(Token::Semicolon)?;
+                        }
+                        self.expect(Token::CloseBrace)?;
+
+                        // Register the union
+                        self.union_defs.insert(name.clone(), members);
+                        Type::Union(name)
+                    }
                     _ => {
                         return Err(format!(
-                            "Expected union name, got {:?}",
+                            "Expected union name or {{, got {:?}",
                             self.current_token()
                         ));
                     }
-                };
-                self.advance();
-                Type::Union(name)
+                }
             }
             Token::Enum => {
                 self.advance();
@@ -1413,6 +1503,7 @@ impl Parser {
                 Ok(AstNode::AddressOf(Box::new(operand)))
             }
             Token::Sizeof => self.parse_sizeof(),
+            Token::Alignof => self.parse_alignof(),
             Token::Offsetof => self.parse_offsetof(),
             Token::VaStart => self.parse_va_start(),
             Token::VaArg => self.parse_va_arg(),
@@ -1970,6 +2061,28 @@ impl Parser {
         }
     }
 
+    fn parse_alignof(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Alignof)?;
+
+        if self.current_token() == &Token::OpenParen {
+            if self.is_type_start(self.peek(1)) {
+                self.advance();
+                let ty = self.parse_type()?;
+                let ty = self.parse_array_type_suffix(ty)?;
+                self.expect(Token::CloseParen)?;
+                Ok(AstNode::AlignOfType(ty))
+            } else {
+                self.advance();
+                let expr = self.parse_expression()?;
+                self.expect(Token::CloseParen)?;
+                Ok(AstNode::AlignOfExpr(Box::new(expr)))
+            }
+        } else {
+            let expr = self.parse_unary()?;
+            Ok(AstNode::AlignOfExpr(Box::new(expr)))
+        }
+    }
+
     fn parse_offsetof(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Offsetof)?;
         self.expect(Token::OpenParen)?;
@@ -2097,5 +2210,38 @@ impl Parser {
 
     fn peek(&self, offset: usize) -> Option<&Token> {
         self.tokens.get(self.position + offset).map(|lt| &lt.token)
+    }
+
+    fn parse_constant_expr(&mut self) -> Result<i64, String> {
+        // For now, just parse integer literals
+        // TODO: Support full constant expressions
+        match self.current_token() {
+            Token::IntLiteral(value, _) => {
+                let val = *value;
+                self.advance();
+                Ok(val)
+            }
+            _ => Err(format!(
+                "Expected constant expression, got {:?}",
+                self.current_token()
+            )),
+        }
+    }
+
+    fn type_alignment_value(&self, ty: &Type) -> Result<i64, String> {
+        // Return the alignment of the given type
+        match ty {
+            Type::Char | Type::UChar => Ok(1),
+            Type::Short | Type::UShort => Ok(2),
+            Type::Int | Type::UInt | Type::Float => Ok(4),
+            Type::Long | Type::ULong | Type::Double | Type::Pointer(_) => Ok(8),
+            Type::Struct(_) | Type::Union(_) => {
+                // For now, return a default alignment
+                // TODO: Calculate actual struct/union alignment
+                Ok(8)
+            }
+            Type::Array(base, _) => self.type_alignment_value(base),
+            _ => Ok(4), // Default to 4-byte alignment
+        }
     }
 }
