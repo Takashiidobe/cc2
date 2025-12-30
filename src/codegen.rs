@@ -14,6 +14,7 @@ struct GlobalVariable {
     init: Option<AstNode>,
     is_extern: bool,
     is_static: bool,
+    alignment: Option<i64>,
 }
 
 pub struct CodeGenerator {
@@ -604,6 +605,7 @@ impl CodeGenerator {
                             init: init.clone().map(|n| (*n).clone()),
                             is_extern: false,
                             is_static: true,
+                            alignment: *alignment,
                         },
                     );
 
@@ -3072,6 +3074,7 @@ impl CodeGenerator {
                     init,
                     is_extern,
                     is_static,
+                    alignment,
                     ..
                 } = item
                 {
@@ -3088,6 +3091,7 @@ impl CodeGenerator {
                             init: init.as_ref().map(|n| (**n).clone()),
                             is_extern: *is_extern,
                             is_static: *is_static,
+                            alignment: *alignment,
                         },
                     );
                 }
@@ -3136,6 +3140,7 @@ impl CodeGenerator {
                 init,
                 is_extern: _,
                 is_static,
+                alignment,
                 ..
             } => {
                 if *is_static {
@@ -3146,6 +3151,7 @@ impl CodeGenerator {
                             init: init.as_ref().map(|n| (**n).clone()),
                             is_extern: false,
                             is_static: true,
+                            alignment: *alignment,
                         },
                     );
                 }
@@ -3573,7 +3579,8 @@ impl CodeGenerator {
             self.emit("    .bss");
             for (name, global) in &uninitialized {
                 let size = self.type_size(&global.var_type)?;
-                let align = self.type_alignment(&global.var_type)?;
+                // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
+                let align = global.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&global.var_type).unwrap_or(1));
                 self.emit(&format!("    .align {}", align));
                 // Only emit .globl for non-static variables (static has internal linkage)
                 if !global.is_static {
@@ -3588,7 +3595,8 @@ impl CodeGenerator {
         if !initialized.is_empty() {
             self.emit("    .data");
             for (name, global) in &initialized {
-                let align = self.type_alignment(&global.var_type)?;
+                // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
+                let align = global.alignment.map(|a| a as i32).unwrap_or_else(|| self.type_alignment(&global.var_type).unwrap_or(1));
                 self.emit(&format!("    .align {}", align));
                 // Only emit .globl for non-static variables (static has internal linkage)
                 if !global.is_static {
