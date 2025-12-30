@@ -1301,18 +1301,31 @@ impl Parser {
 
     fn parse_inline_asm(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Asm)?;
+        loop {
+            match self.current_token() {
+                Token::Volatile => self.advance(),
+                Token::Identifier(name) if name == "inline" || name == "__inline__" => {
+                    self.advance()
+                }
+                Token::Identifier(name) if name == "__volatile__" => self.advance(),
+                _ => break,
+            }
+        }
         self.expect(Token::OpenParen)?;
 
-        let asm_code = match self.current_token() {
-            Token::StringLiteral(s) => s.clone(),
-            _ => {
-                return Err(format!(
-                    "Expected string literal in asm statement, got {:?}",
-                    self.current_token()
-                ));
-            }
-        };
-        self.advance();
+        let mut asm_code = String::new();
+        let mut saw_literal = false;
+        while let Token::StringLiteral(s) = self.current_token() {
+            asm_code.push_str(s);
+            saw_literal = true;
+            self.advance();
+        }
+        if !saw_literal {
+            return Err(format!(
+                "Expected string literal in asm statement, got {:?}",
+                self.current_token()
+            ));
+        }
 
         self.expect(Token::CloseParen)?;
         self.expect(Token::Semicolon)?;
