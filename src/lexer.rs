@@ -595,10 +595,56 @@ impl Lexer {
     fn read_number(&mut self, location: SourceLocation) -> Result<LocatedToken, String> {
         let start = self.position;
         let mut is_float = false;
+        let mut base = 10;
 
-        // Read digits before decimal point
-        while !self.is_at_end() && self.current_char().is_ascii_digit() {
+        // Check for hex (0x), binary (0b), or octal (0) prefix
+        if self.current_char() == '0' && !self.is_at_end() {
             self.advance();
+            if !self.is_at_end() {
+                let next = self.current_char();
+                if next == 'x' || next == 'X' {
+                    // Hexadecimal
+                    base = 16;
+                    self.advance();
+                    while !self.is_at_end() {
+                        let c = self.current_char();
+                        if c.is_ascii_hexdigit() {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                } else if next == 'b' || next == 'B' {
+                    // Binary
+                    base = 2;
+                    self.advance();
+                    while !self.is_at_end() {
+                        let c = self.current_char();
+                        if c == '0' || c == '1' {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                } else if next.is_ascii_digit() {
+                    // Octal
+                    base = 8;
+                    while !self.is_at_end() {
+                        let c = self.current_char();
+                        if ('0'..='7').contains(&c) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                // If next char is not x/X/b/B/digit, fall through to parse as 0
+            }
+        } else {
+            // Read decimal digits
+            while !self.is_at_end() && self.current_char().is_ascii_digit() {
+                self.advance();
+            }
         }
 
         // Check for decimal point
@@ -686,9 +732,34 @@ impl Lexer {
         } else {
             // Remove suffix if present for parsing
             let clean_str = num_str.trim_end_matches(['u', 'U', 'l', 'L']);
-            let num = clean_str
-                .parse::<i64>()
-                .map_err(|_| format!("Invalid number: {}", num_str))?;
+
+            // Parse based on the base
+            // Try parsing as i64 first, if it fails try u64 and cast to i64
+            let num = if base == 16 {
+                // Remove 0x prefix
+                let hex_str = clean_str.trim_start_matches("0x").trim_start_matches("0X");
+                i64::from_str_radix(hex_str, 16)
+                    .or_else(|_| u64::from_str_radix(hex_str, 16).map(|v| v as i64))
+                    .map_err(|_| format!("Invalid hexadecimal literal: {}", num_str))?
+            } else if base == 2 {
+                // Remove 0b prefix
+                let bin_str = clean_str.trim_start_matches("0b").trim_start_matches("0B");
+                i64::from_str_radix(bin_str, 2)
+                    .or_else(|_| u64::from_str_radix(bin_str, 2).map(|v| v as i64))
+                    .map_err(|_| format!("Invalid binary literal: {}", num_str))?
+            } else if base == 8 {
+                // Octal - the leading 0 is part of the number
+                i64::from_str_radix(clean_str, 8)
+                    .or_else(|_| u64::from_str_radix(clean_str, 8).map(|v| v as i64))
+                    .map_err(|_| format!("Invalid octal literal: {}", num_str))?
+            } else {
+                // Decimal
+                clean_str
+                    .parse::<i64>()
+                    .or_else(|_| clean_str.parse::<u64>().map(|v| v as i64))
+                    .map_err(|_| format!("Invalid number: {}", num_str))?
+            };
+
             Ok(LocatedToken::new(
                 Token::IntLiteral(num, int_suffix),
                 location,

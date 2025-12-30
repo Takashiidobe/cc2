@@ -1997,6 +1997,20 @@ impl Preprocessor {
         result.trim_end().to_string()
     }
 
+    /// Escape a string for use in stringification (#)
+    /// Escapes backslashes and quotes so the result can be used in a string literal
+    fn escape_for_string(s: &str) -> String {
+        let mut result = String::new();
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                _ => result.push(ch),
+            }
+        }
+        result
+    }
+
     /// Expand a function-like macro with arguments
     fn expand_function_macro(
         &self,
@@ -2034,7 +2048,8 @@ impl Preprocessor {
         // BUT we need to be careful not to replace # that's part of ##
         for (i, param) in params.iter().enumerate() {
             let normalized = Self::normalize_whitespace(&args[i]);
-            let stringified = format!("\"{}\"", normalized);
+            let escaped = Self::escape_for_string(&normalized);
+            let stringified = format!("\"{}\"", escaped);
             let pattern = format!("#{}", param);
 
             // Replace only if it's not preceded by another #

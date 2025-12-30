@@ -34,6 +34,8 @@ pub struct CodeGenerator {
     float_literals: Vec<(String, f64)>,     // (label, value)
     global_variables: HashMap<String, GlobalVariable>,
     function_return_types: HashMap<String, Type>,
+    stack_depth: i32, // Number of values currently pushed on stack (for alloca adjustment)
+    alloca_adjustment: i32, // Total bytes alloca has moved %rsp down since last push
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +70,8 @@ impl CodeGenerator {
             float_literals: Vec::new(),
             global_variables: HashMap::new(),
             function_return_types: HashMap::new(),
+            stack_depth: 0,
+            alloca_adjustment: 0,
         }
     }
 
@@ -81,6 +85,7 @@ impl CodeGenerator {
         self.union_layouts.clear();
         self.enum_constants.clear();
         self.string_literals.clear();
+        self.stack_depth = 0;
         self.wide_string_literals.clear();
         self.float_literals.clear();
         self.global_variables.clear();
@@ -311,6 +316,8 @@ impl CodeGenerator {
                 self.emit(&format!("{}:", name));
                 self.emit("    pushq %rbp");
                 self.emit("    movq %rsp, %rbp");
+                // Initialize alloca adjustment tracker (used when alloca is called in expressions)
+                self.emit("    xorq %r11, %r11");
                 if stack_size > 0 {
                     self.emit(&format!("    subq ${}, %rsp", stack_size));
                 }
@@ -735,6 +742,7 @@ impl CodeGenerator {
                     self.emit("    movsd %xmm0, (%rsp)");
                 } else {
                     self.emit("    pushq %rax");
+                    self.stack_depth += 1;
                 }
 
                 // Generate lvalue address
@@ -745,7 +753,7 @@ impl CodeGenerator {
                     self.emit("    movsd (%rsp), %xmm0");
                     self.emit("    addq $8, %rsp");
                 } else {
-                    self.emit("    popq %rax");
+                    self.emit_pop("%rax");
                 }
 
                 // Store value at address in %rcx
@@ -864,6 +872,43 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::FunctionCall { name, args } => {
+                // Handle builtin functions
+                if name == "alloca" {
+                    // alloca(size) allocates memory on the stack and returns a pointer
+                    if args.len() != 1 {
+                        return Err(format!("alloca expects 1 argument, got {}", args.len()));
+                    }
+
+                    // Evaluate the size argument
+                    self.generate_node(&args[0])?;
+
+                    // Align size to 16 bytes (x86-64 ABI requirement)
+                    self.emit("    addq $15, %rax");     // Round up
+                    self.emit("    andq $-16, %rax");    // Align to 16 bytes
+
+                    // Save size in %rcx
+                    self.emit("    movq %rax, %rcx");
+
+                    // Track the alloca adjustment in %r11 for subsequent popq operations
+                    // This allows popq to find pushed values even after %rsp has moved
+                    if self.stack_depth > 0 {
+                        self.emit("    addq %rcx, %r11");
+                    }
+
+                    // Allocate on stack by subtracting from %rsp
+                    self.emit("    subq %rcx, %rsp");
+
+                    // Return the new stack pointer
+                    // If there are pushed values above us (stack_depth > 0), adjust the pointer
+                    // to account for them, since they'll be popped soon
+                    self.emit("    movq %rsp, %rax");
+                    if self.stack_depth > 0 {
+                        self.emit(&format!("    addq ${}, %rax", self.stack_depth * 8));
+                    }
+
+                    return Ok(());
+                }
+
                 if let Some(symbol) = self.symbol_table.get_variable(name) {
                     if matches!(symbol.symbol_type, Type::FunctionPointer { .. }) {
                         let target = AstNode::Variable(name.clone());
@@ -1154,8 +1199,9 @@ impl CodeGenerator {
                         let unsigned_ops = self.uses_unsigned_ops(left, right);
                         self.generate_node(left)?;
                         self.emit("    pushq %rax");
+                        self.stack_depth += 1;
                         self.generate_node(right)?;
-                        self.emit("    popq %rcx");
+                        self.emit_pop("%rcx");
 
                         match op {
                             BinOp::Multiply => {
@@ -2021,12 +2067,13 @@ impl CodeGenerator {
 
         self.generate_node(array)?;
         self.emit("    pushq %rax");
+        self.stack_depth += 1;
 
         self.generate_node(index)?;
         if elem_size != 1 {
             self.emit(&format!("    imulq ${}, %rax", elem_size));
         }
-        self.emit("    popq %rcx");
+        self.emit_pop("%rcx");
         self.emit("    addq %rax, %rcx");
         self.emit("    movq %rcx, %rax");
         Ok(())
@@ -2079,8 +2126,9 @@ impl CodeGenerator {
 
         self.generate_node(left)?;
         self.emit("    pushq %rax");
+        self.stack_depth += 1;
         self.generate_node(right)?;
-        self.emit("    popq %rcx");
+        self.emit_pop("%rcx");
 
         if let Some(elem_size) = left_elem {
             self.emit_scale("%rax", elem_size);
@@ -2117,8 +2165,9 @@ impl CodeGenerator {
             }
             self.generate_node(left)?;
             self.emit("    pushq %rax");
+            self.stack_depth += 1;
             self.generate_node(right)?;
-            self.emit("    popq %rcx");
+            self.emit_pop("%rcx");
             self.emit("    subq %rax, %rcx");
             self.emit("    movq %rcx, %rax");
             if left_size != 1 {
@@ -2135,8 +2184,9 @@ impl CodeGenerator {
 
         self.generate_node(left)?;
         self.emit("    pushq %rax");
+        self.stack_depth += 1;
         self.generate_node(right)?;
-        self.emit("    popq %rcx");
+        self.emit_pop("%rcx");
 
         if let Some(elem_size) = left_elem {
             self.emit_scale("%rax", elem_size);
@@ -3510,6 +3560,11 @@ impl CodeGenerator {
             | AstNode::PostfixIncrement(operand)
             | AstNode::PostfixDecrement(operand) => self.expr_type(operand),
             AstNode::FunctionCall { name, .. } => {
+                // Handle builtin functions
+                if name == "alloca" {
+                    return Ok(Type::Pointer(Box::new(Type::Void)));
+                }
+
                 if let Some(symbol) = self.symbol_table.get_variable(name)
                     && let Type::FunctionPointer { return_type, .. } = &symbol.symbol_type
                 {
@@ -3560,6 +3615,18 @@ impl CodeGenerator {
     fn emit(&mut self, line: &str) {
         self.output.push_str(line);
         self.output.push('\n');
+    }
+
+    /// Generate a pop instruction that accounts for alloca adjustments
+    /// Pops into the specified register (e.g., "%rax" or "%rcx")
+    fn emit_pop(&mut self, register: &str) {
+        // Read the pushed value from its location (which may have moved due to alloca)
+        self.emit(&format!("    movq (%rsp,%r11,1), {}", register));
+        // Pop always adds 8 to undo the push, regardless of alloca
+        self.emit("    addq $8, %rsp");
+        // Clear the alloca adjustment tracker
+        self.emit("    xorq %r11, %r11");
+        self.stack_depth -= 1;
     }
 
     fn emit_global_variables(&mut self) -> Result<(), String> {
