@@ -1831,6 +1831,15 @@ impl CodeGenerator {
                 self.convert_type(&source_type, target_type)?;
                 Ok(())
             }
+            AstNode::StmtExpr { stmts, result } => {
+                // Generate code for all statements
+                for stmt in stmts {
+                    self.generate_node(stmt)?;
+                }
+                // Generate code for the result expression
+                self.generate_node(result)?;
+                Ok(())
+            }
             AstNode::IntLiteral(n) => {
                 self.emit(&format!("    movl ${}, %eax", n));
                 self.emit("    cltq");
@@ -3387,6 +3396,7 @@ impl CodeGenerator {
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::WideStringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Int))),
             AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
+            AstNode::StmtExpr { result, .. } => self.expr_type(result),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
             AstNode::SizeOfType(_) | AstNode::SizeOfExpr(_) => Ok(Type::ULong),
             AstNode::AlignOfType(_) | AstNode::AlignOfExpr(_) => Ok(Type::ULong),

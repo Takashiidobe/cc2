@@ -555,14 +555,21 @@ impl Parser {
     }
 
     fn parse_declarator(&mut self, base_type: Type) -> Result<(Type, String), String> {
+        // Handle pointer prefix (e.g., *x or **x)
+        let mut pointer_depth = 0;
+        while self.current_token() == &Token::Star {
+            self.advance();
+            pointer_depth += 1;
+        }
+
         if self.current_token() == &Token::OpenParen {
             let saved_pos = self.position;
             self.advance();
             if self.current_token() == &Token::Star {
-                let mut pointer_depth = 0;
+                let mut inner_pointer_depth = 0;
                 while self.current_token() == &Token::Star {
                     self.advance();
-                    pointer_depth += 1;
+                    inner_pointer_depth += 1;
                 }
 
                 let name = match self.current_token() {
@@ -586,7 +593,10 @@ impl Parser {
                     return_type: Box::new(base_type),
                     param_types,
                 };
-                for _ in 1..pointer_depth {
+                for _ in 1..inner_pointer_depth {
+                    decl_type = Type::Pointer(Box::new(decl_type));
+                }
+                for _ in 0..pointer_depth {
                     decl_type = Type::Pointer(Box::new(decl_type));
                 }
                 return Ok((decl_type, name));
@@ -605,7 +615,13 @@ impl Parser {
             }
         };
         self.advance();
-        let decl_type = self.parse_array_type_suffix(base_type)?;
+        let mut decl_type = self.parse_array_type_suffix(base_type)?;
+
+        // Apply pointer prefix
+        for _ in 0..pointer_depth {
+            decl_type = Type::Pointer(Box::new(decl_type));
+        }
+
         Ok((decl_type, name))
     }
 
@@ -806,7 +822,8 @@ impl Parser {
             | Token::Auto
             | Token::Register
             | Token::Const
-            | Token::Volatile => self.parse_var_decl(),
+            | Token::Volatile
+            | Token::Alignas => self.parse_var_decl(),
             Token::Identifier(name) if self.type_aliases.contains_key(name) => {
                 // This is a typedef'd type, parse as variable declaration
                 self.parse_var_decl()
@@ -861,37 +878,74 @@ impl Parser {
             }
         }
 
-        let var_type = self.parse_type()?;
-        let (var_type, name) = self.parse_declarator(var_type)?;
-
-        let init = if self.current_token() == &Token::Equals {
+        // Parse _Alignas if present (TODO: actually use this value)
+        let _alignment = if matches!(self.current_token(), Token::Alignas) {
             self.advance();
-            if self.current_token() == &Token::OpenBrace {
-                if matches!(var_type, Type::Struct(_) | Type::Union(_)) {
-                    Some(Box::new(self.parse_struct_initializer()?))
-                } else {
-                    Some(Box::new(self.parse_array_initializer()?))
-                }
+            self.expect(Token::OpenParen)?;
+            // _Alignas can take either a type or a constant expression
+            let align_value = if self.is_type_start(Some(self.current_token())) {
+                let ty = self.parse_type()?;
+                self.type_alignment_value(&ty)?
             } else {
-                Some(Box::new(self.parse_expression()?))
-            }
+                self.parse_constant_expr()?
+            };
+            self.expect(Token::CloseParen)?;
+            Some(align_value)
         } else {
             None
         };
 
+        let base_type = self.parse_type()?;
+
+        // Parse first declarator
+        let mut decls = Vec::new();
+        loop {
+            let (var_type, name) = self.parse_declarator(base_type.clone())?;
+
+            let init = if self.current_token() == &Token::Equals {
+                self.advance();
+                if self.current_token() == &Token::OpenBrace {
+                    if matches!(var_type, Type::Struct(_) | Type::Union(_)) {
+                        Some(Box::new(self.parse_struct_initializer()?))
+                    } else {
+                        Some(Box::new(self.parse_array_initializer()?))
+                    }
+                } else {
+                    Some(Box::new(self.parse_expression()?))
+                }
+            } else {
+                None
+            };
+
+            decls.push(AstNode::VarDecl {
+                name,
+                var_type,
+                init,
+                is_extern: false,
+                is_static,
+                is_auto,
+                is_register,
+                is_const,
+                is_volatile,
+            });
+
+            // Check for more declarators
+            if self.current_token() == &Token::Comma {
+                self.advance();
+                continue;
+            } else {
+                break;
+            }
+        }
+
         self.expect(Token::Semicolon)?;
 
-        Ok(AstNode::VarDecl {
-            name,
-            var_type,
-            init,
-            is_extern: false,
-            is_static,
-            is_auto,
-            is_register,
-            is_const,
-            is_volatile,
-        })
+        // If multiple declarations, return a block; otherwise return the single declaration
+        if decls.len() == 1 {
+            Ok(decls.into_iter().next().unwrap())
+        } else {
+            Ok(AstNode::Block(decls))
+        }
     }
 
     fn parse_if_statement(&mut self) -> Result<AstNode, String> {
@@ -1609,9 +1663,40 @@ impl Parser {
             }
             Token::OpenParen => {
                 self.advance();
-                let expr = self.parse_expression()?;
-                self.expect(Token::CloseParen)?;
-                expr
+                // Check for statement expression: ({ stmts; expr })
+                if self.current_token() == &Token::OpenBrace {
+                    self.advance(); // consume {
+                    let mut stmts = Vec::new();
+                    let mut last_expr = None;
+
+                    // Parse statements until we find the last expression
+                    while self.current_token() != &Token::CloseBrace {
+                        // Try to parse as a statement
+                        let stmt = self.parse_statement()?;
+                        // Check if this might be the final expression (no semicolon after)
+                        if self.current_token() == &Token::CloseBrace {
+                            // This is the final expression
+                            last_expr = Some(stmt);
+                            break;
+                        }
+                        stmts.push(stmt);
+                    }
+
+                    self.expect(Token::CloseBrace)?;
+                    self.expect(Token::CloseParen)?;
+
+                    // Statement expressions must have a result expression
+                    let result = last_expr.ok_or("Statement expression must have a result expression")?;
+                    AstNode::StmtExpr {
+                        stmts,
+                        result: Box::new(result),
+                    }
+                } else {
+                    // Regular parenthesized expression
+                    let expr = self.parse_expression()?;
+                    self.expect(Token::CloseParen)?;
+                    expr
+                }
             }
             _ => {
                 return Err(format!(

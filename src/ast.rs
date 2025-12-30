@@ -123,6 +123,10 @@ pub enum AstNode {
         target_type: Type,
         expr: Box<AstNode>,
     },
+    StmtExpr {
+        stmts: Vec<AstNode>,
+        result: Box<AstNode>,
+    },
     IntLiteral(i64),
     FloatLiteral(f64),
     StringLiteral(String),
@@ -304,6 +308,7 @@ impl fmt::Display for AstNode {
             AstNode::VaArg { .. } => write!(f, "VaArg"),
             AstNode::VaEnd(_) => write!(f, "VaEnd"),
             AstNode::Cast { target_type, .. } => write!(f, "Cast({:?})", target_type),
+            AstNode::StmtExpr { .. } => write!(f, "StmtExpr"),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),
             AstNode::FloatLiteral(n) => write!(f, "FloatLiteral({})", n),
             AstNode::StringLiteral(s) => write!(f, "StringLiteral(\"{}\")", s),
