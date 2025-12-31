@@ -394,6 +394,39 @@ impl Parser {
 
     fn parse_type(&mut self) -> Result<Type, String> {
         let mut ty = match self.current_token() {
+            Token::Signed => {
+                self.advance();
+                match self.current_token() {
+                    Token::Char => {
+                        self.advance();
+                        Type::Char
+                    }
+                    Token::Short => {
+                        self.advance();
+                        Type::Short
+                    }
+                    Token::Long => {
+                        self.advance();
+                        if self.current_token() == &Token::Long {
+                            self.advance();
+                            if self.current_token() == &Token::Int {
+                                self.advance();
+                            }
+                            Type::Long // signed long long maps to Type::Long (64-bit)
+                        } else if self.current_token() == &Token::Int {
+                            self.advance();
+                            Type::Long
+                        } else {
+                            Type::Long
+                        }
+                    }
+                    Token::Int => {
+                        self.advance();
+                        Type::Int
+                    }
+                    _ => Type::Int,
+                }
+            }
             Token::Unsigned => {
                 self.advance();
                 match self.current_token() {
@@ -459,6 +492,10 @@ impl Parser {
             Token::Char => {
                 self.advance();
                 Type::Char
+            }
+            Token::Bool => {
+                self.advance();
+                Type::Bool
             }
             Token::Void => {
                 self.advance();
@@ -1014,7 +1051,9 @@ impl Parser {
                 // enum E { ... }; or enum { ... }; - enum definition
                 self.parse_enum_definition()
             }
-            Token::Unsigned
+            Token::Bool
+            | Token::Signed
+            | Token::Unsigned
             | Token::Int
             | Token::Char
             | Token::Short
@@ -1238,6 +1277,8 @@ impl Parser {
             self.current_token(),
             Token::Int
                 | Token::Char
+                | Token::Bool
+                | Token::Signed
                 | Token::Unsigned
                 | Token::Short
                 | Token::Long
@@ -2535,7 +2576,9 @@ impl Parser {
     fn is_type_start(&self, token: Option<&Token>) -> bool {
         match token {
             Some(Token::Identifier(name)) => self.type_aliases.contains_key(name),
-            Some(Token::Unsigned)
+            Some(Token::Bool)
+            | Some(Token::Signed)
+            | Some(Token::Unsigned)
             | Some(Token::Int)
             | Some(Token::Char)
             | Some(Token::Struct)
@@ -2646,7 +2689,7 @@ impl Parser {
     fn type_alignment_value(&self, ty: &Type) -> Result<i64, String> {
         // Return the alignment of the given type
         match ty {
-            Type::Char | Type::UChar => Ok(1),
+            Type::Char | Type::UChar | Type::Bool => Ok(1),
             Type::Short | Type::UShort => Ok(2),
             Type::Int | Type::UInt | Type::Float => Ok(4),
             Type::Long | Type::ULong | Type::Double | Type::Pointer(_) => Ok(8),
