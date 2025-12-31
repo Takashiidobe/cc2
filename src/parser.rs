@@ -59,6 +59,35 @@ impl Parser {
         self.error_at(self.current_location(), message)
     }
 
+    fn is_type_qualifier(token: &Token) -> bool {
+        matches!(token, Token::Const | Token::Volatile | Token::Restrict)
+    }
+
+    fn skip_type_qualifiers(&mut self) {
+        while Self::is_type_qualifier(self.current_token()) {
+            self.advance();
+        }
+    }
+
+    fn consume_decl_qualifiers(&mut self, is_const: &mut bool, is_volatile: &mut bool) {
+        loop {
+            match self.current_token() {
+                Token::Const => {
+                    self.advance();
+                    *is_const = true;
+                }
+                Token::Volatile => {
+                    self.advance();
+                    *is_volatile = true;
+                }
+                Token::Restrict => {
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+    }
+
     pub fn parse(&mut self) -> Result<AstNode, String> {
         let mut items = Vec::new();
 
@@ -127,35 +156,46 @@ impl Parser {
         // Parse storage class and qualifiers (can appear in any order)
         loop {
             match self.current_token() {
-                Token::Extern if !is_extern => {
+                Token::Extern => {
                     self.advance();
                     is_extern = true;
                 }
-                Token::Static if !is_static => {
+                Token::Static => {
                     self.advance();
                     is_static = true;
                 }
-                Token::Auto if !is_auto => {
+                Token::Auto => {
                     self.advance();
                     is_auto = true;
                 }
-                Token::Register if !is_register => {
+                Token::Register => {
                     self.advance();
                     is_register = true;
                 }
-                Token::Const if !is_const => {
+                Token::Const => {
                     self.advance();
                     is_const = true;
                 }
-                Token::Volatile if !is_volatile => {
+                Token::Volatile => {
                     self.advance();
                     is_volatile = true;
+                }
+                Token::Restrict => {
+                    self.advance();
+                }
+                Token::Noreturn => {
+                    self.advance();
                 }
                 _ => break,
             }
         }
 
-        let base_type = self.parse_type()?;
+        let base_type = if self.is_type_start(Some(self.current_token())) {
+            self.parse_type()?
+        } else {
+            Type::Int
+        };
+        self.consume_decl_qualifiers(&mut is_const, &mut is_volatile);
 
         // Parse _Alignas if present
         let alignment = if matches!(self.current_token(), Token::Alignas) {
@@ -213,7 +253,7 @@ impl Parser {
             let is_prototype = self.is_type_start(Some(self.current_token()))
                 || matches!(
                     self.current_token(),
-                    Token::Const | Token::Volatile | Token::Ellipsis
+                    Token::Const | Token::Volatile | Token::Restrict | Token::Ellipsis
                 );
 
             if is_prototype {
@@ -291,11 +331,9 @@ impl Parser {
         let mut decls = HashMap::new();
 
         while self.is_type_start(Some(self.current_token()))
-            || matches!(self.current_token(), Token::Const | Token::Volatile)
+            || Self::is_type_qualifier(self.current_token())
         {
-            while matches!(self.current_token(), Token::Const | Token::Volatile) {
-                self.advance();
-            }
+            self.skip_type_qualifiers();
 
             let base_type = self.parse_type()?;
             let (decl_type, name) = self.parse_declarator(base_type)?;
@@ -434,7 +472,10 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
-        while matches!(self.current_token(), Token::Const | Token::Volatile) {
+        while matches!(
+            self.current_token(),
+            Token::Const | Token::Volatile | Token::Restrict
+        ) {
             self.advance();
         }
 
@@ -699,9 +740,7 @@ impl Parser {
     }
 
     fn parse_type_name(&mut self) -> Result<Type, String> {
-        while matches!(self.current_token(), Token::Const | Token::Volatile) {
-            self.advance();
-        }
+        self.skip_type_qualifiers();
         let base_type = self.parse_type()?;
         let (ty, _name) = self.parse_param_declarator(base_type)?;
         Ok(ty)
@@ -861,11 +900,13 @@ impl Parser {
     }
 
     fn parse_declarator(&mut self, base_type: Type) -> Result<(Type, String), String> {
+        self.skip_type_qualifiers();
         // Handle pointer prefix (e.g., *x or **x)
         let mut pointer_depth = 0;
         while self.current_token() == &Token::Star {
             self.advance();
             pointer_depth += 1;
+            self.skip_type_qualifiers();
         }
 
         if self.current_token() == &Token::OpenParen {
@@ -876,6 +917,7 @@ impl Parser {
                 while self.current_token() == &Token::Star {
                     self.advance();
                     inner_pointer_depth += 1;
+                    self.skip_type_qualifiers();
                 }
 
                 let name = match self.current_token() {
@@ -937,6 +979,7 @@ impl Parser {
         &mut self,
         base_type: Type,
     ) -> Result<(Type, Option<String>), String> {
+        self.skip_type_qualifiers();
         if self.current_token() == &Token::OpenParen {
             let saved_pos = self.position;
             self.advance();
@@ -945,6 +988,7 @@ impl Parser {
                 while self.current_token() == &Token::Star {
                     self.advance();
                     pointer_depth += 1;
+                    self.skip_type_qualifiers();
                 }
 
                 let name = match self.current_token() {
@@ -1022,11 +1066,10 @@ impl Parser {
                 break;
             }
 
-            while matches!(self.current_token(), Token::Const | Token::Volatile) {
-                self.advance();
-            }
+            self.skip_type_qualifiers();
 
             let param_type = self.parse_type()?;
+            self.skip_type_qualifiers();
             let (param_type, _name) = self.parse_param_declarator(param_type)?;
             params.push(param_type);
 
@@ -1073,12 +1116,11 @@ impl Parser {
                 break;
             }
 
-            // Skip const and volatile qualifiers in function parameters
-            while matches!(self.current_token(), Token::Const | Token::Volatile) {
-                self.advance();
-            }
+            // Skip type qualifiers in function parameters
+            self.skip_type_qualifiers();
 
             let param_type = self.parse_type()?;
+            self.skip_type_qualifiers();
             let (param_type, name) = self.parse_param_declarator(param_type)?;
             let name = name.unwrap_or_else(|| format!("_param{}", params.len()));
 
@@ -1108,6 +1150,7 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Result<AstNode, String> {
         match self.current_token() {
+            Token::OpenBrace => self.parse_block(),
             Token::Return => self.parse_return(),
             Token::If => self.parse_if_statement(),
             Token::While => self.parse_while_loop(),
@@ -1162,6 +1205,8 @@ impl Parser {
             | Token::Register
             | Token::Const
             | Token::Volatile
+            | Token::Restrict
+            | Token::Noreturn
             | Token::Alignas => self.parse_var_decl(),
             Token::Identifier(name) if self.type_aliases.contains_key(name) => {
                 // This is a typedef'd type, parse as variable declaration
@@ -1193,25 +1238,31 @@ impl Parser {
         // Parse storage class and qualifiers (can appear in any order)
         loop {
             match self.current_token() {
-                Token::Static if !is_static => {
+                Token::Static => {
                     self.advance();
                     is_static = true;
                 }
-                Token::Auto if !is_auto => {
+                Token::Auto => {
                     self.advance();
                     is_auto = true;
                 }
-                Token::Register if !is_register => {
+                Token::Register => {
                     self.advance();
                     is_register = true;
                 }
-                Token::Const if !is_const => {
+                Token::Const => {
                     self.advance();
                     is_const = true;
                 }
-                Token::Volatile if !is_volatile => {
+                Token::Volatile => {
                     self.advance();
                     is_volatile = true;
+                }
+                Token::Restrict => {
+                    self.advance();
+                }
+                Token::Noreturn => {
+                    self.advance();
                 }
                 _ => break,
             }
@@ -1234,7 +1285,12 @@ impl Parser {
             None
         };
 
-        let base_type = self.parse_type()?;
+        let base_type = if self.is_type_start(Some(self.current_token())) {
+            self.parse_type()?
+        } else {
+            Type::Int
+        };
+        self.consume_decl_qualifiers(&mut is_const, &mut is_volatile);
 
         // Parse first declarator
         let mut decls = Vec::new();
@@ -1387,6 +1443,8 @@ impl Parser {
                 | Token::Register
                 | Token::Const
                 | Token::Volatile
+                | Token::Restrict
+                | Token::Noreturn
         ) {
             let decl = self.parse_var_decl()?;
             Some(Box::new(decl))
@@ -2176,6 +2234,12 @@ impl Parser {
         let mut dimensions = Vec::new();
         while self.current_token() == &Token::OpenBracket {
             self.advance();
+            while matches!(
+                self.current_token(),
+                Token::Const | Token::Volatile | Token::Restrict | Token::Static
+            ) {
+                self.advance();
+            }
             // Allow empty brackets [] for arrays with initializers (size will be inferred)
             let len = if self.current_token() == &Token::CloseBracket {
                 0 // Placeholder size, will be inferred from initializer
@@ -2701,6 +2765,7 @@ impl Parser {
             | Some(Token::Double)
             | Some(Token::Const)
             | Some(Token::Volatile)
+            | Some(Token::Restrict)
             | Some(Token::Void) => true,
             _ => false,
         }
