@@ -10,6 +10,8 @@ pub struct Parser {
     union_defs: HashMap<String, AggregateDef>,
     enum_constants: HashMap<String, i64>,
     anon_counter: usize,
+    compound_counter: usize,
+    in_global_initializer: bool,
 }
 
 #[derive(Clone)]
@@ -38,6 +40,8 @@ impl Parser {
             union_defs: HashMap::new(),
             enum_constants: HashMap::new(),
             anon_counter: 0,
+            compound_counter: 0,
+            in_global_initializer: false,
         }
     }
 
@@ -86,6 +90,44 @@ impl Parser {
                 _ => break,
             }
         }
+    }
+
+    fn next_compound_literal_name(&mut self) -> String {
+        let name = format!("__compound_literal_{}", self.compound_counter);
+        self.compound_counter += 1;
+        name
+    }
+
+    fn complete_compound_literal_type(
+        &self,
+        literal_type: Type,
+        init: &AstNode,
+    ) -> Result<Type, String> {
+        match literal_type {
+            Type::Array(elem, 0) => {
+                match init {
+                    AstNode::ArrayInit(values) => Ok(Type::Array(elem, values.len())),
+                    AstNode::StringLiteral(s) => Ok(Type::Array(elem, s.len() + 1)),
+                    AstNode::WideStringLiteral(s) => Ok(Type::Array(elem, s.chars().count() + 1)),
+                    _ => Err(self
+                        .error("Array compound literal requires an array initializer".to_string())),
+                }
+            }
+            _ => Ok(literal_type),
+        }
+    }
+
+    fn parse_scalar_initializer(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::OpenBrace)?;
+        if self.current_token() == &Token::CloseBrace {
+            return Err(self.error("Scalar initializer cannot be empty".to_string()));
+        }
+        let expr = self.parse_assignment()?;
+        if self.current_token() == &Token::Comma {
+            self.advance();
+        }
+        self.expect(Token::CloseBrace)?;
+        Ok(expr)
     }
 
     pub fn parse(&mut self) -> Result<AstNode, String> {
@@ -408,14 +450,20 @@ impl Parser {
             // Parse initializer if present
             let init = if self.current_token() == &Token::Equals {
                 self.advance();
+                let was_global = self.in_global_initializer;
+                self.in_global_initializer = true;
                 if self.current_token() == &Token::OpenBrace {
-                    if matches!(parsed_type, Type::Struct(_) | Type::Union(_)) {
-                        Some(Box::new(self.parse_struct_initializer()?))
+                    let init = if matches!(parsed_type, Type::Struct(_) | Type::Union(_)) {
+                        self.parse_struct_initializer()?
                     } else {
-                        Some(Box::new(self.parse_array_initializer()?))
-                    }
+                        self.parse_array_initializer()?
+                    };
+                    self.in_global_initializer = was_global;
+                    Some(Box::new(init))
                 } else {
-                    Some(Box::new(self.parse_expression()?))
+                    let init = self.parse_expression()?;
+                    self.in_global_initializer = was_global;
+                    Some(Box::new(init))
                 }
             } else {
                 None
@@ -1986,8 +2034,26 @@ impl Parser {
                 // Check if this is a cast expression: (type)expr
                 if self.is_type_start(self.peek(1)) {
                     self.advance(); // consume (
-                    let target_type = self.parse_type()?;
+                    let mut target_type = self.parse_type()?;
+                    if self.current_token() == &Token::OpenBracket {
+                        target_type = self.parse_array_type_suffix(target_type)?;
+                    }
                     self.expect(Token::CloseParen)?;
+                    if self.current_token() == &Token::OpenBrace {
+                        let init = match target_type {
+                            Type::Struct(_) | Type::Union(_) => self.parse_struct_initializer()?,
+                            Type::Array(_, _) => self.parse_array_initializer()?,
+                            _ => self.parse_scalar_initializer()?,
+                        };
+                        let target_type =
+                            self.complete_compound_literal_type(target_type, &init)?;
+                        return Ok(AstNode::CompoundLiteral {
+                            name: self.next_compound_literal_name(),
+                            literal_type: target_type,
+                            init: Box::new(init),
+                            is_global: self.in_global_initializer,
+                        });
+                    }
                     let expr = self.parse_unary()?;
                     Ok(AstNode::Cast {
                         target_type,

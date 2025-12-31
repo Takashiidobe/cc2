@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::symbol_table::SymbolTable;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 struct LoopContext {
@@ -96,6 +96,7 @@ impl CodeGenerator {
         self.collect_enum_constants(ast)?;
         self.collect_global_variables(ast)?;
         self.collect_static_locals(ast)?;
+        self.collect_global_compound_literals()?;
         self.collect_function_signatures(ast);
 
         // Emit global variables first
@@ -2208,6 +2209,38 @@ impl CodeGenerator {
             }
             AstNode::ArrayInit(_) => Err("Array initializer codegen not implemented".to_string()),
             AstNode::StructInit(_) => Err("Struct initializer codegen not implemented".to_string()),
+            AstNode::CompoundLiteral { literal_type, .. } => {
+                self.generate_lvalue(node)?;
+                if literal_type.is_array()
+                    || matches!(literal_type, Type::Struct(_) | Type::Union(_))
+                {
+                    return Ok(());
+                }
+
+                if matches!(literal_type, Type::Int) {
+                    self.emit("    movslq (%rax), %rax");
+                } else if matches!(literal_type, Type::UInt) {
+                    self.emit("    movl (%rax), %eax");
+                } else if matches!(literal_type, Type::UShort) {
+                    self.emit("    movzwq (%rax), %rax");
+                } else if matches!(literal_type, Type::Short) {
+                    self.emit("    movswq (%rax), %rax");
+                } else if matches!(literal_type, Type::Char) {
+                    self.emit("    movsbq (%rax), %rax");
+                } else if matches!(literal_type, Type::UChar | Type::Bool) {
+                    self.emit("    movzbq (%rax), %rax");
+                } else if matches!(literal_type, Type::Long | Type::ULong) {
+                    self.emit("    movq (%rax), %rax");
+                } else if matches!(literal_type, Type::Float) {
+                    self.emit("    movss (%rax), %xmm0");
+                    self.emit("    cvtss2sd %xmm0, %xmm0");
+                } else if matches!(literal_type, Type::Double) {
+                    self.emit("    movsd (%rax), %xmm0");
+                } else {
+                    self.emit("    movq (%rax), %rax");
+                }
+                Ok(())
+            }
             AstNode::MemberAccess {
                 base,
                 member,
@@ -2358,6 +2391,20 @@ impl CodeGenerator {
 
     fn generate_lvalue(&mut self, node: &AstNode) -> Result<(), String> {
         match node {
+            AstNode::CompoundLiteral {
+                name,
+                literal_type,
+                init,
+                is_global,
+            } => {
+                if *is_global {
+                    self.emit(&format!("    leaq {}(%rip), %rax", name));
+                    return Ok(());
+                }
+                let offset = self.materialize_compound_literal(name, literal_type, init)?;
+                self.emit(&format!("    leaq {}(%rbp), %rax", offset));
+                Ok(())
+            }
             AstNode::Variable(name) => {
                 // Check if this is a global variable
                 if self.global_variables.contains_key(name) {
@@ -3913,6 +3960,121 @@ impl CodeGenerator {
         Ok(())
     }
 
+    fn materialize_compound_literal(
+        &mut self,
+        name: &str,
+        literal_type: &Type,
+        init: &AstNode,
+    ) -> Result<i32, String> {
+        let offset = if let Some(existing) = self.symbol_table.get_variable(name) {
+            existing.stack_offset
+        } else {
+            let size = self.type_size(literal_type)?;
+            let align = self.stack_alignment(literal_type)?;
+            self.symbol_table.add_variable_with_layout(
+                name.to_string(),
+                literal_type.clone(),
+                size,
+                align,
+            )?
+        };
+
+        self.emit_compound_literal_init(literal_type, init, offset)?;
+        Ok(offset)
+    }
+
+    fn emit_compound_literal_init(
+        &mut self,
+        literal_type: &Type,
+        init: &AstNode,
+        offset: i32,
+    ) -> Result<(), String> {
+        if literal_type.is_array() {
+            match init {
+                AstNode::ArrayInit(values) => {
+                    self.generate_array_init(literal_type, values, offset)?;
+                }
+                AstNode::StringLiteral(s) => {
+                    self.generate_string_array_init(literal_type, s, offset)?;
+                }
+                AstNode::WideStringLiteral(s) => {
+                    self.generate_wide_string_array_init(literal_type, s, offset)?;
+                }
+                _ => {
+                    return Err(
+                        "Array compound literal requires a brace-enclosed initializer".to_string(),
+                    );
+                }
+            }
+            return Ok(());
+        }
+
+        match literal_type {
+            Type::Struct(struct_name) => {
+                if let AstNode::StructInit(values) = init {
+                    self.emit_struct_init(struct_name, values, offset)?;
+                    return Ok(());
+                }
+            }
+            Type::Union(union_name) => {
+                if let AstNode::StructInit(values) = init {
+                    self.emit_union_init(union_name, values, offset)?;
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+
+        let init_type = if let AstNode::StmtExpr { stmts, result } = init {
+            for stmt in stmts {
+                if let AstNode::StructDef {
+                    name,
+                    fields,
+                    attributes,
+                } = stmt
+                {
+                    self.register_struct_layout(name, fields, attributes)?;
+                } else if let AstNode::UnionDef {
+                    name,
+                    fields,
+                    attributes,
+                } = stmt
+                {
+                    self.register_union_layout(name, fields, attributes)?;
+                }
+            }
+            for stmt in stmts {
+                self.generate_node(stmt)?;
+            }
+            let result_type = self.expr_type(result)?;
+            self.generate_node(result)?;
+            result_type
+        } else {
+            let init_type = self.expr_type(init)?;
+            self.generate_node(init)?;
+            init_type
+        };
+
+        self.convert_type(&init_type, literal_type)?;
+
+        if matches!(literal_type, Type::Float) {
+            self.emit("    cvtsd2ss %xmm0, %xmm0");
+            self.emit(&format!("    movss %xmm0, {}(%rbp)", offset));
+        } else if matches!(literal_type, Type::Double) {
+            self.emit(&format!("    movsd %xmm0, {}(%rbp)", offset));
+        } else if matches!(literal_type, Type::Int | Type::UInt | Type::Enum(_)) {
+            self.emit(&format!("    movl %eax, {}(%rbp)", offset));
+        } else if matches!(literal_type, Type::UShort | Type::Short) {
+            self.emit(&format!("    movw %ax, {}(%rbp)", offset));
+        } else if matches!(literal_type, Type::Char | Type::UChar | Type::Bool) {
+            self.emit(&format!("    movb %al, {}(%rbp)", offset));
+        } else {
+            self.emit(&format!("    movq %rax, {}(%rbp)", offset));
+        }
+
+        Ok(())
+    }
+
     fn collect_struct_layouts(&mut self, node: &AstNode) -> Result<(), String> {
         if let AstNode::Program(nodes) = node {
             for item in nodes {
@@ -3977,6 +4139,169 @@ impl CodeGenerator {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn collect_global_compound_literals(&mut self) -> Result<(), String> {
+        let mut pending = Vec::new();
+        let mut seen = HashSet::new();
+
+        let globals: Vec<GlobalVariable> = self.global_variables.values().cloned().collect();
+        for global in globals {
+            if let Some(init) = &global.init {
+                self.collect_compound_literals_from_expr(init, &mut pending, &mut seen)?;
+            }
+        }
+
+        for (name, var_type, init) in pending {
+            self.global_variables
+                .entry(name.clone())
+                .or_insert(GlobalVariable {
+                    var_type,
+                    init: Some(init),
+                    is_extern: false,
+                    is_static: true,
+                    alignment: None,
+                });
+        }
+
+        Ok(())
+    }
+
+    fn collect_compound_literals_from_expr(
+        &self,
+        node: &AstNode,
+        pending: &mut Vec<(String, Type, AstNode)>,
+        seen: &mut HashSet<String>,
+    ) -> Result<(), String> {
+        match node {
+            AstNode::CompoundLiteral {
+                name,
+                literal_type,
+                init,
+                is_global,
+            } => {
+                if *is_global && seen.insert(name.clone()) {
+                    pending.push((name.clone(), literal_type.clone(), (**init).clone()));
+                }
+                self.collect_compound_literals_from_expr(init, pending, seen)?;
+            }
+            AstNode::ArrayInit(exprs) => {
+                for expr in exprs {
+                    self.collect_compound_literals_from_expr(expr, pending, seen)?;
+                }
+            }
+            AstNode::StructInit(fields) => {
+                for field in fields {
+                    self.collect_compound_literals_from_expr(&field.value, pending, seen)?;
+                }
+            }
+            AstNode::Assignment { target, value } => {
+                self.collect_compound_literals_from_expr(target, pending, seen)?;
+                self.collect_compound_literals_from_expr(value, pending, seen)?;
+            }
+            AstNode::BinaryOp { left, right, .. } => {
+                self.collect_compound_literals_from_expr(left, pending, seen)?;
+                self.collect_compound_literals_from_expr(right, pending, seen)?;
+            }
+            AstNode::TernaryOp {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                self.collect_compound_literals_from_expr(condition, pending, seen)?;
+                self.collect_compound_literals_from_expr(true_expr, pending, seen)?;
+                self.collect_compound_literals_from_expr(false_expr, pending, seen)?;
+            }
+            AstNode::UnaryOp { operand, .. }
+            | AstNode::PrefixIncrement(operand)
+            | AstNode::PrefixDecrement(operand)
+            | AstNode::PostfixIncrement(operand)
+            | AstNode::PostfixDecrement(operand)
+            | AstNode::AddressOf(operand)
+            | AstNode::Dereference(operand)
+            | AstNode::Cast { expr: operand, .. } => {
+                self.collect_compound_literals_from_expr(operand, pending, seen)?;
+            }
+            AstNode::ArrayIndex { array, index } => {
+                self.collect_compound_literals_from_expr(array, pending, seen)?;
+                self.collect_compound_literals_from_expr(index, pending, seen)?;
+            }
+            AstNode::MemberAccess { base, .. } => {
+                self.collect_compound_literals_from_expr(base, pending, seen)?;
+            }
+            AstNode::FunctionCall { args, .. } | AstNode::IndirectCall { args, .. } => {
+                for arg in args {
+                    self.collect_compound_literals_from_expr(arg, pending, seen)?;
+                }
+            }
+            AstNode::StmtExpr { stmts, result } => {
+                for stmt in stmts {
+                    self.collect_compound_literals_from_expr(stmt, pending, seen)?;
+                }
+                self.collect_compound_literals_from_expr(result, pending, seen)?;
+            }
+            AstNode::Return(Some(expr))
+            | AstNode::SizeOfExpr(expr)
+            | AstNode::AlignOfExpr(expr) => {
+                self.collect_compound_literals_from_expr(expr, pending, seen)?;
+            }
+            AstNode::OffsetOf { .. } => {}
+            AstNode::Block(stmts) => {
+                for stmt in stmts {
+                    self.collect_compound_literals_from_expr(stmt, pending, seen)?;
+                }
+            }
+            AstNode::IfStatement {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.collect_compound_literals_from_expr(condition, pending, seen)?;
+                self.collect_compound_literals_from_expr(then_branch, pending, seen)?;
+                if let Some(else_branch) = else_branch {
+                    self.collect_compound_literals_from_expr(else_branch, pending, seen)?;
+                }
+            }
+            AstNode::WhileLoop { condition, body } => {
+                self.collect_compound_literals_from_expr(condition, pending, seen)?;
+                self.collect_compound_literals_from_expr(body, pending, seen)?;
+            }
+            AstNode::DoWhileLoop { body, condition } => {
+                self.collect_compound_literals_from_expr(body, pending, seen)?;
+                self.collect_compound_literals_from_expr(condition, pending, seen)?;
+            }
+            AstNode::ForLoop {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
+                if let Some(init) = init {
+                    self.collect_compound_literals_from_expr(init, pending, seen)?;
+                }
+                if let Some(condition) = condition {
+                    self.collect_compound_literals_from_expr(condition, pending, seen)?;
+                }
+                if let Some(increment) = increment {
+                    self.collect_compound_literals_from_expr(increment, pending, seen)?;
+                }
+                self.collect_compound_literals_from_expr(body, pending, seen)?;
+            }
+            AstNode::SwitchStatement { expr, body } => {
+                self.collect_compound_literals_from_expr(expr, pending, seen)?;
+                for stmt in body {
+                    self.collect_compound_literals_from_expr(stmt, pending, seen)?;
+                }
+            }
+            AstNode::VarDecl {
+                init: Some(init), ..
+            } => {
+                self.collect_compound_literals_from_expr(init, pending, seen)?;
+            }
+            _ => {}
+        }
+
         Ok(())
     }
 
@@ -4198,6 +4523,9 @@ impl CodeGenerator {
                 for field in fields {
                     self.collect_enum_constants(&field.value)?;
                 }
+            }
+            AstNode::CompoundLiteral { init, .. } => {
+                self.collect_enum_constants(init)?;
             }
             AstNode::MemberAccess { base, .. } => {
                 self.collect_enum_constants(base)?;
@@ -4589,6 +4917,7 @@ impl CodeGenerator {
             },
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::WideStringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Int))),
+            AstNode::CompoundLiteral { literal_type, .. } => self.resolve_type(literal_type),
             AstNode::Cast { target_type, .. } => self.resolve_type(target_type),
             AstNode::BuiltinTypesCompatible { .. } => Ok(Type::Int),
             AstNode::StmtExpr { result, .. } => self.expr_type(result),
@@ -4917,7 +5246,7 @@ impl CodeGenerator {
                     Type::Int | Type::UInt | Type::Enum(_) => {
                         self.emit(&format!("    .long {}", n));
                     }
-                    Type::Long | Type::ULong => {
+                    Type::Long | Type::ULong | Type::Pointer(_) | Type::FunctionPointer { .. } => {
                         self.emit(&format!("    .quad {}", n));
                     }
                     _ => {
@@ -4926,6 +5255,20 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
+            AstNode::AddressOf(inner) => match (var_type, inner.as_ref()) {
+                (Type::Pointer(_) | Type::FunctionPointer { .. }, AstNode::Variable(name)) => {
+                    self.emit(&format!("    .quad {}", name));
+                    Ok(())
+                }
+                (
+                    Type::Pointer(_) | Type::FunctionPointer { .. },
+                    AstNode::CompoundLiteral { name, .. },
+                ) => {
+                    self.emit(&format!("    .quad {}", name));
+                    Ok(())
+                }
+                _ => Err("Unsupported global address initializer".to_string()),
+            },
             AstNode::StringLiteral(s) => {
                 // For string literals, emit the label reference
                 let label = self.add_string_literal(s.clone());
@@ -4949,23 +5292,139 @@ impl CodeGenerator {
                 }
             }
             AstNode::StructInit(values) => match var_type {
-                Type::Struct(struct_name) => {
-                    let size = self.type_size(var_type)? as usize;
-                    let mut buffer = vec![0u8; size];
-                    self.apply_struct_init_to_buffer(struct_name, values, &mut buffer, 0)?;
-                    self.emit_bytes(&buffer);
-                    Ok(())
-                }
-                Type::Union(union_name) => {
-                    let size = self.type_size(var_type)? as usize;
-                    let mut buffer = vec![0u8; size];
-                    self.apply_union_init_to_buffer(union_name, values, &mut buffer, 0)?;
-                    self.emit_bytes(&buffer);
-                    Ok(())
-                }
+                Type::Struct(struct_name) => self.emit_global_struct_init(struct_name, values),
+                Type::Union(union_name) => self.emit_global_union_init(union_name, values),
                 _ => Err("Struct initializer for non-struct type".to_string()),
             },
             _ => Err(format!("Unsupported global initializer: {:?}", init)),
+        }
+    }
+
+    fn emit_global_struct_init(
+        &mut self,
+        struct_name: &str,
+        init_fields: &[StructInitField],
+    ) -> Result<(), String> {
+        let layout = self
+            .struct_layouts
+            .get(struct_name)
+            .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?
+            .clone();
+
+        if layout.fields.iter().any(|field| field.bit_width.is_some()) {
+            let size = layout.size as usize;
+            let mut buffer = vec![0u8; size];
+            self.apply_struct_init_to_buffer(struct_name, init_fields, &mut buffer, 0)?;
+            self.emit_bytes(&buffer);
+            return Ok(());
+        }
+
+        let ordered_fields = layout.fields.clone();
+        let mut positional_index = 0;
+        let mut init_by_offset: HashMap<i32, &AstNode> = HashMap::new();
+
+        for init_field in init_fields {
+            let field_info = if let Some(ref field_name) = init_field.field_name {
+                layout.fields_by_name.get(field_name).ok_or_else(|| {
+                    format!("Unknown field '{}' in struct '{}'", field_name, struct_name)
+                })?
+            } else {
+                if positional_index >= ordered_fields.len() {
+                    return Err(format!(
+                        "Too many initializers for struct '{}' (expected {} fields)",
+                        struct_name,
+                        ordered_fields.len()
+                    ));
+                }
+                let field = &ordered_fields[positional_index];
+                positional_index += 1;
+                field
+            };
+
+            init_by_offset.insert(field_info.offset, &init_field.value);
+        }
+
+        let mut current_offset = 0usize;
+        for field in &ordered_fields {
+            let field_offset = field.offset as usize;
+            if field_offset > current_offset {
+                self.emit(&format!(
+                    "    .zero {}",
+                    field_offset.saturating_sub(current_offset)
+                ));
+            }
+
+            if let Some(value) = init_by_offset.get(&field.offset) {
+                self.emit_global_initializer(&field.field_type, value)?;
+            } else {
+                self.emit_zero_bytes(self.type_size(&field.field_type)? as usize);
+            }
+
+            current_offset = field_offset + self.type_size(&field.field_type)? as usize;
+        }
+
+        if current_offset < layout.size as usize {
+            self.emit(&format!(
+                "    .zero {}",
+                (layout.size as usize).saturating_sub(current_offset)
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn emit_global_union_init(
+        &mut self,
+        union_name: &str,
+        init_fields: &[StructInitField],
+    ) -> Result<(), String> {
+        let layout = self
+            .union_layouts
+            .get(union_name)
+            .ok_or_else(|| format!("Unknown union type: {}", union_name))?
+            .clone();
+
+        if layout.fields.iter().any(|field| field.bit_width.is_some()) {
+            let size = layout.size as usize;
+            let mut buffer = vec![0u8; size];
+            self.apply_union_init_to_buffer(union_name, init_fields, &mut buffer, 0)?;
+            self.emit_bytes(&buffer);
+            return Ok(());
+        }
+
+        if init_fields.is_empty() {
+            self.emit_zero_bytes(layout.size as usize);
+            return Ok(());
+        }
+
+        let init_field = &init_fields[0];
+        let field_info = if let Some(ref field_name) = init_field.field_name {
+            layout.fields_by_name.get(field_name).ok_or_else(|| {
+                format!("Unknown field '{}' in union '{}'", field_name, union_name)
+            })?
+        } else {
+            layout
+                .fields
+                .first()
+                .ok_or_else(|| format!("Union '{}' has no fields", union_name))?
+        };
+
+        self.emit_global_initializer(&field_info.field_type, &init_field.value)?;
+
+        let field_size = self.type_size(&field_info.field_type)? as usize;
+        if field_size < layout.size as usize {
+            self.emit(&format!(
+                "    .zero {}",
+                (layout.size as usize).saturating_sub(field_size)
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn emit_zero_bytes(&mut self, size: usize) {
+        if size > 0 {
+            self.emit(&format!("    .zero {}", size));
         }
     }
 

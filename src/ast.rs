@@ -100,6 +100,12 @@ pub enum AstNode {
     },
     ArrayInit(Vec<AstNode>),
     StructInit(Vec<StructInitField>),
+    CompoundLiteral {
+        name: String,
+        literal_type: Type,
+        init: Box<AstNode>,
+        is_global: bool,
+    },
     MemberAccess {
         base: Box<AstNode>,
         member: String,
@@ -323,6 +329,7 @@ impl fmt::Display for AstNode {
             AstNode::ArrayIndex { .. } => write!(f, "ArrayIndex"),
             AstNode::ArrayInit(_) => write!(f, "ArrayInit"),
             AstNode::StructInit(_) => write!(f, "StructInit"),
+            AstNode::CompoundLiteral { name, .. } => write!(f, "CompoundLiteral({})", name),
             AstNode::MemberAccess { member, .. } => write!(f, "MemberAccess({})", member),
             AstNode::SizeOfType(_) => write!(f, "SizeOfType"),
             AstNode::SizeOfExpr(_) => write!(f, "SizeOfExpr"),
