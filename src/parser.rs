@@ -5,9 +5,9 @@ use std::collections::HashMap;
 pub struct Parser {
     tokens: Vec<LocatedToken>,
     position: usize,
-    type_aliases: std::collections::HashMap<String, Type>,
-    struct_defs: std::collections::HashMap<String, AggregateDef>,
-    union_defs: std::collections::HashMap<String, AggregateDef>,
+    type_aliases: HashMap<String, Type>,
+    struct_defs: HashMap<String, AggregateDef>,
+    union_defs: HashMap<String, AggregateDef>,
     enum_constants: HashMap<String, i64>,
     anon_counter: usize,
 }
@@ -33,9 +33,9 @@ impl Parser {
         Parser {
             tokens,
             position: 0,
-            type_aliases: std::collections::HashMap::new(),
-            struct_defs: std::collections::HashMap::new(),
-            union_defs: std::collections::HashMap::new(),
+            type_aliases: HashMap::new(),
+            struct_defs: HashMap::new(),
+            union_defs: HashMap::new(),
             enum_constants: HashMap::new(),
             anon_counter: 0,
         }
@@ -49,6 +49,14 @@ impl Parser {
     /// Get the current location
     fn current_location(&self) -> SourceLocation {
         self.tokens[self.position].location
+    }
+
+    fn error_at(&self, location: SourceLocation, message: impl Into<String>) -> String {
+        format!("{} at {}", message.into(), location)
+    }
+
+    fn error(&self, message: impl Into<String>) -> String {
+        self.error_at(self.current_location(), message)
     }
 
     pub fn parse(&mut self) -> Result<AstNode, String> {
@@ -188,10 +196,10 @@ impl Parser {
                     base_type, var_type, name, storage, alignment,
                 )
             }
-            _ => Err(format!(
+            _ => Err(self.error(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
                 self.current_token()
-            )),
+            ))),
         }
     }
 
@@ -254,14 +262,14 @@ impl Parser {
             let name = match self.current_token() {
                 Token::Identifier(s) => s.clone(),
                 _ => {
-                    return Err(format!(
+                    return Err(self.error(format!(
                         "Expected parameter name, got {:?}",
                         self.current_token()
-                    ));
+                    )));
                 }
             };
             if names.iter().any(|existing| existing == &name) {
-                return Err(format!("Duplicate parameter name '{}'", name));
+                return Err(self.error(format!("Duplicate parameter name '{}'", name)));
             }
             self.advance();
             names.push(name);
@@ -293,13 +301,13 @@ impl Parser {
             let (decl_type, name) = self.parse_declarator(base_type)?;
 
             if !param_names.iter().any(|param| param == &name) {
-                return Err(format!(
+                return Err(self.error(format!(
                     "K&R parameter declaration for unknown name '{}'",
                     name
-                ));
+                )));
             }
             if decls.contains_key(&name) {
-                return Err(format!("Duplicate K&R parameter declaration '{}'", name));
+                return Err(self.error(format!("Duplicate K&R parameter declaration '{}'", name)));
             }
 
             self.expect(Token::Semicolon)?;
@@ -325,10 +333,10 @@ impl Parser {
         }
 
         if let Some((extra, _)) = decls.into_iter().next() {
-            return Err(format!(
+            return Err(self.error(format!(
                 "K&R declaration provided for extra parameter '{}'",
                 extra
-            ));
+            )));
         }
 
         Ok(params)
@@ -588,10 +596,10 @@ impl Parser {
                 } else if let Some(name) = name {
                     Type::Struct(name)
                 } else {
-                    return Err(format!(
+                    return Err(self.error(format!(
                         "Expected struct name or {{, got {:?}",
                         self.current_token()
-                    ));
+                    )));
                 }
             }
             Token::Union => {
@@ -635,10 +643,10 @@ impl Parser {
                 } else if let Some(name) = name {
                     Type::Union(name)
                 } else {
-                    return Err(format!(
+                    return Err(self.error(format!(
                         "Expected union name or {{, got {:?}",
                         self.current_token()
-                    ));
+                    )));
                 }
             }
             Token::Enum => {
@@ -660,10 +668,10 @@ impl Parser {
                     let name = match self.current_token() {
                         Token::Identifier(s) => s.clone(),
                         _ => {
-                            return Err(format!(
+                            return Err(self.error(format!(
                                 "Expected enum name, got {:?}",
                                 self.current_token()
-                            ));
+                            )));
                         }
                     };
                     self.advance();
@@ -676,10 +684,10 @@ impl Parser {
                     self.advance();
                     aliased_type
                 } else {
-                    return Err(format!("Unknown type: {}", name));
+                    return Err(self.error(format!("Unknown type: {}", name)));
                 }
             }
-            _ => return Err(format!("Expected type, got {:?}", self.current_token())),
+            _ => return Err(self.error(format!("Expected type, got {:?}", self.current_token()))),
         };
 
         while self.current_token() == &Token::Star {
@@ -735,10 +743,10 @@ impl Parser {
                     let name = match self.current_token() {
                         Token::Identifier(name) => name.clone(),
                         _ => {
-                            return Err(format!(
+                            return Err(self.error(format!(
                                 "Expected attribute name, got {:?}",
                                 self.current_token()
-                            ));
+                            )));
                         }
                     };
                     self.advance();
@@ -759,7 +767,7 @@ impl Parser {
                             }
                         }
                         _ => {
-                            return Err(format!("Unsupported __attribute__ '{}'", name));
+                            return Err(self.error(format!("Unsupported __attribute__ '{}'", name)));
                         }
                     }
 
@@ -818,8 +826,10 @@ impl Parser {
                             Some(w)
                         }
                         _ => {
-                            return Err("Bit-field width must be a non-negative integer literal"
-                                .to_string());
+                            return Err(self.error(
+                                "Bit-field width must be a non-negative integer literal"
+                                    .to_string(),
+                            ));
                         }
                     }
                 } else {
@@ -827,7 +837,7 @@ impl Parser {
                 };
 
                 if anonymous_bitfield && bit_width.is_none() {
-                    return Err("Unnamed bit-field must have a width".to_string());
+                    return Err(self.error("Unnamed bit-field must have a width".to_string()));
                 }
 
                 fields.push(StructField {
@@ -871,15 +881,17 @@ impl Parser {
                 let name = match self.current_token() {
                     Token::Identifier(s) => s.clone(),
                     _ => {
-                        return Err(
-                            "Expected identifier in function pointer declarator".to_string()
-                        );
+                        return Err(self.error(
+                            "Expected identifier in function pointer declarator".to_string(),
+                        ));
                     }
                 };
                 self.advance();
                 self.expect(Token::CloseParen)?;
                 if self.current_token() != &Token::OpenParen {
-                    return Err("Expected '(' after function pointer declarator".to_string());
+                    return Err(
+                        self.error("Expected '(' after function pointer declarator".to_string())
+                    );
                 }
                 self.advance();
                 let (param_types, is_variadic) = self.parse_param_type_list()?;
@@ -904,11 +916,10 @@ impl Parser {
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
             _ => {
-                return Err(format!(
-                    "Expected identifier, got {:?} at {}",
-                    self.current_token(),
-                    self.current_location()
-                ));
+                return Err(self.error(format!(
+                    "Expected identifier, got {:?}",
+                    self.current_token()
+                )));
             }
         };
         self.advance();
@@ -944,15 +955,17 @@ impl Parser {
                     }
                     Token::CloseParen => None,
                     _ => {
-                        return Err(
+                        return Err(self.error(
                             "Expected parameter name or ')' in function pointer declarator"
                                 .to_string(),
-                        );
+                        ));
                     }
                 };
                 self.expect(Token::CloseParen)?;
                 if self.current_token() != &Token::OpenParen {
-                    return Err("Expected '(' after function pointer declarator".to_string());
+                    return Err(
+                        self.error("Expected '(' after function pointer declarator".to_string())
+                    );
                 }
                 self.advance();
                 let (param_types, is_variadic) = self.parse_param_type_list()?;
@@ -1378,7 +1391,9 @@ impl Parser {
             let decl = self.parse_var_decl()?;
             Some(Box::new(decl))
         } else {
-            return Err("For loop init must be a variable declaration or empty".to_string());
+            return Err(
+                self.error("For loop init must be a variable declaration or empty".to_string())
+            );
         };
 
         let condition = if self.current_token() == &Token::Semicolon {
@@ -1440,10 +1455,10 @@ impl Parser {
         let label = match self.current_token() {
             Token::Identifier(s) => s.clone(),
             _ => {
-                return Err(format!(
+                return Err(self.error(format!(
                     "Expected label name after goto, got {:?}",
                     self.current_token()
-                ));
+                )));
             }
         };
         self.advance();
@@ -1475,10 +1490,10 @@ impl Parser {
         let value = match self.current_token() {
             Token::IntLiteral(n, _) => *n,
             _ => {
-                return Err(format!(
+                return Err(self.error(format!(
                     "Expected integer literal after case, got {:?}",
                     self.current_token()
-                ));
+                )));
             }
         };
         self.advance();
@@ -1514,10 +1529,10 @@ impl Parser {
             self.advance();
         }
         if !saw_literal {
-            return Err(format!(
+            return Err(self.error(format!(
                 "Expected string literal in asm statement, got {:?}",
                 self.current_token()
-            ));
+            )));
         }
 
         self.expect(Token::CloseParen)?;
@@ -2033,8 +2048,9 @@ impl Parser {
                     self.expect(Token::CloseParen)?;
 
                     // Statement expressions must have a result expression
-                    let result =
-                        last_expr.ok_or("Statement expression must have a result expression")?;
+                    let result = last_expr.ok_or_else(|| {
+                        self.error("Statement expression must have a result expression".to_string())
+                    })?;
                     AstNode::StmtExpr {
                         stmts,
                         result: Box::new(result),
@@ -2047,10 +2063,10 @@ impl Parser {
                 }
             }
             _ => {
-                return Err(format!(
+                return Err(self.error(format!(
                     "Expected expression, got {:?}",
                     self.current_token()
-                ));
+                )));
             }
         };
 
@@ -2086,10 +2102,10 @@ impl Parser {
                     let member = match self.current_token() {
                         Token::Identifier(s) => s.clone(),
                         _ => {
-                            return Err(format!(
+                            return Err(self.error(format!(
                                 "Expected member name, got {:?}",
                                 self.current_token()
-                            ));
+                            )));
                         }
                     };
                     self.advance();
@@ -2147,12 +2163,11 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            Err(format!(
-                "Expected {:?}, got {:?} at {}",
+            Err(self.error(format!(
+                "Expected {:?}, got {:?}",
                 expected,
-                self.current_token(),
-                self.current_location()
-            ))
+                self.current_token()
+            )))
         }
     }
 
@@ -2172,9 +2187,9 @@ impl Parser {
                         len
                     }
                     _ => {
-                        return Err(
-                            "Array length must be a non-negative integer literal".to_string()
-                        );
+                        return Err(self.error(
+                            "Array length must be a non-negative integer literal".to_string(),
+                        ));
                     }
                 }
             };
@@ -2230,10 +2245,10 @@ impl Parser {
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
             _ => {
-                return Err(format!(
+                return Err(self.error(format!(
                     "Expected struct name, got {:?}",
                     self.current_token()
-                ));
+                )));
             }
         };
         self.advance();
@@ -2320,10 +2335,10 @@ impl Parser {
                         Some(field)
                     }
                     _ => {
-                        return Err(format!(
+                        return Err(self.error(format!(
                             "Expected field name after '.', got {:?}",
                             self.current_token()
-                        ));
+                        )));
                     }
                 }
             } else {
@@ -2360,10 +2375,10 @@ impl Parser {
         let name = match self.current_token() {
             Token::Identifier(s) => s.clone(),
             _ => {
-                return Err(format!(
+                return Err(self.error(format!(
                     "Expected union name, got {:?}",
                     self.current_token()
-                ));
+                )));
             }
         };
         self.advance();
@@ -2456,10 +2471,10 @@ impl Parser {
             let enumerator_name = match self.current_token() {
                 Token::Identifier(s) => s.clone(),
                 _ => {
-                    return Err(format!(
+                    return Err(self.error(format!(
                         "Expected enumerator name, got {:?}",
                         self.current_token()
-                    ));
+                    )));
                 }
             };
             self.advance();
@@ -2622,10 +2637,10 @@ impl Parser {
         let member = match self.current_token() {
             Token::Identifier(s) => s.clone(),
             _ => {
-                return Err(format!(
+                return Err(self.error(format!(
                     "Expected member name in offsetof, got {:?}",
                     self.current_token()
-                ));
+                )));
             }
         };
         self.advance();
@@ -2704,11 +2719,12 @@ impl Parser {
         match expr {
             AstNode::IntLiteral(value) => Ok(*value),
             AstNode::CharLiteral(value) => Ok(*value),
-            AstNode::Variable(name) => self
-                .enum_constants
-                .get(name)
-                .copied()
-                .ok_or_else(|| format!("Unknown identifier in constant expression: {}", name)),
+            AstNode::Variable(name) => self.enum_constants.get(name).copied().ok_or_else(|| {
+                self.error(format!(
+                    "Unknown identifier in constant expression: {}",
+                    name
+                ))
+            }),
             AstNode::UnaryOp { op, operand } => {
                 let value = self.eval_constant_expr(operand)?;
                 match op {
@@ -2727,14 +2743,14 @@ impl Parser {
                     BinOp::Multiply => Ok(left * right),
                     BinOp::Divide => {
                         if right == 0 {
-                            Err("Division by zero in constant expression".to_string())
+                            Err(self.error("Division by zero in constant expression".to_string()))
                         } else {
                             Ok(left / right)
                         }
                     }
                     BinOp::Modulo => {
                         if right == 0 {
-                            Err("Modulo by zero in constant expression".to_string())
+                            Err(self.error("Modulo by zero in constant expression".to_string()))
                         } else {
                             Ok(left % right)
                         }
@@ -2744,20 +2760,20 @@ impl Parser {
                     BinOp::BitXor => Ok(left ^ right),
                     BinOp::ShiftLeft => {
                         if right < 0 {
-                            Err("Negative shift in constant expression".to_string())
+                            Err(self.error("Negative shift in constant expression".to_string()))
                         } else {
                             let shift = u32::try_from(right).map_err(|_| {
-                                "Shift too large in constant expression".to_string()
+                                self.error("Shift too large in constant expression".to_string())
                             })?;
                             Ok(left << shift)
                         }
                     }
                     BinOp::ShiftRight => {
                         if right < 0 {
-                            Err("Negative shift in constant expression".to_string())
+                            Err(self.error("Negative shift in constant expression".to_string()))
                         } else {
                             let shift = u32::try_from(right).map_err(|_| {
-                                "Shift too large in constant expression".to_string()
+                                self.error("Shift too large in constant expression".to_string())
                             })?;
                             Ok(left >> shift)
                         }
@@ -2785,7 +2801,7 @@ impl Parser {
                 }
             }
             AstNode::Cast { expr, .. } => self.eval_constant_expr(expr),
-            _ => Err("Unsupported constant expression".to_string()),
+            _ => Err(self.error("Unsupported constant expression".to_string())),
         }
     }
 
