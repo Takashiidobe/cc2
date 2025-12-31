@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  StructDef(__anon_struct_2)\n  StructDef(__anon_struct_0)\n  StructDef(__anon_struct_1)\n  Function(assert)\n  Function(printf)\n  Function(sprintf)\n  Function(vsprintf)\n  Function(strcmp)\n  Function(strncmp)\n  Function(memcmp)\n  Function(exit)\n  Function(strlen)\n  Function(memcpy)\n  Function(memset)\n  Function(assert)\n  VarDecl(g1)\n  VarDecl(g2)\n  VarDecl(g3)\n  VarDecl(g4)\n  VarDecl(g5)\n  VarDecl(g6)\n  Function(main)\n\n"
-stderr: ""
-status: 0

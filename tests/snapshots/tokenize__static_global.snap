@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "static at 2:1\nint at 2:8\nIdentifier(internal_var) at 2:12\n= at 2:25\nIntLiteral(100, None) at 2:27\n; at 2:30\nint at 4:1\nIdentifier(main) at 4:5\n( at 4:9\n) at 4:10\n{ at 4:12\nreturn at 5:5\nIdentifier(internal_var) at 5:12\n; at 5:24\n} at 6:1\nEOF at 7:1\n"
-stderr: ""
-status: 0

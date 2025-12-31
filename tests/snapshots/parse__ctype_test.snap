@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  Function(isalnum)\n  Function(isalpha)\n  Function(iscntrl)\n  Function(isdigit)\n  Function(isgraph)\n  Function(islower)\n  Function(isprint)\n  Function(ispunct)\n  Function(isspace)\n  Function(isupper)\n  Function(isxdigit)\n  Function(tolower)\n  Function(toupper)\n  Function(main)\n\n"
-stderr: ""
-status: 0

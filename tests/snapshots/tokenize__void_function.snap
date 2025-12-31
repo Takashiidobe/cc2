@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "int at 1:1\nIdentifier(counter) at 1:5\n; at 1:12\nvoid at 3:1\nIdentifier(increment_counter) at 3:6\n( at 3:23\n) at 3:24\n{ at 3:26\nIdentifier(counter) at 4:5\n= at 4:13\nIdentifier(counter) at 4:15\n+ at 4:23\nIntLiteral(1, None) at 4:25\n; at 4:26\n} at 5:1\nint at 7:1\nIdentifier(main) at 7:5\n( at 7:9\n) at 7:10\n{ at 7:12\nIdentifier(counter) at 8:5\n= at 8:13\nIntLiteral(0, None) at 8:15\n; at 8:16\nIdentifier(increment_counter) at 9:5\n( at 9:22\n) at 9:23\n; at 9:24\nIdentifier(increment_counter) at 10:5\n( at 10:22\n) at 10:23\n; at 10:24\nIdentifier(increment_counter) at 11:5\n( at 11:22\n) at 11:23\n; at 11:24\nreturn at 12:5\nIdentifier(counter) at 12:12\n; at 12:19\n} at 13:1\nEOF at 14:1\n"
-stderr: ""
-status: 0

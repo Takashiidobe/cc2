@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "struct at 3:1\nIdentifier(Point) at 3:8\n{ at 3:14\nint at 4:5\nIdentifier(x) at 4:9\n; at 4:10\nint at 5:5\nIdentifier(y) at 5:9\n; at 5:10\nint at 6:5\nIdentifier(z) at 6:9\n; at 6:10\n} at 7:1\n; at 7:2\nint at 9:1\nIdentifier(main) at 9:5\n( at 9:9\n) at 9:10\n{ at 9:12\nstruct at 11:5\nIdentifier(Point) at 11:12\nIdentifier(p) at 11:18\n= at 11:20\n{ at 11:22\n. at 11:23\nIdentifier(z) at 11:24\n= at 11:26\nIntLiteral(30, None) at 11:28\n, at 11:30\n. at 11:32\nIdentifier(x) at 11:33\n= at 11:35\nIntLiteral(10, None) at 11:37\n, at 11:39\n. at 11:41\nIdentifier(y) at 11:42\n= at 11:44\nIntLiteral(20, None) at 11:46\n} at 11:48\n; at 11:49\nreturn at 12:5\nIdentifier(p) at 12:12\n. at 12:13\nIdentifier(x) at 12:14\n+ at 12:16\nIdentifier(p) at 12:18\n. at 12:19\nIdentifier(y) at 12:20\n+ at 12:22\nIdentifier(p) at 12:24\n. at 12:25\nIdentifier(z) at 12:26\n; at 12:27\n} at 13:1\nEOF at 14:1\n"
-stderr: ""
-status: 0

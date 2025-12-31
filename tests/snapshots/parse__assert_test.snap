@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  Function(__assert_fail)\n  Function(__assert_fail)\n  Function(main)\n\n"
-stderr: ""
-status: 0

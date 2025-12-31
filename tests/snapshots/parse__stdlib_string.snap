@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  Function(printf)\n  Function(strlen)\n  Function(strcpy)\n  Function(strcmp)\n  Function(strcat)\n  Function(main)\n\n"
-stderr: ""
-status: 0

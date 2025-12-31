@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "int at 3:1\nIdentifier(main) at 3:5\n( at 3:9\n) at 3:10\n{ at 3:12\nint at 5:5\nIdentifier(line1) at 5:9\n= at 5:15\nIntLiteral(5, None) at 5:17\n; at 5:18\nint at 6:5\nIdentifier(line2) at 6:9\n= at 6:15\nIntLiteral(6, None) at 6:17\n; at 6:18\nint at 7:5\nIdentifier(line3) at 7:9\n= at 7:15\nIntLiteral(7, None) at 7:17\n; at 7:18\nint at 10:5\nIdentifier(stdc) at 10:9\n= at 10:14\nIntLiteral(1, None) at 10:16\n; at 10:17\nint at 13:5\nIdentifier(stdc_hosted) at 13:9\n= at 13:21\nIntLiteral(1, None) at 13:23\n; at 13:24\nif at 16:5\n( at 16:8\nIdentifier(line1) at 16:9\n!= at 16:15\nIntLiteral(5, None) at 16:18\n|| at 16:20\nIdentifier(line2) at 16:23\n!= at 16:29\nIntLiteral(6, None) at 16:32\n|| at 16:34\nIdentifier(line3) at 16:37\n!= at 16:43\nIntLiteral(7, None) at 16:46\n) at 16:47\n{ at 16:49\nreturn at 17:9\nIntLiteral(1, None) at 17:16\n; at 17:17\n} at 18:5\nif at 21:5\n( at 21:8\nIdentifier(stdc) at 21:9\n!= at 21:14\nIntLiteral(1, None) at 21:17\n|| at 21:19\nIdentifier(stdc_hosted) at 21:22\n!= at 21:34\nIntLiteral(1, None) at 21:37\n) at 21:38\n{ at 21:40\nreturn at 22:9\nIntLiteral(2, None) at 22:16\n; at 22:17\n} at 23:5\nreturn at 28:5\nIntLiteral(0, None) at 28:12\n; at 28:13\n} at 29:1\nEOF at 30:1\n"
-stderr: ""
-status: 0

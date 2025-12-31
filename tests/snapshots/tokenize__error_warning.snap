@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "int at 8:1\nIdentifier(main) at 8:5\n( at 8:9\n) at 8:10\n{ at 8:12\nreturn at 9:5\nIntLiteral(0, None) at 9:12\n; at 9:13\n} at 10:1\nEOF at 11:1\n"
-stderr: "warning: #warning at line 7: Feature is enabled\n"
-status: 0

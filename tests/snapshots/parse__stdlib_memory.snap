@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  Function(printf)\n  Function(malloc)\n  Function(free)\n  Function(calloc)\n  Function(memcpy)\n  Function(memset)\n  Function(main)\n\n"
-stderr: ""
-status: 0

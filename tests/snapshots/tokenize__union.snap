@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "union at 1:1\nIdentifier(Data) at 1:7\n{ at 1:12\nint at 2:5\nIdentifier(i) at 2:9\n; at 2:10\nchar at 3:5\nIdentifier(c) at 3:10\n; at 3:11\nlong at 4:5\nIdentifier(l) at 4:10\n; at 4:11\n} at 5:1\n; at 5:2\nint at 7:1\nIdentifier(main) at 7:5\n( at 7:9\n) at 7:10\n{ at 7:12\nunion at 8:5\nIdentifier(Data) at 8:11\nIdentifier(d) at 8:16\n; at 8:17\nIdentifier(d) at 9:5\n. at 9:6\nIdentifier(i) at 9:7\n= at 9:9\nIntLiteral(42, None) at 9:11\n; at 9:13\nint at 10:5\nIdentifier(x) at 10:9\n= at 10:11\nIdentifier(d) at 10:13\n. at 10:14\nIdentifier(i) at 10:15\n; at 10:16\nIdentifier(d) at 11:5\n. at 11:6\nIdentifier(c) at 11:7\n= at 11:9\nIntLiteral(65, None) at 11:11\n; at 11:13\nint at 12:5\nIdentifier(y) at 12:9\n= at 12:11\nIdentifier(d) at 12:13\n. at 12:14\nIdentifier(c) at 12:15\n; at 12:16\nIdentifier(d) at 13:5\n. at 13:6\nIdentifier(l) at 13:7\n= at 13:9\nIntLiteral(100, None) at 13:11\n; at 13:14\nint at 14:5\nIdentifier(z) at 14:9\n= at 14:11\nIdentifier(d) at 14:13\n. at 14:14\nIdentifier(l) at 14:15\n; at 14:16\nreturn at 15:5\nIdentifier(x) at 15:12\n+ at 15:14\nIdentifier(y) at 15:16\n+ at 15:18\nIdentifier(z) at 15:20\n; at 15:21\n} at 16:1\nEOF at 17:1\n"
-stderr: ""
-status: 0

@@ -19,14 +19,3 @@ tempfile = "3.23.0"
 name = "codegen"
 harness = false
 
-[[test]]
-name = "tokenize"
-harness = false
-
-[[test]]
-name = "parse"
-harness = false
-
-[[test]]
-name = "preprocessor"
-harness = false

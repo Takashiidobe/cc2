@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  Function(add_many)\n  Function(add_10_params)\n  Function(main)\n\n"
-stderr: ""
-status: 0

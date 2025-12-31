@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "int at 2:1\nIdentifier(global_value) at 2:5\n; at 2:17\nextern at 5:1\nint at 5:8\nIdentifier(global_value) at 5:12\n; at 5:24\nint at 7:1\nIdentifier(main) at 7:5\n( at 7:9\n) at 7:10\n{ at 7:12\nIdentifier(global_value) at 8:5\n= at 8:18\nIntLiteral(55, None) at 8:20\n; at 8:22\nreturn at 9:5\nIdentifier(global_value) at 9:12\n; at 9:24\n} at 10:1\nEOF at 11:1\n"
-stderr: ""
-status: 0

@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  VarDecl(global_value)\n  VarDecl(global_value)\n  Function(main)\n\n"
-stderr: ""
-status: 0

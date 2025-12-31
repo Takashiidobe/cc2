@@ -1,7 +1,0 @@
----
-source: tests/parse.rs
-expression: "&result"
----
-stdout: "Program\n  TypedefDef(size_t)\n  TypedefDef(FILE)\n  VarDecl(stdin)\n  VarDecl(stdout)\n  VarDecl(stderr)\n  Function(fopen)\n  Function(freopen)\n  Function(fclose)\n  Function(fflush)\n  Function(setbuf)\n  Function(setvbuf)\n  Function(fprintf)\n  Function(printf)\n  Function(sprintf)\n  Function(fscanf)\n  Function(scanf)\n  Function(sscanf)\n  Function(fgetc)\n  Function(fgets)\n  Function(fputc)\n  Function(fputs)\n  Function(getc)\n  Function(getchar)\n  Function(gets)\n  Function(putc)\n  Function(putchar)\n  Function(puts)\n  Function(ungetc)\n  Function(fread)\n  Function(fwrite)\n  Function(fseek)\n  Function(ftell)\n  Function(rewind)\n  Function(clearerr)\n  Function(feof)\n  Function(ferror)\n  Function(perror)\n  Function(remove)\n  Function(rename)\n  Function(tmpfile)\n  Function(tmpnam)\n  Function(main)\n\n"
-stderr: ""
-status: 0

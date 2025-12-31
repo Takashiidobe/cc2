@@ -1,7 +1,0 @@
----
-source: tests/tokenize.rs
-expression: "&result"
----
-stdout: "int at 3:1\nIdentifier(main) at 3:5\n( at 3:9\n) at 3:10\n{ at 3:12\nchar at 4:5\n* at 4:10\nIdentifier(s1) at 4:11\n= at 4:14\nStringLiteral(\"hello\nworld\") at 4:16\n; at 4:30\nchar at 5:5\n* at 5:10\nIdentifier(s2) at 5:11\n= at 5:14\nStringLiteral(\"tab\there\") at 5:16\n; at 5:27\nreturn at 10:5\nIdentifier(s1) at 10:12\n[ at 10:14\nIntLiteral(5, None) at 10:15\n] at 10:16\n+ at 10:18\nIdentifier(s2) at 10:20\n[ at 10:22\nIntLiteral(3, None) at 10:23\n] at 10:24\n; at 10:25\n} at 11:1\nEOF at 12:1\n"
-stderr: ""
-status: 0

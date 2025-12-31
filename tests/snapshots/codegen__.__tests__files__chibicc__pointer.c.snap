@@ -1,0 +1,6 @@
+---
+source: tests/codegen.rs
+expression: "&mine"
+---
+stdout: "({ int x=3; *&x; }) => 3\n({ int x=3; int *y=&x; int **z=&y; **z; }) => 3\n({ int x=3; int y=5; *(&x-1); }) => 5\n({ int x=3; int y=5; *(&y+1); }) => 3\n({ int x=3; int y=5; *(&x-1); }) => 5\n({ int x=3; int *y=&x; *y=5; x; }) => 5\n({ int x=3; int y=5; *(&x-1)=7; y; }) => 7\n({ int x=3; int y=5; *(&y+1)=7; x; }) => 7\n({ int x=3; (&x+2)-&x+3; }) => 5\n({ int x, y; x=3; y=5; x+y; }) => 8\n({ int x[2]; int *y=&x; *y=3; *x; }) => 3\nOK\n"
+status: 0
