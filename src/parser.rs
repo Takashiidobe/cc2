@@ -520,10 +520,12 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
+        let mut saw_qualifier = false;
         while matches!(
             self.current_token(),
             Token::Const | Token::Volatile | Token::Restrict
         ) {
+            saw_qualifier = true;
             self.advance();
         }
 
@@ -776,11 +778,20 @@ impl Parser {
                     return Err(self.error(format!("Unknown type: {}", name)));
                 }
             }
-            _ => return Err(self.error(format!("Expected type, got {:?}", self.current_token()))),
+            _ => {
+                if saw_qualifier {
+                    Type::Int
+                } else {
+                    return Err(
+                        self.error(format!("Expected type, got {:?}", self.current_token()))
+                    );
+                }
+            }
         };
 
         while self.current_token() == &Token::Star {
             self.advance();
+            self.skip_type_qualifiers();
             ty = Type::Pointer(Box::new(ty));
         }
 
