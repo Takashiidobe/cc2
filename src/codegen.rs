@@ -38,7 +38,8 @@ pub struct CodeGenerator {
 
 #[derive(Debug, Clone)]
 struct StructLayout {
-    fields: HashMap<String, StructFieldInfo>,
+    fields: Vec<StructFieldInfo>,
+    fields_by_name: HashMap<String, StructFieldInfo>,
     alignment: i32,
     size: i32,
 }
@@ -47,6 +48,9 @@ struct StructLayout {
 struct StructFieldInfo {
     field_type: Type,
     offset: i32,
+    bit_width: Option<u32>,
+    bit_offset: u32,
+    bit_unit_size: i32,
 }
 
 impl CodeGenerator {
@@ -130,8 +134,36 @@ impl CodeGenerator {
                 }
                 Ok(())
             }
-            AstNode::StructDef { .. } => Ok(()),
-            AstNode::UnionDef { .. } => Ok(()),
+            AstNode::StructDef {
+                name,
+                fields,
+                attributes,
+            } => {
+                let needs_register = self
+                    .struct_layouts
+                    .get(name)
+                    .map(|layout| layout.fields.is_empty())
+                    .unwrap_or(true);
+                if needs_register {
+                    self.register_struct_layout(name, fields, attributes)?;
+                }
+                Ok(())
+            }
+            AstNode::UnionDef {
+                name,
+                fields,
+                attributes,
+            } => {
+                let needs_register = self
+                    .union_layouts
+                    .get(name)
+                    .map(|layout| layout.fields.is_empty())
+                    .unwrap_or(true);
+                if needs_register {
+                    self.register_union_layout(name, fields, attributes)?;
+                }
+                Ok(())
+            }
             AstNode::TypedefDef { .. } => Ok(()),
             AstNode::EnumDef { .. } => Ok(()),
             AstNode::Function {
@@ -775,6 +807,25 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::Assignment { target, value } => {
+                if let AstNode::MemberAccess {
+                    base,
+                    member,
+                    through_pointer,
+                } = target.as_ref()
+                {
+                    let field_info =
+                        self.member_access_field_info(base, member, *through_pointer)?;
+                    if field_info.bit_width.is_some() {
+                        return self.generate_bitfield_assignment(
+                            base,
+                            member,
+                            *through_pointer,
+                            &field_info,
+                            value,
+                        );
+                    }
+                }
+
                 let target_type = self.expr_type(target)?;
                 let value_type = self.expr_type(value)?;
 
@@ -1816,6 +1867,26 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::PrefixIncrement(operand) => {
+                if let AstNode::MemberAccess {
+                    base,
+                    member,
+                    through_pointer,
+                } = operand.as_ref()
+                {
+                    let field_info =
+                        self.member_access_field_info(base, member, *through_pointer)?;
+                    if field_info.bit_width.is_some() {
+                        return self.generate_bitfield_incdec(
+                            base,
+                            member,
+                            *through_pointer,
+                            &field_info,
+                            1,
+                            false,
+                        );
+                    }
+                }
+
                 // Get address of operand
                 self.generate_lvalue(operand)?;
                 self.emit("    movq %rax, %rcx"); // %rcx = address
@@ -1853,6 +1924,26 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::PrefixDecrement(operand) => {
+                if let AstNode::MemberAccess {
+                    base,
+                    member,
+                    through_pointer,
+                } = operand.as_ref()
+                {
+                    let field_info =
+                        self.member_access_field_info(base, member, *through_pointer)?;
+                    if field_info.bit_width.is_some() {
+                        return self.generate_bitfield_incdec(
+                            base,
+                            member,
+                            *through_pointer,
+                            &field_info,
+                            -1,
+                            false,
+                        );
+                    }
+                }
+
                 // Get address of operand
                 self.generate_lvalue(operand)?;
                 self.emit("    movq %rax, %rcx"); // %rcx = address
@@ -1890,6 +1981,26 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::PostfixIncrement(operand) => {
+                if let AstNode::MemberAccess {
+                    base,
+                    member,
+                    through_pointer,
+                } = operand.as_ref()
+                {
+                    let field_info =
+                        self.member_access_field_info(base, member, *through_pointer)?;
+                    if field_info.bit_width.is_some() {
+                        return self.generate_bitfield_incdec(
+                            base,
+                            member,
+                            *through_pointer,
+                            &field_info,
+                            1,
+                            true,
+                        );
+                    }
+                }
+
                 // Get address of operand
                 self.generate_lvalue(operand)?;
                 self.emit("    movq %rax, %rcx"); // %rcx = address
@@ -1939,6 +2050,26 @@ impl CodeGenerator {
                 Ok(())
             }
             AstNode::PostfixDecrement(operand) => {
+                if let AstNode::MemberAccess {
+                    base,
+                    member,
+                    through_pointer,
+                } = operand.as_ref()
+                {
+                    let field_info =
+                        self.member_access_field_info(base, member, *through_pointer)?;
+                    if field_info.bit_width.is_some() {
+                        return self.generate_bitfield_incdec(
+                            base,
+                            member,
+                            *through_pointer,
+                            &field_info,
+                            -1,
+                            true,
+                        );
+                    }
+                }
+
                 // Get address of operand
                 self.generate_lvalue(operand)?;
                 self.emit("    movq %rax, %rcx"); // %rcx = address
@@ -2082,8 +2213,13 @@ impl CodeGenerator {
                 member,
                 through_pointer,
             } => {
-                let field_type = self.member_access_type(base, member, *through_pointer)?;
+                let field_info = self.member_access_field_info(base, member, *through_pointer)?;
                 self.generate_member_access_address(base, member, *through_pointer)?;
+                if field_info.bit_width.is_some() {
+                    self.emit_bitfield_load("%rax", &field_info)?;
+                    return Ok(());
+                }
+                let field_type = field_info.field_type.clone();
                 if matches!(field_type, Type::Int) {
                     self.emit("    movslq (%rax), %rax");
                 } else if matches!(field_type, Type::UInt) {
@@ -2154,7 +2290,7 @@ impl CodeGenerator {
 
                 // Find the member and get its offset
                 let field_info = layout
-                    .fields
+                    .fields_by_name
                     .get(member)
                     .ok_or_else(|| format!("Unknown member '{}' in struct/union", member))?;
 
@@ -2251,6 +2387,10 @@ impl CodeGenerator {
                 member,
                 through_pointer,
             } => {
+                let field_info = self.member_access_field_info(base, member, *through_pointer)?;
+                if field_info.bit_width.is_some() {
+                    return Err("Cannot take address of bit-field".to_string());
+                }
                 self.generate_member_access_address(base, member, *through_pointer)?;
                 Ok(())
             }
@@ -2305,7 +2445,7 @@ impl CodeGenerator {
             .or_else(|| self.union_layouts.get(&struct_or_union_name))
             .ok_or_else(|| format!("Unknown struct/union type: {}", struct_or_union_name))?;
 
-        let field = layout.fields.get(member).ok_or_else(|| {
+        let field = layout.fields_by_name.get(member).ok_or_else(|| {
             format!(
                 "Unknown field '{}' on struct/union {}",
                 member, struct_or_union_name
@@ -2317,6 +2457,177 @@ impl CodeGenerator {
         } else {
             self.emit(&format!("    leaq {}(%rbp), %rax", field.offset));
         }
+        Ok(())
+    }
+
+    fn emit_bitfield_load(
+        &mut self,
+        addr_reg: &str,
+        field: &StructFieldInfo,
+    ) -> Result<(), String> {
+        let width = field
+            .bit_width
+            .ok_or_else(|| "Expected bit-field metadata".to_string())?;
+        let unit_size = field.bit_unit_size;
+        if unit_size == 0 {
+            return Err("Bit-field has no storage unit".to_string());
+        }
+        let unit_bits = (unit_size as u32) * 8;
+        match unit_size {
+            1 => self.emit(&format!("    movzbq ({}), %rax", addr_reg)),
+            2 => self.emit(&format!("    movzwq ({}), %rax", addr_reg)),
+            4 => self.emit(&format!("    movl ({}), %eax", addr_reg)),
+            8 => self.emit(&format!("    movq ({}), %rax", addr_reg)),
+            _ => return Err(format!("Unsupported bit-field unit size: {}", unit_size)),
+        }
+        if field.bit_offset > 0 {
+            self.emit(&format!("    shrq ${}, %rax", field.bit_offset));
+        }
+        if width < unit_bits {
+            let mask = (1u64 << width) - 1;
+            if mask <= i32::MAX as u64 {
+                self.emit(&format!("    andq ${}, %rax", mask));
+            } else {
+                self.emit(&format!("    movabsq ${}, %r8", mask as i64));
+                self.emit("    andq %r8, %rax");
+            }
+        }
+        if self.is_signed_integer_type(&field.field_type) && width < 64 {
+            let shift = 64 - width;
+            if shift > 0 {
+                self.emit(&format!("    shlq ${}, %rax", shift));
+                self.emit(&format!("    sarq ${}, %rax", shift));
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_bitfield_store_from_rdx(
+        &mut self,
+        addr_reg: &str,
+        field: &StructFieldInfo,
+    ) -> Result<(), String> {
+        let width = field
+            .bit_width
+            .ok_or_else(|| "Expected bit-field metadata".to_string())?;
+        let unit_size = field.bit_unit_size;
+        if unit_size == 0 {
+            return Err("Bit-field has no storage unit".to_string());
+        }
+        let unit_bits = (unit_size as u32) * 8;
+        if width == 0 {
+            return Ok(());
+        }
+        if width > unit_bits {
+            return Err(format!("Bit-field width {} exceeds storage unit", width));
+        }
+
+        if width < 64 {
+            let mask = (1u64 << width) - 1;
+            if mask <= i32::MAX as u64 {
+                self.emit(&format!("    andq ${}, %rdx", mask));
+            } else {
+                self.emit(&format!("    movabsq ${}, %r8", mask as i64));
+                self.emit("    andq %r8, %rdx");
+            }
+        }
+
+        match unit_size {
+            1 => self.emit(&format!("    movzbq ({}), %rax", addr_reg)),
+            2 => self.emit(&format!("    movzwq ({}), %rax", addr_reg)),
+            4 => self.emit(&format!("    movl ({}), %eax", addr_reg)),
+            8 => self.emit(&format!("    movq ({}), %rax", addr_reg)),
+            _ => return Err(format!("Unsupported bit-field unit size: {}", unit_size)),
+        }
+
+        if width < 64 {
+            let mask = (1u64 << width) - 1;
+            let shifted_mask = mask << field.bit_offset;
+            let clear_mask = !shifted_mask;
+            self.emit(&format!("    movabsq ${}, %r8", clear_mask as i64));
+            self.emit("    andq %r8, %rax");
+            self.emit("    movq %rdx, %r9");
+            if field.bit_offset > 0 {
+                self.emit(&format!("    shlq ${}, %r9", field.bit_offset));
+            }
+            self.emit("    orq %r9, %rax");
+        } else {
+            self.emit("    movq %rdx, %rax");
+        }
+
+        match unit_size {
+            1 => self.emit(&format!("    movb %al, ({})", addr_reg)),
+            2 => self.emit(&format!("    movw %ax, ({})", addr_reg)),
+            4 => self.emit(&format!("    movl %eax, ({})", addr_reg)),
+            8 => self.emit(&format!("    movq %rax, ({})", addr_reg)),
+            _ => return Err(format!("Unsupported bit-field unit size: {}", unit_size)),
+        }
+
+        if self.is_signed_integer_type(&field.field_type) && width < 64 {
+            let shift = 64 - width;
+            if shift > 0 {
+                self.emit(&format!("    shlq ${}, %rdx", shift));
+                self.emit(&format!("    sarq ${}, %rdx", shift));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn generate_bitfield_assignment(
+        &mut self,
+        base: &AstNode,
+        member: &str,
+        through_pointer: bool,
+        field: &StructFieldInfo,
+        value: &AstNode,
+    ) -> Result<(), String> {
+        let value_type = self.expr_type(value)?;
+        self.generate_node(value)?;
+        self.convert_type(&value_type, &field.field_type)?;
+        self.emit("    pushq %rax");
+        self.stack_depth += 1;
+        self.generate_member_access_address(base, member, through_pointer)?;
+        self.emit("    movq %rax, %rcx");
+        self.emit_pop("%rdx");
+        self.emit_bitfield_store_from_rdx("%rcx", field)?;
+
+        self.emit("    movq %rdx, %rax");
+        self.coerce_rax_to_type(&field.field_type);
+        Ok(())
+    }
+
+    fn generate_bitfield_incdec(
+        &mut self,
+        base: &AstNode,
+        member: &str,
+        through_pointer: bool,
+        field: &StructFieldInfo,
+        delta: i64,
+        postfix: bool,
+    ) -> Result<(), String> {
+        self.generate_member_access_address(base, member, through_pointer)?;
+        self.emit("    movq %rax, %rcx");
+        self.emit_bitfield_load("%rcx", field)?;
+
+        if postfix {
+            self.emit("    movq %rax, %r10");
+        }
+
+        if delta >= 0 {
+            self.emit(&format!("    addq ${}, %rax", delta));
+        } else {
+            self.emit(&format!("    subq ${}, %rax", -delta));
+        }
+        self.emit("    movq %rax, %rdx");
+        self.emit_bitfield_store_from_rdx("%rcx", field)?;
+
+        if postfix {
+            self.emit("    movq %r10, %rax");
+        } else {
+            self.emit("    movq %rdx, %rax");
+        }
+        self.coerce_rax_to_type(&field.field_type);
         Ok(())
     }
 
@@ -2576,6 +2887,13 @@ impl CodeGenerator {
                 | Type::Short
                 | Type::Long
                 | Type::ULong
+        )
+    }
+
+    fn is_signed_integer_type(&self, ty: &Type) -> bool {
+        matches!(
+            ty,
+            Type::Char | Type::Short | Type::Int | Type::Long | Type::Enum(_)
         )
     }
 
@@ -3011,7 +3329,8 @@ impl CodeGenerator {
             self.struct_layouts.insert(
                 name.to_string(),
                 StructLayout {
-                    fields: HashMap::new(),
+                    fields: Vec::new(),
+                    fields_by_name: HashMap::new(),
                     size: 0,
                     alignment,
                 },
@@ -3022,7 +3341,15 @@ impl CodeGenerator {
         // This is a complete definition - calculate layout
         let mut offset = 0;
         let mut max_align = 1;
-        let mut field_map = HashMap::new();
+        let mut fields_by_name = HashMap::new();
+        let mut ordered_fields = Vec::new();
+
+        let mut bit_unit_size = 0;
+        let mut bit_unit_align = 1;
+        let mut bit_unit_start = 0;
+        let mut bit_offset = 0u32;
+        let mut in_bitfield = false;
+
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
             // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
@@ -3036,15 +3363,88 @@ impl CodeGenerator {
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
+
+            let is_anonymous = field.name.starts_with("__anon_bitfield_");
+            if let Some(bit_width) = field.bit_width {
+                let unit_bits = (field_size as u32) * 8;
+                if bit_width > unit_bits {
+                    return Err(format!(
+                        "Bit-field width {} exceeds type size for '{}'",
+                        bit_width, field.name
+                    ));
+                }
+                max_align = max_align.max(field_align);
+
+                if bit_width == 0 {
+                    if in_bitfield && bit_offset > 0 {
+                        offset = offset.max(bit_unit_start + bit_unit_size);
+                    }
+                    offset = align_to(offset, field_align);
+                    in_bitfield = false;
+                    bit_offset = 0;
+                    bit_unit_size = field_size;
+                    bit_unit_align = field_align;
+                    continue;
+                }
+
+                let start_new_unit =
+                    !in_bitfield || bit_unit_size != field_size || bit_unit_align != field_align;
+                if start_new_unit {
+                    if in_bitfield && bit_offset > 0 {
+                        offset = offset.max(bit_unit_start + bit_unit_size);
+                    }
+                    bit_unit_size = field_size;
+                    bit_unit_align = field_align;
+
+                    let mut unit_start = offset - (offset % bit_unit_size);
+                    let mut start_bit = ((offset - unit_start) * 8) as u32;
+                    if start_bit + bit_width > unit_bits {
+                        unit_start += bit_unit_size;
+                        start_bit = 0;
+                    }
+                    bit_unit_start = unit_start;
+                    bit_offset = start_bit;
+                    offset = offset.max(bit_unit_start + bit_unit_size);
+                } else if bit_offset + bit_width > unit_bits {
+                    bit_unit_start += bit_unit_size;
+                    bit_offset = 0;
+                    offset = offset.max(bit_unit_start + bit_unit_size);
+                }
+
+                if !is_anonymous {
+                    let info = StructFieldInfo {
+                        field_type: field.field_type.clone(),
+                        offset: bit_unit_start,
+                        bit_width: Some(bit_width),
+                        bit_offset,
+                        bit_unit_size,
+                    };
+                    ordered_fields.push(info.clone());
+                    fields_by_name.insert(field.name.clone(), info);
+                }
+
+                bit_offset += bit_width;
+                in_bitfield = true;
+                continue;
+            }
+
+            if in_bitfield && bit_offset > 0 {
+                offset = offset.max(bit_unit_start + bit_unit_size);
+                in_bitfield = false;
+                bit_offset = 0;
+            }
+
             offset = align_to(offset, field_align);
             max_align = max_align.max(field_align);
-            field_map.insert(
-                field.name.clone(),
-                StructFieldInfo {
-                    field_type: field.field_type.clone(),
-                    offset,
-                },
-            );
+            let info = StructFieldInfo {
+                field_type: field.field_type.clone(),
+                offset,
+                bit_width: None,
+                bit_offset: 0,
+                bit_unit_size: 0,
+            };
+            ordered_fields.push(info.clone());
+            fields_by_name.insert(field.name.clone(), info);
             offset += field_size;
         }
         if let Some(explicit) = attributes.alignment {
@@ -3055,7 +3455,8 @@ impl CodeGenerator {
         self.struct_layouts.insert(
             name.to_string(),
             StructLayout {
-                fields: field_map,
+                fields: ordered_fields,
+                fields_by_name,
                 alignment: max_align,
                 size,
             },
@@ -3094,7 +3495,8 @@ impl CodeGenerator {
             self.union_layouts.insert(
                 name.to_string(),
                 StructLayout {
-                    fields: HashMap::new(),
+                    fields: Vec::new(),
+                    fields_by_name: HashMap::new(),
                     size: 0,
                     alignment,
                 },
@@ -3105,7 +3507,8 @@ impl CodeGenerator {
         // This is a complete definition - calculate layout
         let mut max_size = 0;
         let mut max_align = 1;
-        let mut field_map = HashMap::new();
+        let mut fields_by_name = HashMap::new();
+        let mut ordered_fields = Vec::new();
         for field in fields {
             let field_size = self.type_size(&field.field_type)?;
             // Use explicit alignment from _Alignas if specified, otherwise use type's natural alignment
@@ -3119,16 +3522,35 @@ impl CodeGenerator {
             if field_size == 0 {
                 return Err(format!("Field '{}' has invalid size", field.name));
             }
+            if let Some(bit_width) = field.bit_width {
+                let unit_bits = (field_size as u32) * 8;
+                if bit_width > unit_bits {
+                    return Err(format!(
+                        "Bit-field width {} exceeds type size for '{}'",
+                        bit_width, field.name
+                    ));
+                }
+                if bit_width == 0 || field.name.starts_with("__anon_bitfield_") {
+                    continue;
+                }
+            }
             max_size = max_size.max(field_size);
             max_align = max_align.max(field_align);
             // All fields in a union are at offset 0
-            field_map.insert(
-                field.name.clone(),
-                StructFieldInfo {
-                    field_type: field.field_type.clone(),
-                    offset: 0,
-                },
-            );
+            let (bit_width, bit_unit_size) = if let Some(width) = field.bit_width {
+                (Some(width), field_size)
+            } else {
+                (None, 0)
+            };
+            let info = StructFieldInfo {
+                field_type: field.field_type.clone(),
+                offset: 0,
+                bit_width,
+                bit_offset: 0,
+                bit_unit_size,
+            };
+            ordered_fields.push(info.clone());
+            fields_by_name.insert(field.name.clone(), info);
         }
         if let Some(explicit) = attributes.alignment {
             max_align = max_align.max(explicit as i32);
@@ -3138,7 +3560,8 @@ impl CodeGenerator {
         self.union_layouts.insert(
             name.to_string(),
             StructLayout {
-                fields: field_map,
+                fields: ordered_fields,
+                fields_by_name,
                 alignment: max_align,
                 size,
             },
@@ -3340,8 +3763,7 @@ impl CodeGenerator {
             .clone(); // Clone to avoid borrow issues
 
         // Build ordered field list for positional initialization
-        let mut ordered_fields: Vec<StructFieldInfo> = layout.fields.values().cloned().collect();
-        ordered_fields.sort_by_key(|info| info.offset);
+        let ordered_fields = layout.fields.clone();
 
         let mut positional_index = 0;
 
@@ -3349,7 +3771,7 @@ impl CodeGenerator {
             // Determine which field to initialize
             let field_info = if let Some(ref field_name) = init_field.field_name {
                 // Designated initializer: look up by name
-                layout.fields.get(field_name).ok_or_else(|| {
+                layout.fields_by_name.get(field_name).ok_or_else(|| {
                     format!("Unknown field '{}' in struct '{}'", field_name, struct_name)
                 })?
             } else {
@@ -3367,6 +3789,16 @@ impl CodeGenerator {
             };
 
             let dest_offset = base_offset + field_info.offset;
+
+            if field_info.bit_width.is_some() {
+                let value_type = self.expr_type(&init_field.value)?;
+                self.generate_node(&init_field.value)?;
+                self.convert_type(&value_type, &field_info.field_type)?;
+                self.emit("    movq %rax, %rdx");
+                self.emit(&format!("    leaq {}(%rbp), %rcx", dest_offset));
+                self.emit_bitfield_store_from_rdx("%rcx", field_info)?;
+                continue;
+            }
 
             // Handle nested struct/union initialization
             match (&field_info.field_type, &init_field.value) {
@@ -3431,23 +3863,30 @@ impl CodeGenerator {
         // Determine which field to initialize
         let field_info = if let Some(ref field_name) = init_field.field_name {
             // Designated initializer: look up by name
-            layout.fields.get(field_name).ok_or_else(|| {
+            layout.fields_by_name.get(field_name).ok_or_else(|| {
                 format!("Unknown field '{}' in union '{}'", field_name, union_name)
             })?
         } else {
             // Positional initializer: use first field in declaration order
-            let mut ordered_fields: Vec<(&String, &StructFieldInfo)> =
-                layout.fields.iter().collect();
-            ordered_fields.sort_by_key(|(_, info)| info.offset);
-            if ordered_fields.is_empty() {
+            if layout.fields.is_empty() {
                 return Err(format!("Union '{}' has no fields", union_name));
             }
-            ordered_fields[0].1
+            &layout.fields[0]
         };
+
+        let dest_offset = base_offset; // All union fields start at offset 0
+        if field_info.bit_width.is_some() {
+            let value_type = self.expr_type(&init_field.value)?;
+            self.generate_node(&init_field.value)?;
+            self.convert_type(&value_type, &field_info.field_type)?;
+            self.emit("    movq %rax, %rdx");
+            self.emit(&format!("    leaq {}(%rbp), %rcx", dest_offset));
+            self.emit_bitfield_store_from_rdx("%rcx", field_info)?;
+            return Ok(());
+        }
 
         // Generate code for the value
         self.generate_node(&init_field.value)?;
-        let dest_offset = base_offset; // All union fields start at offset 0
 
         // Store based on field type
         match field_info.field_type {
@@ -3804,12 +4243,12 @@ impl CodeGenerator {
         }
     }
 
-    fn member_access_type(
+    fn member_access_field_info(
         &self,
         base: &AstNode,
         member: &str,
         through_pointer: bool,
-    ) -> Result<Type, String> {
+    ) -> Result<StructFieldInfo, String> {
         let base_type = self.expr_type(base)?;
         let struct_or_union_name = match (base_type, through_pointer) {
             (Type::Struct(name), false) | (Type::Union(name), false) => name,
@@ -3820,20 +4259,29 @@ impl CodeGenerator {
             _ => return Err("Member access base is not a struct/union".to_string()),
         };
 
-        // Try struct first, then union
         let layout = self
             .struct_layouts
             .get(&struct_or_union_name)
             .or_else(|| self.union_layouts.get(&struct_or_union_name))
             .ok_or_else(|| format!("Unknown struct/union type: {}", struct_or_union_name))?;
 
-        let field = layout.fields.get(member).ok_or_else(|| {
+        let field = layout.fields_by_name.get(member).ok_or_else(|| {
             format!(
                 "Unknown field '{}' on struct/union {}",
                 member, struct_or_union_name
             )
         })?;
-        Ok(field.field_type.clone())
+        Ok(field.clone())
+    }
+
+    fn member_access_type(
+        &self,
+        base: &AstNode,
+        member: &str,
+        through_pointer: bool,
+    ) -> Result<Type, String> {
+        let field_info = self.member_access_field_info(base, member, through_pointer)?;
+        Ok(field_info.field_type.clone())
     }
 
     fn expr_type(&self, expr: &AstNode) -> Result<Type, String> {
@@ -4175,6 +4623,211 @@ impl CodeGenerator {
         self.stack_depth -= 1;
     }
 
+    fn const_int_value(&self, expr: &AstNode) -> Result<i64, String> {
+        match expr {
+            AstNode::IntLiteral(n) => Ok(*n),
+            AstNode::CharLiteral(n) => Ok(*n),
+            AstNode::Variable(name) => {
+                self.enum_constants.get(name).copied().ok_or_else(|| {
+                    format!("Unsupported identifier in global initializer: {}", name)
+                })
+            }
+            _ => Err("Unsupported global initializer expression".to_string()),
+        }
+    }
+
+    fn write_int_bytes(
+        &self,
+        buffer: &mut [u8],
+        offset: usize,
+        value: i64,
+        size: usize,
+    ) -> Result<(), String> {
+        if offset + size > buffer.len() {
+            return Err("Initializer write out of bounds".to_string());
+        }
+        let raw = value as u64;
+        for i in 0..size {
+            buffer[offset + i] = (raw >> (i * 8)) as u8;
+        }
+        Ok(())
+    }
+
+    fn apply_bitfield_to_buffer(
+        &self,
+        buffer: &mut [u8],
+        base_offset: usize,
+        field: &StructFieldInfo,
+        value: i64,
+    ) -> Result<(), String> {
+        let width = field
+            .bit_width
+            .ok_or_else(|| "Expected bit-field metadata".to_string())?;
+        if width == 0 {
+            return Ok(());
+        }
+        let unit_size = field.bit_unit_size as usize;
+        let unit_offset = base_offset + field.offset as usize;
+        if unit_offset + unit_size > buffer.len() {
+            return Err("Bit-field initializer out of bounds".to_string());
+        }
+        let unit_bits = (unit_size as u32) * 8;
+        if width > unit_bits {
+            return Err("Bit-field width exceeds storage unit".to_string());
+        }
+
+        let mask = if width == 64 {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        let truncated = (value as u64) & mask;
+
+        let mut unit_value = 0u64;
+        for i in 0..unit_size {
+            unit_value |= (buffer[unit_offset + i] as u64) << (i * 8);
+        }
+        let shifted_mask = mask << field.bit_offset;
+        unit_value = (unit_value & !shifted_mask) | (truncated << field.bit_offset);
+        for i in 0..unit_size {
+            buffer[unit_offset + i] = ((unit_value >> (i * 8)) & 0xff) as u8;
+        }
+        Ok(())
+    }
+
+    fn apply_struct_init_to_buffer(
+        &self,
+        struct_name: &str,
+        init_fields: &[StructInitField],
+        buffer: &mut [u8],
+        base_offset: usize,
+    ) -> Result<(), String> {
+        let layout = self
+            .struct_layouts
+            .get(struct_name)
+            .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?;
+
+        let mut positional_index = 0;
+        for init_field in init_fields {
+            let field_info = if let Some(ref field_name) = init_field.field_name {
+                layout.fields_by_name.get(field_name).ok_or_else(|| {
+                    format!("Unknown field '{}' in struct '{}'", field_name, struct_name)
+                })?
+            } else {
+                if positional_index >= layout.fields.len() {
+                    return Err(format!(
+                        "Too many initializers for struct '{}' (expected {} fields)",
+                        struct_name,
+                        layout.fields.len()
+                    ));
+                }
+                let field = &layout.fields[positional_index];
+                positional_index += 1;
+                field
+            };
+
+            let field_offset = base_offset + field_info.offset as usize;
+            if field_info.bit_width.is_some() {
+                let value = self.const_int_value(&init_field.value)?;
+                self.apply_bitfield_to_buffer(buffer, base_offset, field_info, value)?;
+                continue;
+            }
+
+            match (&field_info.field_type, &init_field.value) {
+                (Type::Struct(nested_name), AstNode::StructInit(nested_fields)) => {
+                    self.apply_struct_init_to_buffer(
+                        nested_name,
+                        nested_fields,
+                        buffer,
+                        field_offset,
+                    )?;
+                }
+                (Type::Union(nested_name), AstNode::StructInit(nested_fields)) => {
+                    self.apply_union_init_to_buffer(
+                        nested_name,
+                        nested_fields,
+                        buffer,
+                        field_offset,
+                    )?;
+                }
+                _ => {
+                    let value = self.const_int_value(&init_field.value)?;
+                    let size = self.type_size(&field_info.field_type)? as usize;
+                    self.write_int_bytes(buffer, field_offset, value, size)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn apply_union_init_to_buffer(
+        &self,
+        union_name: &str,
+        init_fields: &[StructInitField],
+        buffer: &mut [u8],
+        base_offset: usize,
+    ) -> Result<(), String> {
+        let layout = self
+            .union_layouts
+            .get(union_name)
+            .ok_or_else(|| format!("Unknown union type: {}", union_name))?;
+        if init_fields.is_empty() {
+            return Ok(());
+        }
+
+        let init_field = &init_fields[0];
+        let field_info = if let Some(ref field_name) = init_field.field_name {
+            layout.fields_by_name.get(field_name).ok_or_else(|| {
+                format!("Unknown field '{}' in union '{}'", field_name, union_name)
+            })?
+        } else {
+            if layout.fields.is_empty() {
+                return Err(format!("Union '{}' has no fields", union_name));
+            }
+            &layout.fields[0]
+        };
+
+        if field_info.bit_width.is_some() {
+            let value = self.const_int_value(&init_field.value)?;
+            self.apply_bitfield_to_buffer(buffer, base_offset, field_info, value)?;
+            return Ok(());
+        }
+
+        match (&field_info.field_type, &init_field.value) {
+            (Type::Struct(nested_name), AstNode::StructInit(nested_fields)) => {
+                self.apply_struct_init_to_buffer(nested_name, nested_fields, buffer, base_offset)?;
+            }
+            (Type::Union(nested_name), AstNode::StructInit(nested_fields)) => {
+                self.apply_union_init_to_buffer(nested_name, nested_fields, buffer, base_offset)?;
+            }
+            _ => {
+                let value = self.const_int_value(&init_field.value)?;
+                let size = self.type_size(&field_info.field_type)? as usize;
+                self.write_int_bytes(buffer, base_offset, value, size)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn emit_bytes(&mut self, bytes: &[u8]) {
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == 0 {
+                let mut j = i + 1;
+                while j < bytes.len() && bytes[j] == 0 {
+                    j += 1;
+                }
+                self.emit(&format!("    .zero {}", j - i));
+                i = j;
+            } else {
+                self.emit(&format!("    .byte {}", bytes[i]));
+                i += 1;
+            }
+        }
+    }
+
     fn emit_global_variables(&mut self) -> Result<(), String> {
         if self.global_variables.is_empty() {
             return Ok(());
@@ -4295,6 +4948,23 @@ impl CodeGenerator {
                     Err("Array initializer for non-array type".to_string())
                 }
             }
+            AstNode::StructInit(values) => match var_type {
+                Type::Struct(struct_name) => {
+                    let size = self.type_size(var_type)? as usize;
+                    let mut buffer = vec![0u8; size];
+                    self.apply_struct_init_to_buffer(struct_name, values, &mut buffer, 0)?;
+                    self.emit_bytes(&buffer);
+                    Ok(())
+                }
+                Type::Union(union_name) => {
+                    let size = self.type_size(var_type)? as usize;
+                    let mut buffer = vec![0u8; size];
+                    self.apply_union_init_to_buffer(union_name, values, &mut buffer, 0)?;
+                    self.emit_bytes(&buffer);
+                    Ok(())
+                }
+                _ => Err("Struct initializer for non-struct type".to_string()),
+            },
             _ => Err(format!("Unsupported global initializer: {:?}", init)),
         }
     }

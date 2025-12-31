@@ -58,15 +58,21 @@ impl Parser {
             if self.current_token() == &Token::Eof {
                 break;
             }
-            if self.is_struct_definition() {
-                items.push(self.parse_struct_definition()?);
+            let item = if self.is_struct_definition() {
+                self.parse_struct_definition()?
             } else if self.is_union_definition() {
-                items.push(self.parse_union_definition()?);
+                self.parse_union_definition()?
             } else if self.is_enum_definition() {
-                items.push(self.parse_enum_definition()?);
+                self.parse_enum_definition()?
             } else {
                 // Could be a function or global variable
-                items.push(self.parse_declaration()?);
+                self.parse_declaration()?
+            };
+
+            if let AstNode::Block(stmts) = item {
+                items.extend(stmts);
+            } else {
+                items.push(item);
             }
         }
 
@@ -141,7 +147,7 @@ impl Parser {
             }
         }
 
-        let var_type = self.parse_type()?;
+        let base_type = self.parse_type()?;
 
         // Parse _Alignas if present
         let alignment = if matches!(self.current_token(), Token::Alignas) {
@@ -168,7 +174,7 @@ impl Parser {
             is_const,
             is_volatile,
         };
-        let (var_type, name) = self.parse_declarator(var_type)?;
+        let (var_type, name) = self.parse_declarator(base_type.clone())?;
 
         // Check what follows to determine if it's a function or variable
         match self.current_token() {
@@ -178,7 +184,9 @@ impl Parser {
             }
             Token::Semicolon | Token::Equals | Token::OpenBracket => {
                 // It's a global variable
-                self.parse_global_variable_with_storage(var_type, name, storage, alignment)
+                self.parse_global_variable_with_storage(
+                    base_type, var_type, name, storage, alignment,
+                )
             }
             _ => Err(format!(
                 "Expected '(', ';', '=', or '[' after identifier, got {:?}",
@@ -328,7 +336,8 @@ impl Parser {
 
     fn parse_global_variable_with_storage(
         &mut self,
-        mut var_type: Type,
+        base_type: Type,
+        var_type: Type,
         name: String,
         storage: StorageClassSpecifiers,
         alignment: Option<i64>,
@@ -342,39 +351,61 @@ impl Parser {
             is_volatile,
         } = storage;
 
-        // Handle array type suffix if present
-        var_type = self.parse_array_type_suffix(var_type)?;
+        let mut decls = Vec::new();
+        let mut current_type = var_type;
+        let mut current_name = name;
 
-        // Parse initializer if present
-        let init = if self.current_token() == &Token::Equals {
-            self.advance();
-            if self.current_token() == &Token::OpenBrace {
-                if matches!(var_type, Type::Struct(_) | Type::Union(_)) {
-                    Some(Box::new(self.parse_struct_initializer()?))
+        loop {
+            // Handle array type suffix if present
+            let parsed_type = self.parse_array_type_suffix(current_type.clone())?;
+
+            // Parse initializer if present
+            let init = if self.current_token() == &Token::Equals {
+                self.advance();
+                if self.current_token() == &Token::OpenBrace {
+                    if matches!(parsed_type, Type::Struct(_) | Type::Union(_)) {
+                        Some(Box::new(self.parse_struct_initializer()?))
+                    } else {
+                        Some(Box::new(self.parse_array_initializer()?))
+                    }
                 } else {
-                    Some(Box::new(self.parse_array_initializer()?))
+                    Some(Box::new(self.parse_expression()?))
                 }
             } else {
-                Some(Box::new(self.parse_expression()?))
+                None
+            };
+
+            decls.push(AstNode::VarDecl {
+                name: current_name,
+                var_type: parsed_type,
+                init,
+                is_extern,
+                is_static,
+                is_auto,
+                is_register,
+                is_const,
+                is_volatile,
+                alignment,
+            });
+
+            if self.current_token() == &Token::Comma {
+                self.advance();
+                let (next_type, next_name) = self.parse_declarator(base_type.clone())?;
+                current_type = next_type;
+                current_name = next_name;
+                continue;
             }
-        } else {
-            None
-        };
+
+            break;
+        }
 
         self.expect(Token::Semicolon)?;
 
-        Ok(AstNode::VarDecl {
-            name,
-            var_type,
-            init,
-            is_extern,
-            is_static,
-            is_auto,
-            is_register,
-            is_const,
-            is_volatile,
-            alignment,
-        })
+        if decls.len() == 1 {
+            Ok(decls.into_iter().next().unwrap())
+        } else {
+            Ok(AstNode::Block(decls))
+        }
     }
 
     fn parse_typedef(&mut self) -> Result<AstNode, String> {
@@ -769,25 +800,35 @@ impl Parser {
             let base_type = self.parse_type()?;
 
             loop {
-                let (field_type, field_name) = self.parse_declarator(base_type.clone())?;
+                let anonymous_bitfield = self.current_token() == &Token::Colon;
+                let (field_type, field_name) = if anonymous_bitfield {
+                    let name = format!("__anon_bitfield_{}", self.anon_counter);
+                    self.anon_counter += 1;
+                    (base_type.clone(), name)
+                } else {
+                    self.parse_declarator(base_type.clone())?
+                };
 
                 let bit_width = if self.current_token() == &Token::Colon {
                     self.advance();
                     match self.current_token() {
-                        Token::IntLiteral(width, _) if *width > 0 => {
+                        Token::IntLiteral(width, _) if *width >= 0 => {
                             let w = *width as u32;
                             self.advance();
                             Some(w)
                         }
                         _ => {
-                            return Err(
-                                "Bit-field width must be a positive integer literal".to_string()
-                            );
+                            return Err("Bit-field width must be a non-negative integer literal"
+                                .to_string());
                         }
                     }
                 } else {
                     None
                 };
+
+                if anonymous_bitfield && bit_width.is_none() {
+                    return Err("Unnamed bit-field must have a width".to_string());
+                }
 
                 fields.push(StructField {
                     name: field_name,
@@ -1315,12 +1356,12 @@ impl Parser {
         } else if matches!(
             self.current_token(),
             Token::Int
-            | Token::Char
-            | Token::Bool
-            | Token::Signed
-            | Token::Unsigned
-            | Token::Typeof
-            | Token::Short
+                | Token::Char
+                | Token::Bool
+                | Token::Signed
+                | Token::Unsigned
+                | Token::Typeof
+                | Token::Short
                 | Token::Long
                 | Token::Float
                 | Token::Double
@@ -2556,7 +2597,9 @@ impl Parser {
     }
 
     fn parse_builtin_types_compatible_p(&mut self) -> Result<AstNode, String> {
-        self.expect(Token::Identifier("__builtin_types_compatible_p".to_string()))?;
+        self.expect(Token::Identifier(
+            "__builtin_types_compatible_p".to_string(),
+        ))?;
         self.expect(Token::OpenParen)?;
         let left = self.parse_type_name()?;
         self.expect(Token::Comma)?;
@@ -2661,9 +2704,11 @@ impl Parser {
         match expr {
             AstNode::IntLiteral(value) => Ok(*value),
             AstNode::CharLiteral(value) => Ok(*value),
-            AstNode::Variable(name) => self.enum_constants.get(name).copied().ok_or_else(|| {
-                format!("Unknown identifier in constant expression: {}", name)
-            }),
+            AstNode::Variable(name) => self
+                .enum_constants
+                .get(name)
+                .copied()
+                .ok_or_else(|| format!("Unknown identifier in constant expression: {}", name)),
             AstNode::UnaryOp { op, operand } => {
                 let value = self.eval_constant_expr(operand)?;
                 match op {
