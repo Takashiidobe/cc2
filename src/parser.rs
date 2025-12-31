@@ -8,6 +8,7 @@ pub struct Parser {
     type_aliases: std::collections::HashMap<String, Type>,
     struct_defs: std::collections::HashMap<String, AggregateDef>,
     union_defs: std::collections::HashMap<String, AggregateDef>,
+    enum_constants: HashMap<String, i64>,
     anon_counter: usize,
 }
 
@@ -35,6 +36,7 @@ impl Parser {
             type_aliases: std::collections::HashMap::new(),
             struct_defs: std::collections::HashMap::new(),
             union_defs: std::collections::HashMap::new(),
+            enum_constants: HashMap::new(),
             anon_counter: 0,
         }
     }
@@ -2382,20 +2384,18 @@ impl Parser {
 
             let value = if self.current_token() == &Token::Equals {
                 self.advance();
-                match self.current_token() {
-                    Token::IntLiteral(n, _) => {
-                        let val = *n;
-                        self.advance();
-                        next_value = val + 1;
-                        Some(val)
-                    }
-                    _ => return Err("Enumerator value must be an integer literal".to_string()),
-                }
+                let val = self.parse_constant_expr()?;
+                next_value = val + 1;
+                Some(val)
             } else {
                 let val = next_value;
                 next_value += 1;
                 Some(val)
             };
+
+            if let Some(val) = value {
+                self.enum_constants.insert(enumerator_name.clone(), val);
+            }
 
             enumerators.push(Enumerator {
                 name: enumerator_name,
@@ -2606,6 +2606,9 @@ impl Parser {
         match expr {
             AstNode::IntLiteral(value) => Ok(*value),
             AstNode::CharLiteral(value) => Ok(*value),
+            AstNode::Variable(name) => self.enum_constants.get(name).copied().ok_or_else(|| {
+                format!("Unknown identifier in constant expression: {}", name)
+            }),
             AstNode::UnaryOp { op, operand } => {
                 let value = self.eval_constant_expr(operand)?;
                 match op {
