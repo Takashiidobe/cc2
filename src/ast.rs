@@ -113,15 +113,6 @@ pub enum AstNode {
         struct_type: Type,
         member: String,
     },
-    VaStart {
-        ap: Box<AstNode>,
-        last_param: Box<AstNode>,
-    },
-    VaArg {
-        ap: Box<AstNode>,
-        arg_type: Type,
-    },
-    VaEnd(Box<AstNode>),
     Cast {
         target_type: Type,
         expr: Box<AstNode>,
@@ -249,7 +240,6 @@ pub enum Type {
     Struct(String),
     Union(String),
     Enum(String),
-    VaList,
 }
 
 impl Type {
@@ -270,7 +260,6 @@ impl Type {
             Type::Array(elem, len) => elem.size() * (*len as i32),
             Type::Void | Type::Struct(_) | Type::Union(_) => 0,
             Type::Enum(_) => 4,
-            Type::VaList => 24, // Size of __va_list_tag in System V AMD64 ABI
         }
     }
 
@@ -331,9 +320,6 @@ impl fmt::Display for AstNode {
             AstNode::AlignOfType(_) => write!(f, "AlignOfType"),
             AstNode::AlignOfExpr(_) => write!(f, "AlignOfExpr"),
             AstNode::OffsetOf { member, .. } => write!(f, "OffsetOf({})", member),
-            AstNode::VaStart { .. } => write!(f, "VaStart"),
-            AstNode::VaArg { .. } => write!(f, "VaArg"),
-            AstNode::VaEnd(_) => write!(f, "VaEnd"),
             AstNode::Cast { target_type, .. } => write!(f, "Cast({:?})", target_type),
             AstNode::StmtExpr { .. } => write!(f, "StmtExpr"),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),

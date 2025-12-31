@@ -464,10 +464,6 @@ impl Parser {
                 self.advance();
                 Type::Void
             }
-            Token::VaList => {
-                self.advance();
-                Type::VaList
-            }
             Token::Float => {
                 self.advance();
                 Type::Float
@@ -1029,7 +1025,6 @@ impl Parser {
             | Token::Union
             | Token::Enum
             | Token::Void
-            | Token::VaList
             | Token::Static
             | Token::Auto
             | Token::Register
@@ -1252,7 +1247,6 @@ impl Parser {
                 | Token::Union
                 | Token::Enum
                 | Token::Void
-                | Token::VaList
                 | Token::Static
                 | Token::Auto
                 | Token::Register
@@ -1787,9 +1781,9 @@ impl Parser {
             Token::Sizeof => self.parse_sizeof(),
             Token::Alignof => self.parse_alignof(),
             Token::Offsetof => self.parse_offsetof(),
-            Token::VaStart => self.parse_va_start(),
-            Token::VaArg => self.parse_va_arg(),
-            Token::VaEnd => self.parse_va_end(),
+            Token::Identifier(name) if name == "__builtin_reg_class" => {
+                self.parse_builtin_reg_class()
+            }
             Token::OpenParen => {
                 // Check if this is a cast expression: (type)expr
                 if self.is_type_start(self.peek(1)) {
@@ -2463,6 +2457,22 @@ impl Parser {
         }
     }
 
+    fn parse_builtin_reg_class(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Identifier("__builtin_reg_class".to_string()))?;
+        self.expect(Token::OpenParen)?;
+        let ty = self.parse_type()?;
+        let ty = self.parse_array_type_suffix(ty)?;
+        self.expect(Token::CloseParen)?;
+
+        let class = match ty {
+            Type::Float | Type::Double => 1,
+            Type::LongDouble | Type::Struct(_) | Type::Union(_) | Type::Array(_, _) => 2,
+            _ => 0,
+        };
+
+        Ok(AstNode::IntLiteral(class))
+    }
+
     fn parse_offsetof(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Offsetof)?;
         self.expect(Token::OpenParen)?;
@@ -2490,58 +2500,6 @@ impl Parser {
             struct_type,
             member,
         })
-    }
-
-    fn parse_va_start(&mut self) -> Result<AstNode, String> {
-        self.expect(Token::VaStart)?;
-        self.expect(Token::OpenParen)?;
-
-        // Parse the va_list argument
-        let ap = self.parse_assignment()?;
-
-        self.expect(Token::Comma)?;
-
-        // Parse the last_param argument
-        let last_param = self.parse_assignment()?;
-
-        self.expect(Token::CloseParen)?;
-
-        Ok(AstNode::VaStart {
-            ap: Box::new(ap),
-            last_param: Box::new(last_param),
-        })
-    }
-
-    fn parse_va_arg(&mut self) -> Result<AstNode, String> {
-        self.expect(Token::VaArg)?;
-        self.expect(Token::OpenParen)?;
-
-        // Parse the va_list argument
-        let ap = self.parse_assignment()?;
-
-        self.expect(Token::Comma)?;
-
-        // Parse the type argument
-        let arg_type = self.parse_type()?;
-
-        self.expect(Token::CloseParen)?;
-
-        Ok(AstNode::VaArg {
-            ap: Box::new(ap),
-            arg_type,
-        })
-    }
-
-    fn parse_va_end(&mut self) -> Result<AstNode, String> {
-        self.expect(Token::VaEnd)?;
-        self.expect(Token::OpenParen)?;
-
-        // Parse the va_list argument
-        let ap = self.parse_assignment()?;
-
-        self.expect(Token::CloseParen)?;
-
-        Ok(AstNode::VaEnd(Box::new(ap)))
     }
 
     fn is_at_end(&self) -> bool {

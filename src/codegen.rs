@@ -22,9 +22,6 @@ pub struct CodeGenerator {
     symbol_table: SymbolTable,
     label_counter: usize,
     current_function_end_label: Option<String>,
-    current_reg_save_area_offset: Option<i32>, // Offset of register save area for variadic functions
-    current_gp_params: usize,                  // Number of GP parameters for current function
-    current_fp_params: usize,                  // Number of FP parameters for current function
     loop_stack: Vec<LoopContext>,
     struct_layouts: HashMap<String, StructLayout>,
     union_layouts: HashMap<String, StructLayout>,
@@ -60,9 +57,6 @@ impl CodeGenerator {
             symbol_table: SymbolTable::new(),
             label_counter: 0,
             current_function_end_label: None,
-            current_reg_save_area_offset: None,
-            current_gp_params: 0,
-            current_fp_params: 0,
             loop_stack: Vec::new(),
             struct_layouts: HashMap::new(),
             union_layouts: HashMap::new(),
@@ -187,29 +181,31 @@ impl CodeGenerator {
                 let end_label = self.next_label();
                 self.current_function_end_label = Some(end_label.clone());
 
-                // For variadic functions, allocate register save area
-                // System V AMD64 ABI: 6 GP regs (48 bytes) + 8 XMM regs (128 bytes) = 176 bytes
-                let reg_save_area_offset = if *is_variadic {
-                    // Allocate 176 bytes for register save area using a dummy variable
-                    // This will be at a negative offset from %rbp
-                    Some(
-                        self.symbol_table
-                            .add_variable_with_layout(
-                                "__reg_save_area__".to_string(),
-                                Type::Array(Box::new(Type::Char), 176),
-                                176,
-                                16,
-                            )
-                            .unwrap(),
-                    )
+                // For variadic functions, allocate register save area and __va_area__
+                // Layout matches stdarg.h helpers: 6 GP regs (48 bytes) + 8 XMM regs (64 bytes) = 112 bytes
+                let (reg_save_area_offset, va_area_offset) = if *is_variadic {
+                    let reg_save_area_offset = self
+                        .symbol_table
+                        .add_variable_with_layout(
+                            "__reg_save_area__".to_string(),
+                            Type::Array(Box::new(Type::Char), 112),
+                            112,
+                            16,
+                        )
+                        .unwrap();
+                    let va_area_offset = self
+                        .symbol_table
+                        .add_variable_with_layout(
+                            "__va_area__".to_string(),
+                            Type::Array(Box::new(Type::Char), 24),
+                            24,
+                            8,
+                        )
+                        .unwrap();
+                    (Some(reg_save_area_offset), Some(va_area_offset))
                 } else {
-                    None
+                    (None, None)
                 };
-
-                // Store variadic function info for va_start/va_arg
-                self.current_reg_save_area_offset = reg_save_area_offset;
-                self.current_gp_params = int_param_count;
-                self.current_fp_params = float_param_count;
 
                 // Save current output and generate function body first to discover all variables
                 let saved_output = self.output.clone();
@@ -291,6 +287,8 @@ impl CodeGenerator {
                     }
                 }
 
+                let overflow_arg_area_offset = stack_param_offset;
+
                 // For variadic functions, save all argument registers to register save area
                 if let Some(offset) = reg_save_area_offset {
                     self.emit("    # Save register arguments for variadic function");
@@ -305,9 +303,26 @@ impl CodeGenerator {
                         "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
                     ];
                     for (i, reg) in xmm_regs.iter().enumerate() {
-                        let reg_offset = offset + 48 + (i as i32 * 16); // XMM regs are 16 bytes apart in the save area
+                        let reg_offset = offset + 48 + (i as i32 * 8);
                         self.emit(&format!("    movsd {}, {}(%rbp)", reg, reg_offset));
                     }
+                }
+
+                if let (Some(va_offset), Some(reg_offset)) = (va_area_offset, reg_save_area_offset)
+                {
+                    let gp_offset = int_param_count.min(6) * 8;
+                    let fp_offset = 48 + float_param_count.min(8) * 8;
+
+                    self.emit(&format!("    leaq {}(%rbp), %rax", va_offset));
+                    self.emit(&format!("    movl ${}, 0(%rax)", gp_offset));
+                    self.emit(&format!("    movl ${}, 4(%rax)", fp_offset));
+                    self.emit(&format!(
+                        "    leaq {}(%rbp), %rcx",
+                        overflow_arg_area_offset
+                    ));
+                    self.emit("    movq %rcx, 8(%rax)");
+                    self.emit(&format!("    leaq {}(%rbp), %rcx", reg_offset));
+                    self.emit("    movq %rcx, 16(%rax)");
                 }
 
                 self.generate_node(body)?;
@@ -340,9 +355,6 @@ impl CodeGenerator {
 
                 // Reset function-specific state
                 self.current_function_end_label = None;
-                self.current_reg_save_area_offset = None;
-                self.current_gp_params = 0;
-                self.current_fp_params = 0;
                 Ok(())
             }
             AstNode::Block(statements) => {
@@ -752,6 +764,18 @@ impl CodeGenerator {
                 let target_type = self.expr_type(target)?;
                 let value_type = self.expr_type(value)?;
 
+                if matches!(target_type, Type::Struct(_) | Type::Union(_)) {
+                    let size = self.type_size(&target_type)?;
+                    self.generate_lvalue(target)?;
+                    self.emit("    movq %rax, %rdi");
+                    self.generate_lvalue(value)?;
+                    self.emit("    movq %rax, %rsi");
+                    self.emit("    movq %rdi, %rax");
+                    self.emit(&format!("    movq ${}, %rcx", size));
+                    self.emit("    rep movsb");
+                    return Ok(());
+                }
+
                 // Generate the value first, then convert to the target type.
                 self.generate_node(value)?;
                 self.convert_type(&value_type, &target_type)?;
@@ -1047,61 +1071,138 @@ impl CodeGenerator {
                     }
                 }
 
-                // Generate all arguments and push to stack
-                for (i, (arg, (is_float, _))) in args.iter().zip(arg_info.iter()).enumerate() {
-                    // For statement expressions, generate inline (statements already added to symbol table above)
-                    if let AstNode::StmtExpr { stmts, result } = arg {
-                        for stmt in stmts {
-                            self.generate_node(stmt)?;
-                        }
-                        self.generate_node(result)?;
-                    } else {
-                        self.generate_node(arg)?;
-                    }
+                let expected_types: Vec<Option<Type>> = (0..args.len())
+                    .map(|i| {
+                        self.function_param_types
+                            .get(name)
+                            .and_then(|params| params.get(i))
+                            .cloned()
+                    })
+                    .collect();
 
-                    // Convert to expected parameter type if needed
-                    let arg_type = self.expr_type(arg)?;
-                    let expected_type = self
-                        .function_param_types
-                        .get(name)
-                        .and_then(|params| params.get(i))
-                        .cloned();
-                    if let Some(ref expected) = expected_type {
-                        self.convert_type(&arg_type, expected)?;
-                    }
-
-                    if *is_float {
-                        self.emit("    subq $8, %rsp");
-                        self.emit("    movsd %xmm0, (%rsp)");
+                let mut reg_temp_offsets = vec![None; args.len()];
+                let mut reg_temp_count = 0usize;
+                let mut stack_args_count = 0usize;
+                for (i, (is_float, idx)) in arg_info.iter().enumerate() {
+                    let in_reg = if *is_float {
+                        *idx < arg_regs_xmm.len()
                     } else {
-                        self.emit("    pushq %rax");
+                        *idx < arg_regs.len()
+                    };
+                    if in_reg {
+                        reg_temp_offsets[i] = Some(reg_temp_count * 8);
+                        reg_temp_count += 1;
+                    } else {
+                        stack_args_count += 1;
                     }
                 }
 
-                // Pop/move arguments: register args go into registers, stack args stay on stack
-                let mut stack_args_count = 0;
-                for (is_float, idx) in arg_info.iter().rev() {
-                    if *is_float {
-                        if *idx < arg_regs_xmm.len() {
-                            self.emit(&format!("    movsd (%rsp), {}", arg_regs_xmm[*idx]));
-                            self.emit("    addq $8, %rsp");
-                        } else {
-                            // This argument stays on stack
-                            stack_args_count += 1;
-                        }
-                    } else if *idx < arg_regs.len() {
-                        self.emit(&format!("    popq {}", arg_regs[*idx]));
+                let reg_temp_size = reg_temp_count * 8;
+                let stack_args_size = stack_args_count * 8;
+                let current_align = (self.stack_depth & 1) as usize * 8;
+                let align_pad =
+                    if (current_align + reg_temp_size + stack_args_size).is_multiple_of(16) {
+                        0
                     } else {
-                        // This argument stays on stack
-                        stack_args_count += 1;
+                        8
+                    };
+
+                if reg_temp_size > 0 {
+                    self.emit(&format!("    subq ${}, %rsp", reg_temp_size));
+                    self.stack_depth += (reg_temp_size / 8) as i32;
+                }
+
+                // Evaluate register arguments into temporary stack slots
+                for (i, (arg, (is_float, _))) in args.iter().zip(arg_info.iter()).enumerate().rev()
+                {
+                    if let Some(temp_offset) = reg_temp_offsets[i] {
+                        if let AstNode::StmtExpr { stmts, result } = arg {
+                            for stmt in stmts {
+                                self.generate_node(stmt)?;
+                            }
+                            self.generate_node(result)?;
+                        } else {
+                            self.generate_node(arg)?;
+                        }
+
+                        let arg_type = self.expr_type(arg)?;
+                        if let Some(ref expected) = expected_types[i] {
+                            self.convert_type(&arg_type, expected)?;
+                        }
+
+                        if *is_float {
+                            self.emit(&format!("    movsd %xmm0, {}(%rsp)", temp_offset));
+                        } else {
+                            self.emit(&format!("    movq %rax, {}(%rsp)", temp_offset));
+                        }
+                    }
+                }
+
+                if align_pad > 0 {
+                    self.emit(&format!("    subq ${}, %rsp", align_pad));
+                    self.stack_depth += (align_pad / 8) as i32;
+                }
+
+                // Evaluate and push stack arguments (right-to-left)
+                for (i, (arg, (is_float, _))) in args.iter().zip(arg_info.iter()).enumerate().rev()
+                {
+                    if reg_temp_offsets[i].is_none() {
+                        if let AstNode::StmtExpr { stmts, result } = arg {
+                            for stmt in stmts {
+                                self.generate_node(stmt)?;
+                            }
+                            self.generate_node(result)?;
+                        } else {
+                            self.generate_node(arg)?;
+                        }
+
+                        let arg_type = self.expr_type(arg)?;
+                        if let Some(ref expected) = expected_types[i] {
+                            self.convert_type(&arg_type, expected)?;
+                        }
+
+                        if *is_float {
+                            self.emit("    subq $8, %rsp");
+                            self.emit("    movsd %xmm0, (%rsp)");
+                        } else {
+                            self.emit("    pushq %rax");
+                        }
+                        self.stack_depth += 1;
+                    }
+                }
+
+                let temp_base_offset = stack_args_size + align_pad;
+                for (i, (is_float, idx)) in arg_info.iter().enumerate() {
+                    let in_reg = if *is_float {
+                        *idx < arg_regs_xmm.len()
+                    } else {
+                        *idx < arg_regs.len()
+                    };
+                    if in_reg {
+                        let temp_offset = reg_temp_offsets[i].unwrap() + temp_base_offset;
+                        if *is_float {
+                            self.emit(&format!(
+                                "    movsd {}(%rsp), {}",
+                                temp_offset, arg_regs_xmm[*idx]
+                            ));
+                        } else {
+                            self.emit(&format!(
+                                "    movq {}(%rsp), {}",
+                                temp_offset, arg_regs[*idx]
+                            ));
+                        }
                     }
                 }
 
                 self.emit(&format!("    call {}", name));
 
                 // Clean up stack arguments if any
-                if stack_args_count > 0 {
-                    self.emit(&format!("    addq ${}, %rsp", stack_args_count * 8));
+                if stack_args_count > 0 || reg_temp_count > 0 || align_pad > 0 {
+                    self.emit(&format!(
+                        "    addq ${}, %rsp",
+                        stack_args_size + reg_temp_size + align_pad
+                    ));
+                    self.stack_depth -= ((stack_args_size + reg_temp_size + align_pad) / 8) as i32;
                 }
 
                 Ok(())
@@ -1197,41 +1298,106 @@ impl CodeGenerator {
                     }
                 }
 
-                // Generate all arguments and push to stack
-                for (arg, (is_float, _)) in args.iter().zip(arg_info.iter()) {
-                    // For statement expressions, generate inline (statements already added to symbol table above)
-                    if let AstNode::StmtExpr { stmts, result } = arg {
-                        for stmt in stmts {
-                            self.generate_node(stmt)?;
-                        }
-                        self.generate_node(result)?;
+                let mut reg_temp_offsets = vec![None; args.len()];
+                let mut reg_temp_count = 0usize;
+                let mut stack_args_count = 0usize;
+                for (i, (is_float, idx)) in arg_info.iter().enumerate() {
+                    let in_reg = if *is_float {
+                        *idx < arg_regs_xmm.len()
                     } else {
-                        self.generate_node(arg)?;
-                    }
-                    if *is_float {
-                        self.emit("    subq $8, %rsp");
-                        self.emit("    movsd %xmm0, (%rsp)");
+                        *idx < arg_regs.len()
+                    };
+                    if in_reg {
+                        reg_temp_offsets[i] = Some(reg_temp_count * 8);
+                        reg_temp_count += 1;
                     } else {
-                        self.emit("    pushq %rax");
+                        stack_args_count += 1;
                     }
                 }
 
-                // Pop/move arguments: register args go into registers, stack args stay on stack
-                let mut stack_args_count = 0;
-                for (is_float, idx) in arg_info.iter().rev() {
-                    if *is_float {
-                        if *idx < arg_regs_xmm.len() {
-                            self.emit(&format!("    movsd (%rsp), {}", arg_regs_xmm[*idx]));
-                            self.emit("    addq $8, %rsp");
-                        } else {
-                            // This argument stays on stack
-                            stack_args_count += 1;
-                        }
-                    } else if *idx < arg_regs.len() {
-                        self.emit(&format!("    popq {}", arg_regs[*idx]));
+                let reg_temp_size = reg_temp_count * 8;
+                let stack_args_size = stack_args_count * 8;
+                let current_align = (self.stack_depth & 1) as usize * 8;
+                let align_pad =
+                    if (current_align + reg_temp_size + stack_args_size).is_multiple_of(16) {
+                        0
                     } else {
-                        // This argument stays on stack
-                        stack_args_count += 1;
+                        8
+                    };
+
+                if reg_temp_size > 0 {
+                    self.emit(&format!("    subq ${}, %rsp", reg_temp_size));
+                    self.stack_depth += (reg_temp_size / 8) as i32;
+                }
+
+                // Evaluate register arguments into temporary stack slots
+                for (i, (arg, (is_float, _))) in args.iter().zip(arg_info.iter()).enumerate().rev()
+                {
+                    if let Some(temp_offset) = reg_temp_offsets[i] {
+                        if let AstNode::StmtExpr { stmts, result } = arg {
+                            for stmt in stmts {
+                                self.generate_node(stmt)?;
+                            }
+                            self.generate_node(result)?;
+                        } else {
+                            self.generate_node(arg)?;
+                        }
+
+                        if *is_float {
+                            self.emit(&format!("    movsd %xmm0, {}(%rsp)", temp_offset));
+                        } else {
+                            self.emit(&format!("    movq %rax, {}(%rsp)", temp_offset));
+                        }
+                    }
+                }
+
+                if align_pad > 0 {
+                    self.emit(&format!("    subq ${}, %rsp", align_pad));
+                    self.stack_depth += (align_pad / 8) as i32;
+                }
+
+                // Evaluate and push stack arguments (right-to-left)
+                for (i, (arg, (is_float, _))) in args.iter().zip(arg_info.iter()).enumerate().rev()
+                {
+                    if reg_temp_offsets[i].is_none() {
+                        if let AstNode::StmtExpr { stmts, result } = arg {
+                            for stmt in stmts {
+                                self.generate_node(stmt)?;
+                            }
+                            self.generate_node(result)?;
+                        } else {
+                            self.generate_node(arg)?;
+                        }
+                        if *is_float {
+                            self.emit("    subq $8, %rsp");
+                            self.emit("    movsd %xmm0, (%rsp)");
+                        } else {
+                            self.emit("    pushq %rax");
+                        }
+                        self.stack_depth += 1;
+                    }
+                }
+
+                let temp_base_offset = stack_args_size + align_pad;
+                for (i, (is_float, idx)) in arg_info.iter().enumerate() {
+                    let in_reg = if *is_float {
+                        *idx < arg_regs_xmm.len()
+                    } else {
+                        *idx < arg_regs.len()
+                    };
+                    if in_reg {
+                        let temp_offset = reg_temp_offsets[i].unwrap() + temp_base_offset;
+                        if *is_float {
+                            self.emit(&format!(
+                                "    movsd {}(%rsp), {}",
+                                temp_offset, arg_regs_xmm[*idx]
+                            ));
+                        } else {
+                            self.emit(&format!(
+                                "    movq {}(%rsp), {}",
+                                temp_offset, arg_regs[*idx]
+                            ));
+                        }
                     }
                 }
 
@@ -1239,8 +1405,12 @@ impl CodeGenerator {
                 self.emit("    call *%r11");
 
                 // Clean up stack arguments if any
-                if stack_args_count > 0 {
-                    self.emit(&format!("    addq ${}, %rsp", stack_args_count * 8));
+                if stack_args_count > 0 || reg_temp_count > 0 || align_pad > 0 {
+                    self.emit(&format!(
+                        "    addq ${}, %rsp",
+                        stack_args_size + reg_temp_size + align_pad
+                    ));
+                    self.stack_depth -= ((stack_args_size + reg_temp_size + align_pad) / 8) as i32;
                 }
 
                 Ok(())
@@ -1958,135 +2128,6 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", field_info.offset));
                 Ok(())
             }
-            AstNode::VaStart { ap, last_param: _ } => {
-                // va_start(ap, last_param)
-                // Initialize the va_list structure according to System V AMD64 ABI
-                // Structure layout (24 bytes total):
-                //   0-3:   gp_offset (unsigned int)
-                //   4-7:   fp_offset (unsigned int)
-                //   8-15:  overflow_arg_area (void*)
-                //   16-23: reg_save_area (void*)
-
-                // Get the address of the va_list variable (ap)
-                self.generate_lvalue(ap)?;
-                self.emit("    pushq %rax"); // Save va_list address
-
-                // Calculate gp_offset: number of GP parameters * 8
-                let gp_offset = self.current_gp_params * 8;
-                // Calculate fp_offset: 48 (for 6 GP regs) + number of FP parameters * 16
-                let fp_offset = 48 + self.current_fp_params * 16;
-
-                // Set gp_offset (offset 0-3 in va_list)
-                self.emit(&format!("    movl ${}, %eax", gp_offset));
-                self.emit("    movq (%rsp), %rcx"); // Get va_list address
-                self.emit("    movl %eax, 0(%rcx)");
-
-                // Set fp_offset (offset 4-7 in va_list)
-                self.emit(&format!("    movl ${}, %eax", fp_offset));
-                self.emit("    movq (%rsp), %rcx");
-                self.emit("    movl %eax, 4(%rcx)");
-
-                // Set overflow_arg_area (offset 8-15 in va_list)
-                // Points to first stack argument at 16(%rbp)
-                self.emit("    leaq 16(%rbp), %rax");
-                self.emit("    movq (%rsp), %rcx");
-                self.emit("    movq %rax, 8(%rcx)");
-
-                // Set reg_save_area (offset 16-23 in va_list)
-                if let Some(offset) = self.current_reg_save_area_offset {
-                    self.emit(&format!("    leaq {}(%rbp), %rax", offset));
-                    self.emit("    movq (%rsp), %rcx");
-                    self.emit("    movq %rax, 16(%rcx)");
-                }
-
-                self.emit("    addq $8, %rsp"); // Pop va_list address
-                self.emit("    xorq %rax, %rax"); // va_start returns void (set rax to 0)
-                Ok(())
-            }
-            AstNode::VaArg { ap, arg_type } => {
-                // va_arg(ap, type)
-                // Extract the next argument from va_list according to System V AMD64 ABI
-                // Algorithm:
-                //   - For GP types: check if gp_offset < 48, use reg_save_area or overflow_arg_area
-                //   - For FP types: check if fp_offset < 176, use reg_save_area or overflow_arg_area
-
-                // Get address of va_list
-                self.generate_lvalue(ap)?;
-                self.emit("    movq %rax, %r10"); // Save va_list address in r10
-
-                let is_float = self.is_float_type(arg_type);
-
-                if is_float {
-                    // Float/double argument - use fp_offset
-                    // Load fp_offset
-                    self.emit("    movl 4(%r10), %eax"); // fp_offset is at offset 4
-                    self.emit("    cmpl $176, %eax"); // Check if fp_offset < 176
-                    let use_stack_label = self.next_label();
-                    let done_label = self.next_label();
-                    self.emit(&format!("    jge {}", use_stack_label)); // If >= 176, use stack
-
-                    // Use register save area
-                    self.emit("    movq 16(%r10), %rcx"); // Load reg_save_area pointer
-                    self.emit("    addq %rax, %rcx"); // Add fp_offset
-                    self.emit("    movsd (%rcx), %xmm0"); // Load double from register save area
-                    self.emit("    addl $16, %eax"); // Increment fp_offset by 16
-                    self.emit("    movl %eax, 4(%r10)"); // Store updated fp_offset
-                    self.emit("    subq $8, %rsp");
-                    self.emit("    movsd %xmm0, (%rsp)");
-                    self.emit("    movq (%rsp), %rax"); // Move to rax for return
-                    self.emit("    addq $8, %rsp");
-                    self.emit(&format!("    jmp {}", done_label));
-
-                    // Use stack (overflow area)
-                    self.emit(&format!("{}:", use_stack_label));
-                    self.emit("    movq 8(%r10), %rcx"); // Load overflow_arg_area pointer
-                    self.emit("    movsd (%rcx), %xmm0"); // Load double from stack
-                    self.emit("    addq $8, %rcx"); // Increment overflow_arg_area by 8
-                    self.emit("    movq %rcx, 8(%r10)"); // Store updated overflow_arg_area
-                    self.emit("    subq $8, %rsp");
-                    self.emit("    movsd %xmm0, (%rsp)");
-                    self.emit("    movq (%rsp), %rax");
-                    self.emit("    addq $8, %rsp");
-
-                    self.emit(&format!("{}:", done_label));
-                } else {
-                    // Integer/pointer argument - use gp_offset
-                    // Load gp_offset
-                    self.emit("    movl 0(%r10), %eax"); // gp_offset is at offset 0
-                    self.emit("    cmpl $48, %eax"); // Check if gp_offset < 48
-                    let use_stack_label = self.next_label();
-                    let done_label = self.next_label();
-                    self.emit(&format!("    jge {}", use_stack_label)); // If >= 48, use stack
-
-                    // Use register save area
-                    self.emit("    movq 16(%r10), %rcx"); // Load reg_save_area pointer
-                    self.emit("    addq %rax, %rcx"); // Add gp_offset
-                    self.emit("    movq (%rcx), %rax"); // Load value from register save area
-                    self.emit("    movl 0(%r10), %edx"); // Reload gp_offset
-                    self.emit("    addl $8, %edx"); // Increment gp_offset by 8
-                    self.emit("    movl %edx, 0(%r10)"); // Store updated gp_offset
-                    self.emit(&format!("    jmp {}", done_label));
-
-                    // Use stack (overflow area)
-                    self.emit(&format!("{}:", use_stack_label));
-                    self.emit("    movq 8(%r10), %rcx"); // Load overflow_arg_area pointer
-                    self.emit("    movq (%rcx), %rax"); // Load value from stack
-                    self.emit("    addq $8, %rcx"); // Increment overflow_arg_area by 8
-                    self.emit("    movq %rcx, 8(%r10)"); // Store updated overflow_arg_area
-
-                    self.emit(&format!("{}:", done_label));
-                }
-
-                Ok(())
-            }
-            AstNode::VaEnd(ap) => {
-                // va_end(ap)
-                // This is typically a no-op on x86-64
-                self.generate_node(ap)?;
-                // No-op: nothing to clean up for va_list on x86-64
-                self.emit("    xorq %rax, %rax");
-                Ok(())
-            }
             AstNode::Cast { target_type, expr } => {
                 // Generate code for the expression
                 self.generate_node(expr)?;
@@ -2539,7 +2580,13 @@ impl CodeGenerator {
 
     fn element_size_from_type(&self, ty: &Type) -> Result<Option<i32>, String> {
         match ty {
-            Type::Pointer(pointee) => Ok(Some(self.type_size(pointee)?)),
+            Type::Pointer(pointee) => {
+                if matches!(pointee.as_ref(), Type::Void) {
+                    Ok(Some(1))
+                } else {
+                    Ok(Some(self.type_size(pointee)?))
+                }
+            }
             Type::Array(elem, _) => Ok(Some(self.type_size(elem)?)),
             _ => Ok(None),
         }
@@ -2573,7 +2620,6 @@ impl CodeGenerator {
             Type::LongDouble => Ok(16),
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(0),
-            Type::VaList => Ok(24), // Size of __va_list_tag in System V AMD64 ABI
             Type::Array(elem, len) => Ok(self.type_size(elem)? * (*len as i32)),
             Type::Struct(name) => {
                 let layout = self
@@ -2608,7 +2654,6 @@ impl CodeGenerator {
             Type::LongDouble => Ok(16),
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(1),
-            Type::VaList => Ok(8), // Alignment of __va_list_tag in System V AMD64 ABI
             Type::Array(elem, _) => {
                 // _Alignof for arrays returns the element alignment
                 self.type_alignment(elem)
@@ -3613,13 +3658,6 @@ impl CodeGenerator {
             AstNode::SizeOfExpr(e) | AstNode::AlignOfExpr(e) => {
                 self.collect_enum_constants(e)?;
             }
-            AstNode::VaStart { ap, last_param } => {
-                self.collect_enum_constants(ap)?;
-                self.collect_enum_constants(last_param)?;
-            }
-            AstNode::VaArg { ap, .. } | AstNode::VaEnd(ap) => {
-                self.collect_enum_constants(ap)?;
-            }
             _ => {
                 // Literals, variables, labels, and other leaf nodes
             }
@@ -3982,9 +4020,6 @@ impl CodeGenerator {
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
             AstNode::SizeOfType(_) | AstNode::SizeOfExpr(_) => Ok(Type::ULong),
             AstNode::AlignOfType(_) | AstNode::AlignOfExpr(_) => Ok(Type::ULong),
-            AstNode::VaStart { .. } => Ok(Type::Void), // va_start returns void
-            AstNode::VaArg { arg_type, .. } => Ok(arg_type.clone()), // va_arg returns the specified type
-            AstNode::VaEnd(_) => Ok(Type::Void),                     // va_end returns void
             _ => Err("Unsupported expression in sizeof".to_string()),
         }
     }

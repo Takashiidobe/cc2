@@ -81,7 +81,6 @@ pub enum Token {
     Break,
     Continue,
     Void,
-    VaList,
     Extern,
     Static,
     Auto,
@@ -94,9 +93,6 @@ pub enum Token {
     Case,
     Default,
     Asm,
-    VaStart,
-    VaArg,
-    VaEnd,
 
     // Identifiers and literals
     Identifier(String),
@@ -192,7 +188,6 @@ impl fmt::Display for Token {
             Token::Break => write!(f, "break"),
             Token::Continue => write!(f, "continue"),
             Token::Void => write!(f, "void"),
-            Token::VaList => write!(f, "va_list"),
             Token::Extern => write!(f, "extern"),
             Token::Static => write!(f, "static"),
             Token::Auto => write!(f, "auto"),
@@ -205,9 +200,6 @@ impl fmt::Display for Token {
             Token::Case => write!(f, "case"),
             Token::Default => write!(f, "default"),
             Token::Asm => write!(f, "asm"),
-            Token::VaStart => write!(f, "va_start"),
-            Token::VaArg => write!(f, "va_arg"),
-            Token::VaEnd => write!(f, "va_end"),
             Token::Identifier(s) => write!(f, "Identifier({})", s),
             Token::IntLiteral(n, suffix) => write!(f, "IntLiteral({}, {:?})", n, suffix),
             Token::FloatLiteral(f_val, suffix) => {
@@ -803,7 +795,6 @@ impl Lexer {
             "break" => Token::Break,
             "continue" => Token::Continue,
             "void" => Token::Void,
-            "va_list" => Token::VaList,
             "extern" => Token::Extern,
             "static" => Token::Static,
             "auto" => Token::Auto,
@@ -817,9 +808,6 @@ impl Lexer {
             "default" => Token::Default,
             "asm" => Token::Asm,
             "__asm__" => Token::Asm, // GCC variant
-            "va_start" => Token::VaStart,
-            "va_arg" => Token::VaArg,
-            "va_end" => Token::VaEnd,
             _ => Token::Identifier(ident),
         };
 
