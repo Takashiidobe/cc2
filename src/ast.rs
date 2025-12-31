@@ -113,6 +113,10 @@ pub enum AstNode {
         struct_type: Type,
         member: String,
     },
+    BuiltinTypesCompatible {
+        left: Type,
+        right: Type,
+    },
     Cast {
         target_type: Type,
         expr: Box<AstNode>,
@@ -232,11 +236,13 @@ pub enum Type {
     Double,
     LongDouble,
     Void,
+    TypeofExpr(Box<AstNode>),
     Pointer(Box<Type>),
     Array(Box<Type>, usize),
     FunctionPointer {
         return_type: Box<Type>,
         param_types: Vec<Type>,
+        is_variadic: bool,
     },
     Struct(String),
     Union(String),
@@ -258,6 +264,7 @@ impl Type {
             Type::Float => 4,
             Type::Double => 8,
             Type::LongDouble => 16, // x86-64 long double is 16 bytes
+            Type::TypeofExpr(_) => 0,
             Type::Pointer(_) | Type::FunctionPointer { .. } => 8,
             Type::Array(elem, len) => elem.size() * (*len as i32),
             Type::Void | Type::Struct(_) | Type::Union(_) => 0,
@@ -322,6 +329,7 @@ impl fmt::Display for AstNode {
             AstNode::AlignOfType(_) => write!(f, "AlignOfType"),
             AstNode::AlignOfExpr(_) => write!(f, "AlignOfExpr"),
             AstNode::OffsetOf { member, .. } => write!(f, "OffsetOf({})", member),
+            AstNode::BuiltinTypesCompatible { .. } => write!(f, "BuiltinTypesCompatible"),
             AstNode::Cast { target_type, .. } => write!(f, "Cast({:?})", target_type),
             AstNode::StmtExpr { .. } => write!(f, "StmtExpr"),
             AstNode::IntLiteral(n) => write!(f, "IntLiteral({})", n),

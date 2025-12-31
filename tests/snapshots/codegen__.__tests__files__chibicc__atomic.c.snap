@@ -1,0 +1,6 @@
+---
+source: tests/codegen.rs
+expression: "&mine"
+---
+stdout: "add_millions() => 6000000\n({ int x=3; atomic_exchange(&x, 5); }) => 3\n({ int x=3; atomic_exchange(&x, 5); x; }) => 5\nOK\n"
+status: 0

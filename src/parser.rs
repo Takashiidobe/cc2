@@ -395,6 +395,10 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
+        while matches!(self.current_token(), Token::Const | Token::Volatile) {
+            self.advance();
+        }
+
         let mut ty = match self.current_token() {
             Token::Signed => {
                 self.advance();
@@ -499,6 +503,7 @@ impl Parser {
                 self.advance();
                 Type::Bool
             }
+            Token::Typeof => self.parse_typeof()?,
             Token::Void => {
                 self.advance();
                 Type::Void
@@ -650,6 +655,32 @@ impl Parser {
             self.advance();
             ty = Type::Pointer(Box::new(ty));
         }
+
+        Ok(ty)
+    }
+
+    fn parse_type_name(&mut self) -> Result<Type, String> {
+        while matches!(self.current_token(), Token::Const | Token::Volatile) {
+            self.advance();
+        }
+        let base_type = self.parse_type()?;
+        let (ty, _name) = self.parse_param_declarator(base_type)?;
+        Ok(ty)
+    }
+
+    fn parse_typeof(&mut self) -> Result<Type, String> {
+        self.expect(Token::Typeof)?;
+        self.expect(Token::OpenParen)?;
+
+        let ty = if self.is_type_start(Some(self.current_token())) {
+            let ty = self.parse_type_name()?;
+            self.expect(Token::CloseParen)?;
+            ty
+        } else {
+            let expr = self.parse_expression()?;
+            self.expect(Token::CloseParen)?;
+            Type::TypeofExpr(Box::new(expr))
+        };
 
         Ok(ty)
     }
@@ -810,12 +841,13 @@ impl Parser {
                     return Err("Expected '(' after function pointer declarator".to_string());
                 }
                 self.advance();
-                let param_types = self.parse_param_type_list()?;
+                let (param_types, is_variadic) = self.parse_param_type_list()?;
                 self.expect(Token::CloseParen)?;
 
                 let mut decl_type = Type::FunctionPointer {
                     return_type: Box::new(base_type),
                     param_types,
+                    is_variadic,
                 };
                 for _ in 1..inner_pointer_depth {
                     decl_type = Type::Pointer(Box::new(decl_type));
@@ -882,12 +914,13 @@ impl Parser {
                     return Err("Expected '(' after function pointer declarator".to_string());
                 }
                 self.advance();
-                let param_types = self.parse_param_type_list()?;
+                let (param_types, is_variadic) = self.parse_param_type_list()?;
                 self.expect(Token::CloseParen)?;
 
                 let mut decl_type = Type::FunctionPointer {
                     return_type: Box::new(base_type),
                     param_types,
+                    is_variadic,
                 };
                 for _ in 1..pointer_depth {
                     decl_type = Type::Pointer(Box::new(decl_type));
@@ -907,11 +940,12 @@ impl Parser {
         Ok((base_type, None))
     }
 
-    fn parse_param_type_list(&mut self) -> Result<Vec<Type>, String> {
+    fn parse_param_type_list(&mut self) -> Result<(Vec<Type>, bool), String> {
         let mut params = Vec::new();
+        let mut is_variadic = false;
 
         if self.current_token() == &Token::CloseParen {
-            return Ok(params);
+            return Ok((params, is_variadic));
         }
 
         // Check for single 'void' parameter (means no parameters in C)
@@ -923,13 +957,15 @@ impl Parser {
 
             if next_is_close_paren {
                 self.advance(); // Skip 'void'
-                return Ok(params);
+                return Ok((params, is_variadic));
             }
         }
 
         loop {
             if self.current_token() == &Token::Ellipsis {
-                return Err("Variadic function pointer types are not supported".to_string());
+                self.advance();
+                is_variadic = true;
+                break;
             }
 
             while matches!(self.current_token(), Token::Const | Token::Volatile) {
@@ -947,7 +983,7 @@ impl Parser {
             }
         }
 
-        Ok(params)
+        Ok((params, is_variadic))
     }
 
     fn parse_parameters(&mut self) -> Result<(Vec<Parameter>, bool), String> {
@@ -1058,6 +1094,7 @@ impl Parser {
             | Token::Unsigned
             | Token::Int
             | Token::Char
+            | Token::Typeof
             | Token::Short
             | Token::Long
             | Token::Float
@@ -1278,11 +1315,12 @@ impl Parser {
         } else if matches!(
             self.current_token(),
             Token::Int
-                | Token::Char
-                | Token::Bool
-                | Token::Signed
-                | Token::Unsigned
-                | Token::Short
+            | Token::Char
+            | Token::Bool
+            | Token::Signed
+            | Token::Unsigned
+            | Token::Typeof
+            | Token::Short
                 | Token::Long
                 | Token::Float
                 | Token::Double
@@ -1826,6 +1864,9 @@ impl Parser {
             Token::Offsetof => self.parse_offsetof(),
             Token::Identifier(name) if name == "__builtin_reg_class" => {
                 self.parse_builtin_reg_class()
+            }
+            Token::Identifier(name) if name == "__builtin_types_compatible_p" => {
+                self.parse_builtin_types_compatible_p()
             }
             Token::OpenParen => {
                 // Check if this is a cast expression: (type)expr
@@ -2514,6 +2555,17 @@ impl Parser {
         Ok(AstNode::IntLiteral(class))
     }
 
+    fn parse_builtin_types_compatible_p(&mut self) -> Result<AstNode, String> {
+        self.expect(Token::Identifier("__builtin_types_compatible_p".to_string()))?;
+        self.expect(Token::OpenParen)?;
+        let left = self.parse_type_name()?;
+        self.expect(Token::Comma)?;
+        let right = self.parse_type_name()?;
+        self.expect(Token::CloseParen)?;
+
+        Ok(AstNode::BuiltinTypesCompatible { left, right })
+    }
+
     fn parse_offsetof(&mut self) -> Result<AstNode, String> {
         self.expect(Token::Offsetof)?;
         self.expect(Token::OpenParen)?;
@@ -2581,6 +2633,7 @@ impl Parser {
             | Some(Token::Unsigned)
             | Some(Token::Int)
             | Some(Token::Char)
+            | Some(Token::Typeof)
             | Some(Token::Struct)
             | Some(Token::Union)
             | Some(Token::Enum)
@@ -2588,6 +2641,8 @@ impl Parser {
             | Some(Token::Long)
             | Some(Token::Float)
             | Some(Token::Double)
+            | Some(Token::Const)
+            | Some(Token::Volatile)
             | Some(Token::Void) => true,
             _ => false,
         }

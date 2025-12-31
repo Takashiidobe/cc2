@@ -2161,6 +2161,13 @@ impl CodeGenerator {
                 self.emit(&format!("    movq ${}, %rax", field_info.offset));
                 Ok(())
             }
+            AstNode::BuiltinTypesCompatible { left, right } => {
+                let compatible = self.types_compatible(left, right)?;
+                let value = if compatible { 1 } else { 0 };
+                self.emit(&format!("    movl ${}, %eax", value));
+                self.emit("    cltq");
+                Ok(())
+            }
             AstNode::Cast { target_type, expr } => {
                 // Generate code for the expression
                 self.generate_node(expr)?;
@@ -2635,8 +2642,52 @@ impl CodeGenerator {
         match ty {
             Type::Array(elem, _) => Ok(*elem.clone()),
             Type::Pointer(pointee) => Ok(*pointee.clone()),
+            Type::TypeofExpr(expr) => {
+                let resolved = self.typeof_expr_type(expr)?;
+                self.array_element_type_from_type(&resolved)
+            }
             _ => Err("Array element type unavailable".to_string()),
         }
+    }
+
+    fn typeof_expr_type(&self, expr: &AstNode) -> Result<Type, String> {
+        match expr {
+            AstNode::StringLiteral(s) => Ok(Type::Array(Box::new(Type::Char), s.len() + 1)),
+            AstNode::WideStringLiteral(s) => {
+                Ok(Type::Array(Box::new(Type::Int), s.chars().count() + 1))
+            }
+            _ => self.expr_type(expr),
+        }
+    }
+
+    fn resolve_type(&self, ty: &Type) -> Result<Type, String> {
+        match ty {
+            Type::TypeofExpr(expr) => self.typeof_expr_type(expr),
+            Type::Pointer(pointee) => Ok(Type::Pointer(Box::new(self.resolve_type(pointee)?))),
+            Type::Array(elem, len) => Ok(Type::Array(Box::new(self.resolve_type(elem)?), *len)),
+            Type::FunctionPointer {
+                return_type,
+                param_types,
+                is_variadic,
+            } => {
+                let mut resolved_params = Vec::with_capacity(param_types.len());
+                for param in param_types {
+                    resolved_params.push(self.resolve_type(param)?);
+                }
+                Ok(Type::FunctionPointer {
+                    return_type: Box::new(self.resolve_type(return_type)?),
+                    param_types: resolved_params,
+                    is_variadic: *is_variadic,
+                })
+            }
+            _ => Ok(ty.clone()),
+        }
+    }
+
+    fn types_compatible(&self, left: &Type, right: &Type) -> Result<bool, String> {
+        let left = self.resolve_type(left)?;
+        let right = self.resolve_type(right)?;
+        Ok(left == right)
     }
 
     fn type_size(&self, ty: &Type) -> Result<i32, String> {
@@ -2653,6 +2704,10 @@ impl CodeGenerator {
             Type::Float => Ok(4),
             Type::Double => Ok(8),
             Type::LongDouble => Ok(16),
+            Type::TypeofExpr(expr) => {
+                let resolved = self.typeof_expr_type(expr)?;
+                self.type_size(&resolved)
+            }
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(0),
             Type::Array(elem, len) => Ok(self.type_size(elem)? * (*len as i32)),
@@ -2688,6 +2743,10 @@ impl CodeGenerator {
             Type::Float => Ok(4),
             Type::Double => Ok(8),
             Type::LongDouble => Ok(16),
+            Type::TypeofExpr(expr) => {
+                let resolved = self.typeof_expr_type(expr)?;
+                self.type_alignment(&resolved)
+            }
             Type::Pointer(_) | Type::FunctionPointer { .. } => Ok(8),
             Type::Void => Ok(1),
             Type::Array(elem, _) => {
@@ -2727,6 +2786,9 @@ impl CodeGenerator {
     }
 
     fn convert_type(&mut self, from: &Type, to: &Type) -> Result<(), String> {
+        let from = self.resolve_type(from)?;
+        let to = self.resolve_type(to)?;
+
         // If types are the same, no conversion needed
         if from == to {
             return Ok(());
@@ -2735,7 +2797,7 @@ impl CodeGenerator {
         // Helper to determine if a type is signed
         let is_signed = |ty: &Type| matches!(ty, Type::Char | Type::Short | Type::Int | Type::Long);
 
-        match (from, to) {
+        match (&from, &to) {
             // Array to pointer decay - exact match
             (Type::Array(elem, _), Type::Pointer(to_elem)) if elem.as_ref() == to_elem.as_ref() => {
                 Ok(())
@@ -2774,7 +2836,7 @@ impl CodeGenerator {
             }
             (Type::Int | Type::UInt, Type::Pointer(_)) => {
                 // Sign/zero extend to 64 bits
-                if is_signed(from) {
+                if is_signed(&from) {
                     self.emit("    movslq %eax, %rax");
                 } else {
                     self.emit("    movl %eax, %eax");
@@ -2797,7 +2859,7 @@ impl CodeGenerator {
                 // Convert float (in xmm0) to int (in rax)
                 self.emit("    cvttsd2si %xmm0, %rax");
                 // Now convert based on target integer size
-                self.convert_type(&Type::Long, to)?;
+                self.convert_type(&Type::Long, &to)?;
                 Ok(())
             }
 
@@ -2815,9 +2877,9 @@ impl CodeGenerator {
                 Type::Float | Type::Double | Type::LongDouble,
             ) => {
                 // First convert to 64-bit integer in rax if needed
-                let from_size = self.type_size(from)?;
+                let from_size = self.type_size(&from)?;
                 if from_size < 8 {
-                    self.convert_type(from, &Type::Long)?;
+                    self.convert_type(&from, &Type::Long)?;
                 }
                 // Convert int (in rax) to double (in xmm0)
                 self.emit("    cvtsi2sd %rax, %xmm0");
@@ -2837,8 +2899,8 @@ impl CodeGenerator {
 
             // Integer conversions
             _ => {
-                let from_size = self.type_size(from)?;
-                let to_size = self.type_size(to)?;
+                let from_size = self.type_size(&from)?;
+                let to_size = self.type_size(&to)?;
 
                 match (from_size, to_size) {
                     // Same size - no conversion needed
@@ -2846,7 +2908,7 @@ impl CodeGenerator {
 
                     // Widening conversions
                     (1, 2) => {
-                        if is_signed(from) {
+                        if is_signed(&from) {
                             self.emit("    movsbw %al, %ax");
                         } else {
                             self.emit("    movzbw %al, %ax");
@@ -2854,7 +2916,7 @@ impl CodeGenerator {
                         Ok(())
                     }
                     (1, 4) => {
-                        if is_signed(from) {
+                        if is_signed(&from) {
                             self.emit("    movsbl %al, %eax");
                         } else {
                             self.emit("    movzbl %al, %eax");
@@ -2862,7 +2924,7 @@ impl CodeGenerator {
                         Ok(())
                     }
                     (1, 8) => {
-                        if is_signed(from) {
+                        if is_signed(&from) {
                             self.emit("    movsbq %al, %rax");
                         } else {
                             self.emit("    movzbq %al, %rax");
@@ -2870,7 +2932,7 @@ impl CodeGenerator {
                         Ok(())
                     }
                     (2, 4) => {
-                        if is_signed(from) {
+                        if is_signed(&from) {
                             self.emit("    movswl %ax, %eax");
                         } else {
                             self.emit("    movzwl %ax, %eax");
@@ -2878,7 +2940,7 @@ impl CodeGenerator {
                         Ok(())
                     }
                     (2, 8) => {
-                        if is_signed(from) {
+                        if is_signed(&from) {
                             self.emit("    movswq %ax, %rax");
                         } else {
                             self.emit("    movzwq %ax, %rax");
@@ -2886,7 +2948,7 @@ impl CodeGenerator {
                         Ok(())
                     }
                     (4, 8) => {
-                        if is_signed(from) {
+                        if is_signed(&from) {
                             self.emit("    movslq %eax, %rax");
                         } else {
                             self.emit("    movl %eax, %eax");
@@ -3782,12 +3844,12 @@ impl CodeGenerator {
             AstNode::Variable(name) => {
                 // Check if it's a global variable first
                 if let Some(global) = self.global_variables.get(name) {
-                    return Ok(global.var_type.clone());
+                    return self.resolve_type(&global.var_type);
                 }
 
                 // Check if it's a local variable
                 if let Some(symbol) = self.symbol_table.get_variable(name) {
-                    return Ok(symbol.symbol_type.clone());
+                    return self.resolve_type(&symbol.symbol_type);
                 }
 
                 // Assume it's a function name - return a generic function pointer type
@@ -3800,15 +3862,18 @@ impl CodeGenerator {
                 Ok(Type::FunctionPointer {
                     return_type: Box::new(return_type),
                     param_types: vec![],
+                    is_variadic: false,
                 })
             }
             AstNode::AddressOf(inner) => {
                 if let AstNode::Variable(name) = &**inner {
                     if let Some(global) = self.global_variables.get(name) {
-                        return Ok(Type::Pointer(Box::new(global.var_type.clone())));
+                        let resolved = self.resolve_type(&global.var_type)?;
+                        return Ok(Type::Pointer(Box::new(resolved)));
                     }
                     if let Some(symbol) = self.symbol_table.get_variable(name) {
-                        return Ok(Type::Pointer(Box::new(symbol.symbol_type.clone())));
+                        let resolved = self.resolve_type(&symbol.symbol_type)?;
+                        return Ok(Type::Pointer(Box::new(resolved)));
                     }
 
                     let return_type = self
@@ -3819,6 +3884,7 @@ impl CodeGenerator {
                     return Ok(Type::FunctionPointer {
                         return_type: Box::new(return_type),
                         param_types: vec![],
+                        is_variadic: false,
                     });
                 }
 
@@ -4075,7 +4141,8 @@ impl CodeGenerator {
             },
             AstNode::StringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Char))),
             AstNode::WideStringLiteral(_) => Ok(Type::Pointer(Box::new(Type::Int))),
-            AstNode::Cast { target_type, .. } => Ok(target_type.clone()),
+            AstNode::Cast { target_type, .. } => self.resolve_type(target_type),
+            AstNode::BuiltinTypesCompatible { .. } => Ok(Type::Int),
             AstNode::StmtExpr { result, .. } => self.expr_type(result),
             AstNode::OffsetOf { .. } => Ok(Type::ULong), // offsetof returns size_t (unsigned long)
             AstNode::SizeOfType(_) | AstNode::SizeOfExpr(_) => Ok(Type::ULong),
