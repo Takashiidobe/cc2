@@ -32,9 +32,8 @@ pub struct CodeGenerator {
     global_variables: HashMap<String, GlobalVariable>,
     function_return_types: HashMap<String, Type>,
     function_param_types: HashMap<String, Vec<Type>>, // Function parameter types
-    stack_depth: i32, // Number of values currently pushed on stack (for alloca adjustment)
-    #[allow(dead_code)]
-    alloca_adjustment: i32, // Total bytes alloca has moved %rsp down since last push
+    stack_depth: i32, // Number of 8-byte slots currently allocated below %rsp
+    alloca_bottom_offset: Option<i32>, // Offset of __alloca_bottom__ variable from %rbp
 }
 
 #[derive(Debug, Clone)]
@@ -68,7 +67,7 @@ impl CodeGenerator {
             function_return_types: HashMap::new(),
             function_param_types: HashMap::new(),
             stack_depth: 0,
-            alloca_adjustment: 0,
+            alloca_bottom_offset: None,
         }
     }
 
@@ -149,7 +148,6 @@ impl CodeGenerator {
                 };
 
                 self.symbol_table = SymbolTable::new();
-                self.symbol_table.reserve_stack_space(8, 8);
 
                 let param_regs_64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
                 let param_regs_32 = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"];
@@ -180,6 +178,18 @@ impl CodeGenerator {
                 // Create end label for this function
                 let end_label = self.next_label();
                 self.current_function_end_label = Some(end_label.clone());
+
+                // Allocate __alloca_bottom__ to track dynamic stack bottom for alloca support
+                let alloca_bottom_offset = self
+                    .symbol_table
+                    .add_variable_with_layout(
+                        "__alloca_bottom__".to_string(),
+                        Type::Pointer(Box::new(Type::Void)),
+                        8,
+                        8,
+                    )
+                    .unwrap();
+                self.alloca_bottom_offset = Some(alloca_bottom_offset);
 
                 // For variadic functions, allocate register save area and __va_area__
                 // Layout matches stdarg.h helpers: 6 GP regs (48 bytes) + 8 XMM regs (64 bytes) = 112 bytes
@@ -331,30 +341,30 @@ impl CodeGenerator {
                 self.output = saved_output;
 
                 // Now emit function with correct stack allocation
-                let stack_size = align_to(self.symbol_table.get_stack_size(), 16) - 8;
+                let stack_size = align_to(self.symbol_table.get_stack_size(), 16);
                 self.emit(&format!("    .globl {}", name));
                 self.emit(&format!("{}:", name));
                 self.emit("    pushq %rbp");
                 self.emit("    movq %rsp, %rbp");
-                self.emit("    pushq %r12");
-                // Initialize alloca adjustment tracker (used when alloca is called in expressions)
-                self.emit("    xorq %r12, %r12");
                 if stack_size > 0 {
                     self.emit(&format!("    subq ${}, %rsp", stack_size));
                 }
+
+                // Initialize alloca_bottom to current stack position
+                self.emit(&format!("    movq %rsp, {}(%rbp)", alloca_bottom_offset));
 
                 // Append the body code
                 self.output.push_str(&body_code);
 
                 // Emit end label and epilogue
                 self.emit(&format!("{}:", end_label));
-                self.emit("    movq -8(%rbp), %r12");
                 self.emit("    movq %rbp, %rsp");
                 self.emit("    popq %rbp");
                 self.emit("    ret");
 
                 // Reset function-specific state
                 self.current_function_end_label = None;
+                self.alloca_bottom_offset = None;
                 Ok(())
             }
             AstNode::Block(statements) => {
@@ -929,24 +939,45 @@ impl CodeGenerator {
                     self.emit("    addq $15, %rax"); // Round up
                     self.emit("    andq $-16, %rax"); // Align to 16 bytes
 
-                    // Save size in %rcx
-                    self.emit("    movq %rax, %rcx");
+                    // Save aligned size in %rdi
+                    self.emit("    movq %rax, %rdi");
 
-                    // Track the alloca adjustment in %r12 for subsequent popq operations
-                    // This allows popq to find pushed values even after %rsp has moved
-                    if self.stack_depth > 0 {
-                        self.emit("    addq %rcx, %r12");
-                    }
+                    if let Some(alloca_bottom) = self.alloca_bottom_offset {
+                        // Calculate size of temporary area to preserve: %rcx = alloca_bottom - %rsp
+                        self.emit(&format!("    movq {}(%rbp), %rcx", alloca_bottom));
+                        self.emit("    subq %rsp, %rcx");
 
-                    // Allocate on stack by subtracting from %rsp
-                    self.emit("    subq %rcx, %rsp");
+                        // Allocate new space: %rsp -= %rdi
+                        self.emit("    movq %rsp, %rax");
+                        self.emit("    subq %rdi, %rsp");
+                        self.emit("    movq %rsp, %rdx");
 
-                    // Return the new stack pointer
-                    // If there are pushed values above us (stack_depth > 0), adjust the pointer
-                    // to account for them, since they'll be popped soon
-                    self.emit("    movq %rsp, %rax");
-                    if self.stack_depth > 0 {
-                        self.emit(&format!("    addq ${}, %rax", self.stack_depth * 8));
+                        // Copy temporary area byte-by-byte from old position (%rax) to new (%rdx)
+                        let copy_loop = self.next_label();
+                        let copy_done = self.next_label();
+                        self.emit(&format!("{}:", copy_loop));
+                        self.emit("    cmpq $0, %rcx");
+                        self.emit(&format!("    je {}", copy_done));
+                        self.emit("    movb (%rax), %r8b");
+                        self.emit("    movb %r8b, (%rdx)");
+                        self.emit("    incq %rdx");
+                        self.emit("    incq %rax");
+                        self.emit("    decq %rcx");
+                        self.emit(&format!("    jmp {}", copy_loop));
+                        self.emit(&format!("{}:", copy_done));
+
+                        // Update alloca_bottom: alloca_bottom -= %rdi
+                        self.emit(&format!("    movq {}(%rbp), %rax", alloca_bottom));
+                        self.emit("    subq %rdi, %rax");
+                        self.emit(&format!("    movq %rax, {}(%rbp)", alloca_bottom));
+
+                        // Return the updated alloca_bottom
+                        // (which now points to the newly allocated space)
+                    } else {
+                        // No alloca_bottom (shouldn't happen in well-formed code)
+                        // Fall back to simple allocation
+                        self.emit("    subq %rdi, %rsp");
+                        self.emit("    movq %rsp, %rax");
                     }
 
                     return Ok(());
@@ -1090,7 +1121,7 @@ impl CodeGenerator {
                         *idx < arg_regs.len()
                     };
                     if in_reg {
-                        reg_temp_offsets[i] = Some(reg_temp_count * 8);
+                        reg_temp_offsets[i] = Some((reg_temp_count * 8) as i32);
                         reg_temp_count += 1;
                     } else {
                         stack_args_count += 1;
@@ -1171,7 +1202,9 @@ impl CodeGenerator {
                     }
                 }
 
-                let temp_base_offset = stack_args_size + align_pad;
+                let reg_temp_base = (align_pad + stack_args_size) as i32;
+
+                // Load register arguments from temp slots
                 for (i, (is_float, idx)) in arg_info.iter().enumerate() {
                     let in_reg = if *is_float {
                         *idx < arg_regs_xmm.len()
@@ -1179,24 +1212,21 @@ impl CodeGenerator {
                         *idx < arg_regs.len()
                     };
                     if in_reg {
-                        let temp_offset = reg_temp_offsets[i].unwrap() + temp_base_offset;
+                        let temp_offset = reg_temp_offsets[i].unwrap();
+                        let offset = reg_temp_base + temp_offset;
                         if *is_float {
                             self.emit(&format!(
                                 "    movsd {}(%rsp), {}",
-                                temp_offset, arg_regs_xmm[*idx]
+                                offset, arg_regs_xmm[*idx]
                             ));
                         } else {
-                            self.emit(&format!(
-                                "    movq {}(%rsp), {}",
-                                temp_offset, arg_regs[*idx]
-                            ));
+                            self.emit(&format!("    movq {}(%rsp), {}", offset, arg_regs[*idx]));
                         }
                     }
                 }
 
                 self.emit(&format!("    call {}", name));
 
-                // Clean up stack arguments if any
                 if stack_args_count > 0 || reg_temp_count > 0 || align_pad > 0 {
                     self.emit(&format!(
                         "    addq ${}, %rsp",
@@ -1308,7 +1338,7 @@ impl CodeGenerator {
                         *idx < arg_regs.len()
                     };
                     if in_reg {
-                        reg_temp_offsets[i] = Some(reg_temp_count * 8);
+                        reg_temp_offsets[i] = Some((reg_temp_count * 8) as i32);
                         reg_temp_count += 1;
                     } else {
                         stack_args_count += 1;
@@ -1378,7 +1408,9 @@ impl CodeGenerator {
                     }
                 }
 
-                let temp_base_offset = stack_args_size + align_pad;
+                let reg_temp_base = (align_pad + stack_args_size) as i32;
+
+                // Load register arguments from temp slots
                 for (i, (is_float, idx)) in arg_info.iter().enumerate() {
                     let in_reg = if *is_float {
                         *idx < arg_regs_xmm.len()
@@ -1386,17 +1418,15 @@ impl CodeGenerator {
                         *idx < arg_regs.len()
                     };
                     if in_reg {
-                        let temp_offset = reg_temp_offsets[i].unwrap() + temp_base_offset;
+                        let temp_offset = reg_temp_offsets[i].unwrap();
+                        let offset = reg_temp_base + temp_offset;
                         if *is_float {
                             self.emit(&format!(
                                 "    movsd {}(%rsp), {}",
-                                temp_offset, arg_regs_xmm[*idx]
+                                offset, arg_regs_xmm[*idx]
                             ));
                         } else {
-                            self.emit(&format!(
-                                "    movq {}(%rsp), {}",
-                                temp_offset, arg_regs[*idx]
-                            ));
+                            self.emit(&format!("    movq {}(%rsp), {}", offset, arg_regs[*idx]));
                         }
                     }
                 }
@@ -1404,7 +1434,6 @@ impl CodeGenerator {
                 // Call through the function pointer
                 self.emit("    call *%r11");
 
-                // Clean up stack arguments if any
                 if stack_args_count > 0 || reg_temp_count > 0 || align_pad > 0 {
                     self.emit(&format!(
                         "    addq ${}, %rsp",
@@ -4042,15 +4071,9 @@ impl CodeGenerator {
         self.output.push('\n');
     }
 
-    /// Generate a pop instruction that accounts for alloca adjustments
     /// Pops into the specified register (e.g., "%rax" or "%rcx")
     fn emit_pop(&mut self, register: &str) {
-        // Read the pushed value from its location (which may have moved due to alloca)
-        self.emit(&format!("    movq (%rsp,%r12,1), {}", register));
-        // Pop always adds 8 to undo the push, regardless of alloca
-        self.emit("    addq $8, %rsp");
-        // Clear the alloca adjustment tracker
-        self.emit("    xorq %r12, %r12");
+        self.emit(&format!("    popq {}", register));
         self.stack_depth -= 1;
     }
 
